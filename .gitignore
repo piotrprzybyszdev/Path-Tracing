@@ -1,0 +1,19 @@
+# CMake
+CMakeCache.txt
+CMakeFiles
+cmake_install.cmake
+
+# Visual Studio
+.vs
+
+Debug
+MinSizeRel
+Release
+RelWithDebInfo
+
+*.dir
+
+ZERO_CHECK.*
+INSTALL.*
+*.vcxproj*
+*.sln
