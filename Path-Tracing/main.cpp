@@ -2,38 +2,49 @@
 #include <iostream>
 
 #include "Core/Core.h"
+#include "Core/Input.h"
+#include "Renderer/Renderer.h"
+
+#include "Window.h"
 
 using namespace PathTracing;
 
-namespace
-{
-bool check()
-{
-    return false;
-}
-}
-
-using TestAssert = Assert<bool, check, true>;
-
 int main()
 {
+    logger::set_level(logger::level::info);
+
     try
     {
-        for (int i = 0; i < 1000; i++)
+        Window window(1280, 720, "Path Tracing", true);
+        Input::SetWindow(window.GetHandle());
+
+        Camera camera(45.0f, 100.0f, 0.1f);
+
+        Renderer renderer(window, camera);
+
+        float lastFrameTime = 0.0f;
+        while (!window.ShouldClose())
         {
-            Timer timer("test");
+            Timer timer("Frame total");
 
-            std::cout << "Hello World!" << std::endl;
+            float time = glfwGetTime();
+
+            float timeStep = time - lastFrameTime;
+            lastFrameTime = time;
+
+            {
+                Timer timer("Update");
+                window.OnUpdate(timeStep);
+                camera.OnUpdate(timeStep);
+                renderer.OnUpdate(timeStep);
+            }
+
+            {
+                Timer timer("Render");
+                window.OnRender();
+                renderer.OnRender();
+            }
         }
-
-        Stats::FlushTimers();
-
-        for (const auto &[name, value] : Stats::GetStats())
-        {
-            std::cout << value << std::endl;
-        }
-
-        TestAssert();
     }
     catch (const error &error)
     {

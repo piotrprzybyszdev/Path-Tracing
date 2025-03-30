@@ -27,3 +27,6 @@ ColumnLimit: 110
 FixNamespaceComments: false
 SpaceAfterTemplateKeyword: false
 SpacesBeforeTrailingComments: 2
+IndentPPDirectives: None
+Cpp11BracedListStyle: false
+SpaceBeforeCpp11BracedList: true

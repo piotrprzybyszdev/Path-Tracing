@@ -9,6 +9,7 @@ Checks: >
   performance-*,
   portability-*,
   readability-*,
+  -bugprone-easily-swappable-parameters
   -google-readability-namespace-comments,
   -misc-include-cleaner,
   -modernize-return-braced-init-list,

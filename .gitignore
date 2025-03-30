@@ -17,3 +17,6 @@ ZERO_CHECK.*
 INSTALL.*
 *.vcxproj*
 *.sln
+
+# Shader binaries
+*.spv
