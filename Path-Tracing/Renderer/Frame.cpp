@@ -17,11 +17,6 @@ Frame::Frame(
     );
     m_ImageView = m_Device.createImageView(createInfo);
 
-    m_SynchronizationObjects = { m_Device.createSemaphore(vk::SemaphoreCreateInfo()),
-                                 m_Device.createSemaphore(vk::SemaphoreCreateInfo()),
-                                 m_Device.createFence(vk::FenceCreateInfo(vk::FenceCreateFlagBits::eSignaled)
-                                 ) };
-
     vk::FramebufferCreateInfo framebufferCreateInfo(
         vk::FramebufferCreateFlags(), renderPass, {}, width, height, 1
     );
@@ -37,10 +32,6 @@ Frame::~Frame()
 {
     if (m_IsMoved)
         return;
-
-    m_Device.destroyFence(m_SynchronizationObjects.InFlightFence);
-    m_Device.destroySemaphore(m_SynchronizationObjects.RenderCompleteSemaphore);
-    m_Device.destroySemaphore(m_SynchronizationObjects.ImageAcquiredSemaphore);
 
     m_Device.freeCommandBuffers(m_CommandPool, { m_CommandBuffer });
     m_Device.destroyFramebuffer(m_FrameBuffer);
@@ -58,7 +49,6 @@ Frame::Frame(Frame &&frame) noexcept
     m_ImageView = frame.m_ImageView;
     m_FrameBuffer = frame.m_FrameBuffer;
     m_CommandBuffer = frame.m_CommandBuffer;
-    m_SynchronizationObjects = frame.m_SynchronizationObjects;
 
     frame.m_IsMoved = true;
 }
@@ -71,11 +61,6 @@ vk::Image Frame::GetImage() const
 vk::CommandBuffer Frame::GetCommandBuffer() const
 {
     return m_CommandBuffer;
-}
-
-SynchronizationObjects Frame::GetSynchronizationObjects() const
-{
-    return m_SynchronizationObjects;
 }
 
 }

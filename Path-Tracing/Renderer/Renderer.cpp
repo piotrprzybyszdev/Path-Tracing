@@ -239,6 +239,13 @@ Renderer::~Renderer()
 {
     m_LogicalDevice.waitIdle();
 
+    for (SynchronizationObjects &sync : m_SynchronizationObjects)
+    {
+        m_LogicalDevice.destroyFence(sync.InFlightFence);
+        m_LogicalDevice.destroySemaphore(sync.RenderCompleteSemaphore);
+        m_LogicalDevice.destroySemaphore(sync.ImageAcquiredSemaphore);
+    }
+
     m_Frames.clear();
     m_LogicalDevice.destroySwapchainKHR(m_Swapchain);
 
@@ -288,12 +295,21 @@ void Renderer::RecreateSwapchain()
 {
     vk::SwapchainKHR oldSwapchain = m_Swapchain;
 
-    m_Swapchain = m_Device.CreateSwapchain(oldSwapchain, m_Surface);
+    m_Swapchain = m_Device.CreateSwapchain(m_Width, m_Height, oldSwapchain, m_Surface);
 
     for (vk::Image image : m_LogicalDevice.getSwapchainImagesKHR(m_Swapchain))
         m_Frames.emplace_back(Frame(
             m_LogicalDevice, m_RenderPass, m_CommandPool, image, vk::Format::eB8G8R8A8Unorm, m_Width, m_Height
         ));
+
+    while (m_SynchronizationObjects.size() < m_Frames.size() - 1)
+    {
+        m_SynchronizationObjects.push_back({
+            m_LogicalDevice.createSemaphore(vk::SemaphoreCreateInfo()),
+            m_LogicalDevice.createSemaphore(vk::SemaphoreCreateInfo()),
+            m_LogicalDevice.createFence(vk::FenceCreateInfo(vk::FenceCreateFlagBits::eSignaled)),
+        });
+    }
 
     m_LogicalDevice.destroySwapchainKHR(oldSwapchain);
 }
@@ -311,9 +327,9 @@ void Renderer::CreateScene()
     std::vector<uint32_t> indices = { 0, 1, 2, 3, 1, 2 };
 
     vk::TransformMatrixKHR matrix(std::array<std::array<float, 4>, 3>({
-        { 1.0f, 0.0f, 0.0f, 0.0f },
-        { 0.0f, 1.0f, 0.0f, 0.0f },
-        { 0.0f, 0.0f, 1.0f, 0.0f },
+        { { 1.0f, 0.0f, 0.0f, 0.0f } },
+        { { 0.0f, 1.0f, 0.0f, 0.0f } },
+        { { 0.0f, 0.0f, 1.0f, 0.0f } },
     }));
 
     {
@@ -517,7 +533,8 @@ void Renderer::CreateDescriptorSets()
 {
     std::vector<vk::DescriptorPoolSize> poolSizes = {
         vk::DescriptorPoolSize(vk::DescriptorType::eAccelerationStructureKHR, 1),
-        vk::DescriptorPoolSize(vk::DescriptorType::eStorageImage, 1)
+        vk::DescriptorPoolSize(vk::DescriptorType::eStorageImage, 1),
+        vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, 1)
     };
 
     vk::DescriptorPoolCreateInfo createInfo(vk::DescriptorPoolCreateFlags(), 1, poolSizes);
@@ -526,7 +543,8 @@ void Renderer::CreateDescriptorSets()
     vk::DescriptorSetAllocateInfo allocateInfo(m_DescriptorPool, { m_DescriptorSetLayout });
     m_DescriptorSet = m_LogicalDevice.allocateDescriptorSets(allocateInfo)[0];
 
-    vk::WriteDescriptorSetAccelerationStructureKHR structureInfo({ m_TopLevelAccelerationStructure });
+    std::vector<vk::AccelerationStructureKHR> accelerationStructures = { m_TopLevelAccelerationStructure };
+    vk::WriteDescriptorSetAccelerationStructureKHR structureInfo(accelerationStructures);
 
     vk::WriteDescriptorSet structureWrite =
         vk::WriteDescriptorSet(m_DescriptorSet, 0, 0, 1, vk::DescriptorType::eAccelerationStructureKHR)
@@ -591,7 +609,7 @@ void Renderer::SetupPipeline()
         m_ShaderLibrary = m_Device.CreateShaderLibrary();
         m_ShaderLibrary->AddRaygenShader("Shaders/raygen.spv", "main");
         m_ShaderLibrary->AddMissShader("Shaders/miss.spv", "main");
-        m_ShaderLibrary->AddClosestHitShader("Shaders/closestHit.spv", "main");
+        m_ShaderLibrary->AddClosestHitShader("Shaders/closesthit.spv", "main");
         m_Pipeline = m_ShaderLibrary->CreatePipeline(m_PipelineLayout, m_DispatchLoader);
     }
 
@@ -696,14 +714,19 @@ void Renderer::OnRender()
     if (m_Width == 0 || m_Height == 0)
         return;
 
-    const Frame &frame = m_Frames[m_CurrentFrame];
-    SynchronizationObjects sync = frame.GetSynchronizationObjects();
+    const SynchronizationObjects &sync = m_SynchronizationObjects[m_CurrentFrame];
+
+    m_CurrentFrame++;
+    if (m_CurrentFrame == m_Frames.size() - 1)
+        m_CurrentFrame = 0;
 
     {
         vk::Result result = m_LogicalDevice.waitForFences(
             { sync.InFlightFence }, vk::True, std::numeric_limits<uint64_t>::max()
         );
         assert(result == vk::Result::eSuccess);
+
+        m_LogicalDevice.resetFences({ sync.InFlightFence });
     }
 
     uint32_t imageIndex;
@@ -715,8 +738,6 @@ void Renderer::OnRender()
 
         assert(result.result == vk::Result::eSuccess);
         imageIndex = result.value;
-
-        assert(imageIndex == m_CurrentFrame);
     }
     catch (vk::OutOfDateKHRError error)
     {
@@ -724,17 +745,13 @@ void Renderer::OnRender()
         return;
     }
 
-    m_CurrentFrame++;
-    if (m_CurrentFrame == 3)
-        m_CurrentFrame = 0;
-
-    m_LogicalDevice.resetFences({ sync.InFlightFence });
-
     std::vector<vk::PipelineStageFlags> stages = { vk::PipelineStageFlagBits::eColorAttachmentOutput };
-    std::vector<vk::CommandBuffer> commandBuffers = { frame.GetCommandBuffer() };
+    std::vector<vk::CommandBuffer> commandBuffers = { m_Frames[imageIndex].GetCommandBuffer() };
+
     vk::SubmitInfo submitInfo(
         { sync.ImageAcquiredSemaphore }, stages, commandBuffers, { sync.RenderCompleteSemaphore }
     );
+
     m_GraphicsQueue.submit({ submitInfo }, sync.InFlightFence);
 
     vk::PresentInfoKHR presentInfo({ sync.RenderCompleteSemaphore }, { m_Swapchain }, { imageIndex });

@@ -23,7 +23,8 @@ void Stats::FlushTimers()
     {
         Stats::AddStat(
             timer, "{}: {:.3f} ms", timer,
-            static_cast<float>(std::chrono::duration_cast<std::chrono::microseconds>(measurement).count()) / 1000.0f
+            static_cast<float>(std::chrono::duration_cast<std::chrono::microseconds>(measurement).count()) /
+                1000.0f
         );
     }
     s_Measurements.clear();

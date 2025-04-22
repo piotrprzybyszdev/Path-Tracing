@@ -113,7 +113,9 @@ BufferBuilder &BufferBuilder::ResetFlags()
 
 Buffer BufferBuilder::CreateBuffer(vk::DeviceSize size) const
 {
-    return Buffer(m_Device, m_PhysicalDevice, m_CreateFlags, size, m_UsageFlags, m_MemoryFlags, m_AllocateFlags);
+    return Buffer(
+        m_Device, m_PhysicalDevice, m_CreateFlags, size, m_UsageFlags, m_MemoryFlags, m_AllocateFlags
+    );
 }
 
 std::unique_ptr<Buffer> BufferBuilder::CreateBufferUnique(vk::DeviceSize size) const

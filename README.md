@@ -16,4 +16,5 @@ cd Path-Tracing/Shaders
 compile.bat
 ```
 Build files for the default build system of your platform should generate.\
-If you are not on windows compile shaders analogously as in the compile.bat script.
+If you are not on windows compile shaders analogously as in the compile.bat script.\
+Copy the .spv files so that they are in 'Shaders' folder next to the built binary. 

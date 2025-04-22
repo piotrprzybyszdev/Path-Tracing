@@ -8,8 +8,8 @@
 
 #include "Buffer.h"
 #include "Frame.h"
-#include "LogicalDevice.h"
 #include "Image.h"
+#include "LogicalDevice.h"
 #include "PhysicalDevice.h"
 #include "ShaderLibrary.h"
 #include "Window.h"
@@ -41,7 +41,7 @@ private:
     vk::DebugUtilsMessengerEXT m_DebugMessenger { nullptr };
 #endif
 
-    /// Blocking one time submission buffer
+    // Blocking one time submission buffer
     struct CommandBuffer
     {
         vk::CommandBuffer CommandBuffer;
@@ -80,8 +80,16 @@ private:
     vk::Queue m_GraphicsQueue { nullptr };
     vk::CommandPool m_CommandPool;
 
+    struct SynchronizationObjects
+    {
+        vk::Semaphore ImageAcquiredSemaphore;
+        vk::Semaphore RenderCompleteSemaphore;
+        vk::Fence InFlightFence;
+    };
+
     vk::SwapchainKHR m_Swapchain { nullptr };
     std::vector<Frame> m_Frames;
+    std::vector<SynchronizationObjects> m_SynchronizationObjects;
 
     std::unique_ptr<Buffer> m_VertexBuffer = nullptr;
     std::unique_ptr<Buffer> m_IndexBuffer = nullptr;

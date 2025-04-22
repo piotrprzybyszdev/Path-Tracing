@@ -12,8 +12,8 @@ static bool checkSupported(
 );
 
 LogicalDevice::LogicalDevice(
-    vk::Instance instance, vk::SurfaceKHR surface, std::vector<const char*> layers,
-    std::vector<const char*> extensions, vk::PhysicalDeviceFeatures2* features
+    vk::Instance instance, vk::SurfaceKHR surface, std::vector<const char *> layers,
+    std::vector<const char *> extensions, vk::PhysicalDeviceFeatures2 *features
 )
 {
     if (instance == nullptr)
@@ -31,11 +31,9 @@ LogicalDevice::LogicalDevice(
             vk::to_string(properties.deviceType)
         );
 
-        auto x1 = device.enumerateDeviceExtensionProperties();
-        auto x2 = device.enumerateDeviceLayerProperties();
-
         if (checkSupported(
-                extensions, layers, x1, x2
+                extensions, layers, device.enumerateDeviceExtensionProperties(),
+                device.enumerateDeviceLayerProperties()
             ))
         {
             logger::info("{} is a suitable device", properties.deviceName.data());
@@ -46,7 +44,7 @@ LogicalDevice::LogicalDevice(
     if (suitableDevices.empty())
         throw error("No suitable devices found");
 
-    PhysicalDevice = PathTracing::PhysicalDevice(
+    Physical = PathTracing::PhysicalDevice(
         **std::max_element(
             suitableDevices.begin(), suitableDevices.end(),
             [](const vk::PhysicalDevice *device1, const vk::PhysicalDevice *device2) {
@@ -65,18 +63,19 @@ LogicalDevice::LogicalDevice(
 
     for (vk::QueueFlags flags : QueueFlags)
     {
-        uint32_t index = PhysicalDevice.GetQueueFamilyIndex(flags);
+        uint32_t index = Physical.GetQueueFamilyIndex(flags);
         queueFamilyIndices.push_back(index);
         queueCreateInfos.push_back({ vk::DeviceQueueCreateFlags(), index, priorities });
     }
 
     m_GraphicsQueueFamilyIndex = queueFamilyIndices[0];
+    logger::debug("Graphics Queue Family set to: {}", m_GraphicsQueueFamilyIndex);
 
     vk::DeviceCreateInfo createInfo(
         vk::DeviceCreateFlags(), queueCreateInfos, layers, extensions, nullptr, features
     );
 
-    m_Handle = PhysicalDevice.m_Handle.createDevice(createInfo);
+    m_Handle = Physical.m_Handle.createDevice(createInfo);
 
     m_GraphicsQueue = m_Handle.getQueue(m_GraphicsQueueFamilyIndex, 0);
     m_GraphicsCommandPool = m_Handle.createCommandPool({ vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
@@ -102,16 +101,18 @@ vk::CommandPool LogicalDevice::GetGraphicsCommandPool() const
     return m_GraphicsCommandPool;
 }
 
-vk::SwapchainKHR LogicalDevice::CreateSwapchain(vk::SwapchainKHR oldSwapchain, vk::SurfaceKHR surface) const
+vk::SwapchainKHR LogicalDevice::CreateSwapchain(
+    uint32_t width, uint32_t height, vk::SwapchainKHR oldSwapchain, vk::SurfaceKHR surface
+) const
 {
-    vk::SurfaceCapabilitiesKHR surfaceCapabilities = PhysicalDevice.m_Handle.getSurfaceCapabilitiesKHR(surface);
+    vk::SurfaceCapabilitiesKHR surfaceCapabilities = Physical.m_Handle.getSurfaceCapabilitiesKHR(surface);
     logger::debug("Supported usage flags: {}", vk::to_string(surfaceCapabilities.supportedUsageFlags));
     logger::debug("Supported transforms: {}", vk::to_string(surfaceCapabilities.supportedTransforms));
     logger::debug(
         "Supported composite alpha: {}", vk::to_string(surfaceCapabilities.supportedCompositeAlpha)
     );
 
-    std::vector<vk::SurfaceFormatKHR> surfaceFormats = PhysicalDevice.m_Handle.getSurfaceFormatsKHR(surface);
+    std::vector<vk::SurfaceFormatKHR> surfaceFormats = Physical.m_Handle.getSurfaceFormatsKHR(surface);
     vk::SurfaceFormatKHR surfaceFormat = surfaceFormats[0];
     for (vk::SurfaceFormatKHR format : surfaceFormats)
     {
@@ -128,7 +129,7 @@ vk::SwapchainKHR LogicalDevice::CreateSwapchain(vk::SwapchainKHR oldSwapchain, v
         vk::to_string(surfaceFormat.colorSpace)
     );
 
-    std::vector<vk::PresentModeKHR> modes = PhysicalDevice.m_Handle.getSurfacePresentModesKHR(surface);
+    std::vector<vk::PresentModeKHR> modes = Physical.m_Handle.getSurfacePresentModesKHR(surface);
 
     for (vk::PresentModeKHR mode : modes)
         logger::debug("Supported present mode: {}", vk::to_string(mode));
@@ -138,13 +139,21 @@ vk::SwapchainKHR LogicalDevice::CreateSwapchain(vk::SwapchainKHR oldSwapchain, v
         selectedPresentMode = PreferredPresentMode;
     logger::info("Selected present mode: {}", vk::to_string(selectedPresentMode));
 
-    uint32_t imageCount =
-        std::clamp(3u, surfaceCapabilities.minImageCount, surfaceCapabilities.maxImageCount);
+    logger::debug(
+        "Surface allowed image count: {} - {}", surfaceCapabilities.minImageCount,
+        surfaceCapabilities.maxImageCount
+    );
+
+    uint32_t maxImageCount = surfaceCapabilities.maxImageCount;
+    if (maxImageCount == 0)
+        maxImageCount = std::numeric_limits<uint32_t>::max();
+
+    uint32_t imageCount = std::clamp(3u, surfaceCapabilities.minImageCount, maxImageCount);
     logger::info("Image Count: {}", imageCount);
 
     vk::SwapchainCreateInfoKHR createInfo(
         vk::SwapchainCreateFlagsKHR(), surface, imageCount, surfaceFormat.format, surfaceFormat.colorSpace,
-        surfaceCapabilities.currentExtent, 1,
+        vk::Extent2D(width, height), 1,
         vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferDst,
         vk::SharingMode::eExclusive, { m_GraphicsQueueFamilyIndex }, surfaceCapabilities.currentTransform,
         vk::CompositeAlphaFlagBitsKHR::eOpaque, selectedPresentMode, vk::True, oldSwapchain
@@ -155,22 +164,22 @@ vk::SwapchainKHR LogicalDevice::CreateSwapchain(vk::SwapchainKHR oldSwapchain, v
 
 BufferBuilder LogicalDevice::CreateBufferBuilder() const
 {
-    return BufferBuilder(m_Handle, PhysicalDevice);
+    return BufferBuilder(m_Handle, Physical);
 }
 
 std::unique_ptr<BufferBuilder> LogicalDevice::CreateBufferBuilderUnique() const
 {
-    return std::make_unique<BufferBuilder>(m_Handle, PhysicalDevice);
+    return std::make_unique<BufferBuilder>(m_Handle, Physical);
 }
 
 std::unique_ptr<ImageBuilder> LogicalDevice::CreateImageBuilderUnique() const
 {
-    return std::make_unique<ImageBuilder>(m_Handle, PhysicalDevice);
+    return std::make_unique<ImageBuilder>(m_Handle, Physical);
 }
 
 std::unique_ptr<ShaderLibrary> LogicalDevice::CreateShaderLibrary() const
 {
-    return std::make_unique<ShaderLibrary>(*this, PhysicalDevice);
+    return std::make_unique<ShaderLibrary>(*this, Physical);
 }
 
 static bool checkSupported(

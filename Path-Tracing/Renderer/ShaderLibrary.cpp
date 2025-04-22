@@ -42,7 +42,7 @@ vk::Pipeline ShaderLibrary::CreatePipeline(
     vk::PipelineLayout layout, vk::detail::DispatchLoaderDynamic loader
 )
 {
-    vk::RayTracingPipelineCreateInfoKHR createInfo(vk::PipelineCreateFlags(), m_Stages, m_Groups);
+    vk::RayTracingPipelineCreateInfoKHR createInfo(vk::PipelineCreateFlags(), m_Stages, m_Groups, 1);
     createInfo.setLayout(layout);
 
     vk::ResultValue<vk::Pipeline> result =

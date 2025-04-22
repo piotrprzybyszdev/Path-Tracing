@@ -21,6 +21,12 @@ PhysicalDevice::PhysicalDevice(vk::PhysicalDevice handle, vk::SurfaceKHR surface
             .get<vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>();
 
     logger::info("Selected physical device: {}", m_Properties.deviceName.data());
+
+    for (uint32_t index = 0; index < m_QueueFamilyProperties.size(); index++)
+        logger::info(
+            "Found queue family at index {} with properties: {}", index,
+            vk::to_string(m_QueueFamilyProperties[index].queueFlags)
+        );
 }
 
 PhysicalDevice::~PhysicalDevice()

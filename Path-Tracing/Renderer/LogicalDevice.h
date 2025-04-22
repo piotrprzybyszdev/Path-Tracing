@@ -17,13 +17,15 @@ public:
     );
     ~LogicalDevice();
 
-    PhysicalDevice PhysicalDevice;
+    PhysicalDevice Physical;
 
     vk::Device GetHandle() const;
 
     vk::Queue GetGraphicsQueue() const;
     vk::CommandPool GetGraphicsCommandPool() const;
-    vk::SwapchainKHR CreateSwapchain(vk::SwapchainKHR oldSwapchain, vk::SurfaceKHR surface) const;
+    vk::SwapchainKHR CreateSwapchain(
+        uint32_t width, uint32_t height, vk::SwapchainKHR oldSwapchain, vk::SurfaceKHR surface
+    ) const;
 
     BufferBuilder CreateBufferBuilder() const;
     std::unique_ptr<BufferBuilder> CreateBufferBuilderUnique() const;
