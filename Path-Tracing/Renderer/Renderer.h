@@ -86,10 +86,16 @@ private:
         vk::Semaphore RenderCompleteSemaphore;
         vk::Fence InFlightFence;
     };
+    struct RenderingResources
+    {
+        vk::DescriptorSet DescriptorSet;
+        std::unique_ptr<Image> StorageImage;
+    };
 
     vk::SwapchainKHR m_Swapchain { nullptr };
     std::vector<Frame> m_Frames;
     std::vector<SynchronizationObjects> m_SynchronizationObjects;
+    std::vector<RenderingResources> m_RenderingResources;
 
     std::unique_ptr<Buffer> m_VertexBuffer = nullptr;
     std::unique_ptr<Buffer> m_IndexBuffer = nullptr;
@@ -104,8 +110,6 @@ private:
     vk::AccelerationStructureKHR m_TopLevelAccelerationStructure { nullptr };
     vk::DeviceAddress m_TopLevelAccelerationStructureAddress { 0 };
 
-    std::unique_ptr<Image> m_StorageImage = nullptr;
-
     vk::DescriptorSetLayout m_DescriptorSetLayout { nullptr };
     vk::PipelineLayout m_PipelineLayout { nullptr };
 
@@ -114,7 +118,6 @@ private:
     vk::Pipeline m_Pipeline { nullptr };
 
     vk::DescriptorPool m_DescriptorPool { nullptr };
-    vk::DescriptorSet m_DescriptorSet { nullptr };
 
     vk::RenderPass m_RenderPass { nullptr };
 
@@ -131,7 +134,7 @@ private:
 
     void CreateDescriptorSets();
     void UpdateDescriptorSets();
-    void RecordCommandBuffers();
+    void RecordCommandBuffer(const Frame &frame, const RenderingResources &resources);
 
     int m_CurrentFrame = 0;
 

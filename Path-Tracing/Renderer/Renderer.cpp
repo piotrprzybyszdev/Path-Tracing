@@ -192,6 +192,11 @@ Renderer::~Renderer()
 {
     m_LogicalDevice.waitIdle();
 
+    for (RenderingResources &res : m_RenderingResources)
+    {
+        res.StorageImage.reset();
+    }
+
     for (SynchronizationObjects &sync : m_SynchronizationObjects)
     {
         m_LogicalDevice.destroyFence(sync.InFlightFence);
@@ -210,8 +215,6 @@ Renderer::~Renderer()
 
     m_LogicalDevice.destroyPipelineLayout(m_PipelineLayout);
     m_LogicalDevice.destroyDescriptorSetLayout(m_DescriptorSetLayout);
-
-    m_StorageImage.reset();
 
     m_LogicalDevice.destroyAccelerationStructureKHR(
         m_TopLevelAccelerationStructure, nullptr, m_DispatchLoader
@@ -312,6 +315,7 @@ void Renderer::RecreateSwapchain()
             m_LogicalDevice.createSemaphore(vk::SemaphoreCreateInfo()),
             m_LogicalDevice.createFence(vk::FenceCreateInfo(vk::FenceCreateFlagBits::eSignaled)),
         });
+        m_RenderingResources.push_back({ nullptr, nullptr });
     }
 
     assert(m_Frames.size() == m_Device.GetSwapchainImageCount());
@@ -513,26 +517,29 @@ void Renderer::CreateScene()
 
 void Renderer::CreateStorageImage()
 {
-    m_StorageImage =
-        m_ImageBuilder->ResetFlags()
-            .SetFormat(vk::Format::eR8G8B8A8Unorm)
-            .SetUsageFlags(vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eStorage)
-            .SetMemoryFlags(vk::MemoryPropertyFlagBits::eDeviceLocal)
-            .CreateImageUnique(m_Width, m_Height);
+    m_ImageBuilder->ResetFlags()
+        .SetFormat(vk::Format::eR8G8B8A8Unorm)
+        .SetUsageFlags(vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eStorage)
+        .SetMemoryFlags(vk::MemoryPropertyFlagBits::eDeviceLocal);
 
-    vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
-    vk::ImageMemoryBarrier barrier;
-    barrier.setNewLayout(vk::ImageLayout::eGeneral)
-        .setImage(m_StorageImage->GetHandle())
-        .setSubresourceRange(range);
+    for (RenderingResources &res : m_RenderingResources)
+    {
+        res.StorageImage = m_ImageBuilder->CreateImageUnique(m_Width, m_Height);
 
-    vk::CommandBufferBeginInfo beginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
-    m_MainCommandBuffer.Begin();
-    m_MainCommandBuffer.CommandBuffer.pipelineBarrier(
-        vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands,
-        vk::DependencyFlags(), {}, {}, { barrier }
-    );
-    m_MainCommandBuffer.Submit(m_LogicalDevice, m_GraphicsQueue);
+        vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
+        vk::ImageMemoryBarrier barrier;
+        barrier.setNewLayout(vk::ImageLayout::eGeneral)
+            .setImage(res.StorageImage->GetHandle())
+            .setSubresourceRange(range);
+
+        vk::CommandBufferBeginInfo beginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
+        m_MainCommandBuffer.Begin();
+        m_MainCommandBuffer.CommandBuffer.pipelineBarrier(
+            vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands,
+            vk::DependencyFlags(), {}, {}, { barrier }
+        );
+        m_MainCommandBuffer.Submit(m_LogicalDevice, m_GraphicsQueue);
+    }
 }
 
 void Renderer::CreateDescriptorSets()
@@ -543,46 +550,55 @@ void Renderer::CreateDescriptorSets()
         vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, 1)
     };
 
-    vk::DescriptorPoolCreateInfo createInfo(vk::DescriptorPoolCreateFlags(), 1, poolSizes);
+    vk::DescriptorPoolCreateInfo createInfo(vk::DescriptorPoolCreateFlags(), 3, poolSizes);
     m_DescriptorPool = m_LogicalDevice.createDescriptorPool(createInfo);
 
     vk::DescriptorSetAllocateInfo allocateInfo(m_DescriptorPool, { m_DescriptorSetLayout });
-    m_DescriptorSet = m_LogicalDevice.allocateDescriptorSets(allocateInfo)[0];
+    
+    for (RenderingResources &res : m_RenderingResources)
+    {
+        res.DescriptorSet = m_LogicalDevice.allocateDescriptorSets(allocateInfo)[0];
 
-    std::vector<vk::AccelerationStructureKHR> accelerationStructures = { m_TopLevelAccelerationStructure };
-    vk::WriteDescriptorSetAccelerationStructureKHR structureInfo(accelerationStructures);
+        std::vector<vk::AccelerationStructureKHR> accelerationStructures = {
+            m_TopLevelAccelerationStructure
+        };
+        vk::WriteDescriptorSetAccelerationStructureKHR structureInfo(accelerationStructures);
 
-    vk::WriteDescriptorSet structureWrite =
-        vk::WriteDescriptorSet(m_DescriptorSet, 0, 0, 1, vk::DescriptorType::eAccelerationStructureKHR)
-            .setPNext(&structureInfo);
+        vk::WriteDescriptorSet structureWrite =
+            vk::WriteDescriptorSet(res.DescriptorSet, 0, 0, 1, vk::DescriptorType::eAccelerationStructureKHR)
+                .setPNext(&structureInfo);
 
-    vk::DescriptorImageInfo imageInfo =
-        vk::DescriptorImageInfo(vk::Sampler(), m_StorageImage->GetView(), vk::ImageLayout::eGeneral);
-    vk::WriteDescriptorSet imageWrite =
-        vk::WriteDescriptorSet(m_DescriptorSet, 1, 0, 1, vk::DescriptorType::eStorageImage)
-            .setPImageInfo(&imageInfo);
+        vk::DescriptorImageInfo imageInfo =
+            vk::DescriptorImageInfo(vk::Sampler(), res.StorageImage->GetView(), vk::ImageLayout::eGeneral);
+        vk::WriteDescriptorSet imageWrite =
+            vk::WriteDescriptorSet(res.DescriptorSet, 1, 0, 1, vk::DescriptorType::eStorageImage)
+                .setPImageInfo(&imageInfo);
 
-    vk::DescriptorBufferInfo bufferInfo =
-        vk::DescriptorBufferInfo(m_UniformBuffer->GetHandle(), 0, m_UniformBuffer->GetSize());
-    vk::WriteDescriptorSet bufferWrite =
-        vk::WriteDescriptorSet(m_DescriptorSet, 2, 0, 1, vk::DescriptorType::eUniformBuffer)
-            .setPBufferInfo(&bufferInfo);
+        vk::DescriptorBufferInfo bufferInfo =
+            vk::DescriptorBufferInfo(m_UniformBuffer->GetHandle(), 0, m_UniformBuffer->GetSize());
+        vk::WriteDescriptorSet bufferWrite =
+            vk::WriteDescriptorSet(res.DescriptorSet, 2, 0, 1, vk::DescriptorType::eUniformBuffer)
+                .setPBufferInfo(&bufferInfo);
 
-    std::vector<vk::WriteDescriptorSet> sets = { structureWrite, imageWrite, bufferWrite };
+        std::vector<vk::WriteDescriptorSet> sets = { structureWrite, imageWrite, bufferWrite };
 
-    m_LogicalDevice.updateDescriptorSets(sets, {});
+        m_LogicalDevice.updateDescriptorSets(sets, {});
+    }
 }
 
 void Renderer::UpdateDescriptorSets()
 {
-    vk::DescriptorImageInfo imageInfo =
-        vk::DescriptorImageInfo(vk::Sampler(), m_StorageImage->GetView(), vk::ImageLayout::eGeneral);
+    for (RenderingResources &res : m_RenderingResources)
+    {
+        vk::DescriptorImageInfo imageInfo =
+            vk::DescriptorImageInfo(vk::Sampler(), res.StorageImage->GetView(), vk::ImageLayout::eGeneral);
 
-    vk::WriteDescriptorSet imageWrite =
-        vk::WriteDescriptorSet(m_DescriptorSet, 1, 0, 1, vk::DescriptorType::eStorageImage)
-            .setPImageInfo(&imageInfo);
+        vk::WriteDescriptorSet imageWrite =
+            vk::WriteDescriptorSet(res.DescriptorSet, 1, 0, 1, vk::DescriptorType::eStorageImage)
+                .setPImageInfo(&imageInfo);
 
-    m_LogicalDevice.updateDescriptorSets({ imageWrite }, {});
+        m_LogicalDevice.updateDescriptorSets({ imageWrite }, {});
+    }
 }
 
 void Renderer::SetupPipeline()
@@ -621,87 +637,83 @@ void Renderer::SetupPipeline()
 
     CreateStorageImage();
     CreateDescriptorSets();
-    RecordCommandBuffers();
 }
 
-void Renderer::RecordCommandBuffers()
+void Renderer::RecordCommandBuffer(const Frame &frame, const RenderingResources &resources)
 {
     vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
 
-    for (const Frame &frame : m_Frames)
-    {
-        vk::CommandBuffer commandBuffer = frame.GetCommandBuffer();
-        vk::Image image = frame.GetImage();
+    vk::CommandBuffer commandBuffer = frame.GetCommandBuffer();
+    vk::Image image = frame.GetImage();
 
-        commandBuffer.begin(vk::CommandBufferBeginInfo());
+    commandBuffer.begin(vk::CommandBufferBeginInfo());
 
-        vk::StridedDeviceAddressRegionKHR callableShaderEntry;
+    vk::StridedDeviceAddressRegionKHR callableShaderEntry;
 
-        commandBuffer.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, m_Pipeline);
-        commandBuffer.bindDescriptorSets(
-            vk::PipelineBindPoint::eRayTracingKHR, m_PipelineLayout, 0, { m_DescriptorSet }, {}
-        );
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, m_Pipeline);
+    commandBuffer.bindDescriptorSets(
+        vk::PipelineBindPoint::eRayTracingKHR, m_PipelineLayout, 0, { resources.DescriptorSet }, {}
+    );
 
-        commandBuffer.traceRaysKHR(
-            m_ShaderLibrary->GetRaygenTableEntry(), m_ShaderLibrary->GetMissTableEntry(),
-            m_ShaderLibrary->GetClosestHitTableEntry(), callableShaderEntry, m_Width, m_Height, 1,
-            m_DispatchLoader
-        );
+    commandBuffer.traceRaysKHR(
+        m_ShaderLibrary->GetRaygenTableEntry(), m_ShaderLibrary->GetMissTableEntry(),
+        m_ShaderLibrary->GetClosestHitTableEntry(), callableShaderEntry, m_Width, m_Height, 1,
+        m_DispatchLoader
+    );
 
-        vk::ImageMemoryBarrier barrier(
-            vk::AccessFlagBits::eNone, vk::AccessFlagBits::eTransferWrite, vk::ImageLayout::eUndefined,
-            vk::ImageLayout::eTransferDstOptimal, vk::QueueFamilyIgnored, vk::QueueFamilyIgnored, image, range
-        );
+    vk::ImageMemoryBarrier barrier(
+        vk::AccessFlagBits::eNone, vk::AccessFlagBits::eTransferWrite, vk::ImageLayout::eUndefined,
+        vk::ImageLayout::eTransferDstOptimal, vk::QueueFamilyIgnored, vk::QueueFamilyIgnored, image, range
+    );
 
-        commandBuffer.pipelineBarrier(
-            vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer,
-            vk::DependencyFlags(), {}, {}, { barrier }
-        );
+    commandBuffer.pipelineBarrier(
+        vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer,
+        vk::DependencyFlags(), {}, {}, { barrier }
+    );
 
-        vk::ImageMemoryBarrier barrier2(
-            vk::AccessFlagBits::eNone, vk::AccessFlagBits::eTransferRead, vk::ImageLayout::eGeneral,
-            vk::ImageLayout::eTransferSrcOptimal, vk::QueueFamilyIgnored, vk::QueueFamilyIgnored,
-            m_StorageImage->GetHandle(), range
-        );
+    vk::ImageMemoryBarrier barrier2(
+        vk::AccessFlagBits::eNone, vk::AccessFlagBits::eTransferRead, vk::ImageLayout::eGeneral,
+        vk::ImageLayout::eTransferSrcOptimal, vk::QueueFamilyIgnored, vk::QueueFamilyIgnored,
+        resources.StorageImage->GetHandle(), range
+    );
 
-        commandBuffer.pipelineBarrier(
-            vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eTransfer,
-            vk::DependencyFlags(), {}, {}, { barrier2 }
-        );
+    commandBuffer.pipelineBarrier(
+        vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eTransfer,
+        vk::DependencyFlags(), {}, {}, { barrier2 }
+    );
 
-        vk::ImageSubresourceLayers subresource(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
-        vk::Offset3D offset(0, 0, 0);
-        vk::ImageCopy copy(subresource, offset, subresource, offset, { m_Width, m_Height, 1 });
+    vk::ImageSubresourceLayers subresource(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
+    vk::Offset3D offset(0, 0, 0);
+    vk::ImageCopy copy(subresource, offset, subresource, offset, { m_Width, m_Height, 1 });
 
-        commandBuffer.copyImage(
-            m_StorageImage->GetHandle(), vk::ImageLayout::eTransferSrcOptimal, image,
-            vk::ImageLayout::eTransferDstOptimal, { copy }
-        );
+    commandBuffer.copyImage(
+        resources.StorageImage->GetHandle(), vk::ImageLayout::eTransferSrcOptimal, image,
+        vk::ImageLayout::eTransferDstOptimal, { copy }
+    );
 
-        vk::ImageMemoryBarrier barrier3(
-            vk::AccessFlagBits::eTransferWrite, vk::AccessFlagBits::eNone,
-            vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::ePresentSrcKHR, vk::QueueFamilyIgnored,
-            vk::QueueFamilyIgnored, image, range
-        );
+    vk::ImageMemoryBarrier barrier3(
+        vk::AccessFlagBits::eTransferWrite, vk::AccessFlagBits::eNone,
+        vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::ePresentSrcKHR, vk::QueueFamilyIgnored,
+        vk::QueueFamilyIgnored, image, range
+    );
 
-        commandBuffer.pipelineBarrier(
-            vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eBottomOfPipe,
-            vk::DependencyFlags(), {}, {}, { barrier3 }
-        );
+    commandBuffer.pipelineBarrier(
+        vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eBottomOfPipe,
+        vk::DependencyFlags(), {}, {}, { barrier3 }
+    );
 
-        vk::ImageMemoryBarrier barrier4(
-            vk::AccessFlagBits::eTransferRead, vk::AccessFlagBits::eNone,
-            vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eGeneral, vk::QueueFamilyIgnored,
-            vk::QueueFamilyIgnored, m_StorageImage->GetHandle(), range
-        );
+    vk::ImageMemoryBarrier barrier4(
+        vk::AccessFlagBits::eTransferRead, vk::AccessFlagBits::eNone,
+        vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eGeneral, vk::QueueFamilyIgnored, vk::QueueFamilyIgnored,
+        resources.StorageImage->GetHandle(), range
+    );
 
-        commandBuffer.pipelineBarrier(
-            vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eAllCommands,
-            vk::DependencyFlags(), {}, {}, { barrier4 }
-        );
+    commandBuffer.pipelineBarrier(
+        vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eAllCommands,
+        vk::DependencyFlags(), {}, {}, { barrier4 }
+    );
 
-        commandBuffer.end();
-    }
+    commandBuffer.end();
 }
 
 void Renderer::OnUpdate(float timeStep)
@@ -721,6 +733,7 @@ void Renderer::OnRender()
         return;
 
     const SynchronizationObjects &sync = m_SynchronizationObjects[m_CurrentFrame];
+    const RenderingResources &res = m_RenderingResources[m_CurrentFrame];
 
     m_CurrentFrame++;
     if (m_CurrentFrame == m_Device.GetFrameInFlightCount())
@@ -750,6 +763,8 @@ void Renderer::OnRender()
         logger::warn(error.what());
         return;
     }
+
+    RecordCommandBuffer(m_Frames[imageIndex], res);
 
     std::vector<vk::PipelineStageFlags> stages = { vk::PipelineStageFlagBits::eColorAttachmentOutput };
     std::vector<vk::CommandBuffer> commandBuffers = { m_Frames[imageIndex].GetCommandBuffer() };
@@ -790,7 +805,6 @@ void Renderer::OnResize(uint32_t width, uint32_t height)
 
     RecreateSwapchain();
     UpdateDescriptorSets();
-    RecordCommandBuffers();
     m_Camera.OnResize(m_Width, m_Height);
 }
 
