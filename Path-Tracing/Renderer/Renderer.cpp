@@ -174,53 +174,6 @@ Renderer::Renderer(Window &window, Camera &camera) : m_Window(window), m_Camera(
     m_GraphicsQueue = m_Device.GetGraphicsQueue();
     m_CommandPool = m_Device.GetGraphicsCommandPool();
 
-    {
-        vk::AttachmentDescription colorAttachment(
-            vk::AttachmentDescriptionFlags(), vk::Format::eB8G8R8A8Unorm, vk::SampleCountFlagBits::e1,
-            vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eStore, vk::AttachmentLoadOp::eDontCare,
-            vk::AttachmentStoreOp::eDontCare, vk::ImageLayout::eUndefined, vk::ImageLayout::ePresentSrcKHR
-        );
-
-        vk::AttachmentReference colorReference(0, vk::ImageLayout::eColorAttachmentOptimal);
-
-        vk::SubpassDescription subpass(
-            vk::SubpassDescriptionFlags(), vk::PipelineBindPoint::eGraphics, {}, { colorReference }, {}
-        );
-
-        vk::SubpassDependency dependency1(
-            vk::SubpassExternal, 0, vk::PipelineStageFlagBits::eBottomOfPipe,
-            vk::PipelineStageFlagBits::eColorAttachmentOutput |
-                vk::PipelineStageFlagBits::eEarlyFragmentTests |
-                vk::PipelineStageFlagBits::eLateFragmentTests,
-            vk::AccessFlagBits::eNone,
-            vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite |
-                vk::AccessFlagBits::eDepthStencilAttachmentRead |
-                vk::AccessFlagBits::eDepthStencilAttachmentWrite,
-            vk::DependencyFlagBits::eByRegion
-        );
-
-        vk::SubpassDependency dependency2(
-            0, vk::SubpassExternal,
-            vk::PipelineStageFlagBits::eColorAttachmentOutput |
-                vk::PipelineStageFlagBits::eEarlyFragmentTests |
-                vk::PipelineStageFlagBits::eLateFragmentTests,
-            vk::PipelineStageFlagBits::eBottomOfPipe,
-            vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite |
-                vk::AccessFlagBits::eDepthStencilAttachmentRead |
-                vk::AccessFlagBits::eDepthStencilAttachmentWrite,
-            vk::AccessFlagBits::eMemoryRead, vk::DependencyFlagBits::eByRegion
-        );
-
-        std::vector<vk::AttachmentDescription> attachments = { colorAttachment };
-        std::vector<vk::SubpassDescription> subpasses = { subpass };
-        std::vector<vk::SubpassDependency> dependencies = { dependency1, dependency2 };
-        vk::RenderPassCreateInfo createInfo(
-            vk::RenderPassCreateFlags(), attachments, subpasses, dependencies
-        );
-
-        m_RenderPass = m_LogicalDevice.createRenderPass(createInfo);
-    }
-
     m_BufferBuilder = m_Device.CreateBufferBuilderUnique();
     m_ImageBuilder = m_Device.CreateImageBuilderUnique();
 
@@ -291,18 +244,68 @@ Renderer::~Renderer()
     m_Instance.destroy();
 }
 
+void Renderer::RecreateRenderPass()
+{
+    vk::AttachmentDescription colorAttachment(
+        vk::AttachmentDescriptionFlags(), m_Device.GetSurfaceFormat().format, vk::SampleCountFlagBits::e1,
+        vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eStore, vk::AttachmentLoadOp::eDontCare,
+        vk::AttachmentStoreOp::eDontCare, vk::ImageLayout::eUndefined, vk::ImageLayout::ePresentSrcKHR
+    );
+
+    vk::AttachmentReference colorReference(0, vk::ImageLayout::eColorAttachmentOptimal);
+
+    vk::SubpassDescription subpass(
+        vk::SubpassDescriptionFlags(), vk::PipelineBindPoint::eGraphics, {}, { colorReference }, {}
+    );
+
+    vk::SubpassDependency dependency1(
+        vk::SubpassExternal, 0, vk::PipelineStageFlagBits::eBottomOfPipe,
+        vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests |
+            vk::PipelineStageFlagBits::eLateFragmentTests,
+        vk::AccessFlagBits::eNone,
+        vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite |
+            vk::AccessFlagBits::eDepthStencilAttachmentRead |
+            vk::AccessFlagBits::eDepthStencilAttachmentWrite,
+        vk::DependencyFlagBits::eByRegion
+    );
+
+    vk::SubpassDependency dependency2(
+        0, vk::SubpassExternal,
+        vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests |
+            vk::PipelineStageFlagBits::eLateFragmentTests,
+        vk::PipelineStageFlagBits::eBottomOfPipe,
+        vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite |
+            vk::AccessFlagBits::eDepthStencilAttachmentRead |
+            vk::AccessFlagBits::eDepthStencilAttachmentWrite,
+        vk::AccessFlagBits::eMemoryRead, vk::DependencyFlagBits::eByRegion
+    );
+
+    std::vector<vk::AttachmentDescription> attachments = { colorAttachment };
+    std::vector<vk::SubpassDescription> subpasses = { subpass };
+    std::vector<vk::SubpassDependency> dependencies = { dependency1, dependency2 };
+    vk::RenderPassCreateInfo createInfo(vk::RenderPassCreateFlags(), attachments, subpasses, dependencies);
+
+    m_LogicalDevice.destroyRenderPass(m_RenderPass);
+    m_RenderPass = m_LogicalDevice.createRenderPass(createInfo);
+}
+
 void Renderer::RecreateSwapchain()
 {
     vk::SwapchainKHR oldSwapchain = m_Swapchain;
 
     m_Swapchain = m_Device.CreateSwapchain(m_Width, m_Height, oldSwapchain, m_Surface);
 
-    for (vk::Image image : m_LogicalDevice.getSwapchainImagesKHR(m_Swapchain))
-        m_Frames.emplace_back(Frame(
-            m_LogicalDevice, m_RenderPass, m_CommandPool, image, vk::Format::eB8G8R8A8Unorm, m_Width, m_Height
-        ));
+    RecreateRenderPass();
 
-    while (m_SynchronizationObjects.size() < m_Frames.size() - 1)
+    for (vk::Image image : m_LogicalDevice.getSwapchainImagesKHR(m_Swapchain))
+    {
+        m_Frames.emplace_back(Frame(
+            m_LogicalDevice, m_RenderPass, m_CommandPool, image, m_Device.GetSurfaceFormat().format, m_Width,
+            m_Height
+        ));
+    }
+
+    while (m_SynchronizationObjects.size() < m_Device.GetFrameInFlightCount())
     {
         m_SynchronizationObjects.push_back({
             m_LogicalDevice.createSemaphore(vk::SemaphoreCreateInfo()),
@@ -310,6 +313,9 @@ void Renderer::RecreateSwapchain()
             m_LogicalDevice.createFence(vk::FenceCreateInfo(vk::FenceCreateFlagBits::eSignaled)),
         });
     }
+
+    assert(m_Frames.size() == m_Device.GetSwapchainImageCount());
+    assert(m_SynchronizationObjects.size() == m_Device.GetFrameInFlightCount());
 
     m_LogicalDevice.destroySwapchainKHR(oldSwapchain);
 }
@@ -509,7 +515,7 @@ void Renderer::CreateStorageImage()
 {
     m_StorageImage =
         m_ImageBuilder->ResetFlags()
-            .SetFormat(vk::Format::eB8G8R8A8Unorm)
+            .SetFormat(vk::Format::eR8G8B8A8Unorm)
             .SetUsageFlags(vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eStorage)
             .SetMemoryFlags(vk::MemoryPropertyFlagBits::eDeviceLocal)
             .CreateImageUnique(m_Width, m_Height);
@@ -717,7 +723,7 @@ void Renderer::OnRender()
     const SynchronizationObjects &sync = m_SynchronizationObjects[m_CurrentFrame];
 
     m_CurrentFrame++;
-    if (m_CurrentFrame == m_Frames.size() - 1)
+    if (m_CurrentFrame == m_Device.GetFrameInFlightCount())
         m_CurrentFrame = 0;
 
     {

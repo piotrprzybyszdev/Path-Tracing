@@ -7,8 +7,8 @@ namespace PathTracing
 {
 
 Image::Image(
-    vk::Device device, const PhysicalDevice &physicalDevice, vk::Format format, uint32_t width, uint32_t height,
-    vk::ImageUsageFlags usageFlags, vk::MemoryPropertyFlags memoryFlags
+    vk::Device device, const PhysicalDevice &physicalDevice, vk::Format format, uint32_t width,
+    uint32_t height, vk::ImageUsageFlags usageFlags, vk::MemoryPropertyFlags memoryFlags
 )
     : m_Device(device), m_Width(width), m_Height(height), m_Format(format)
 {
@@ -29,9 +29,7 @@ Image::Image(
 
     vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
     vk::ImageViewCreateInfo viewCreateInfo =
-        vk::ImageViewCreateInfo(
-            vk::ImageViewCreateFlags(), m_Handle, vk::ImageViewType::e2D, vk::Format::eB8G8R8A8Unorm
-        )
+        vk::ImageViewCreateInfo(vk::ImageViewCreateFlags(), m_Handle, vk::ImageViewType::e2D, format)
             .setSubresourceRange(range);
 
     m_View = m_Device.createImageView(viewCreateInfo);

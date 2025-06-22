@@ -103,7 +103,7 @@ vk::CommandPool LogicalDevice::GetGraphicsCommandPool() const
 
 vk::SwapchainKHR LogicalDevice::CreateSwapchain(
     uint32_t width, uint32_t height, vk::SwapchainKHR oldSwapchain, vk::SurfaceKHR surface
-) const
+)
 {
     vk::SurfaceCapabilitiesKHR surfaceCapabilities = Physical.m_Handle.getSurfaceCapabilitiesKHR(surface);
     logger::debug("Supported usage flags: {}", vk::to_string(surfaceCapabilities.supportedUsageFlags));
@@ -113,7 +113,7 @@ vk::SwapchainKHR LogicalDevice::CreateSwapchain(
     );
 
     std::vector<vk::SurfaceFormatKHR> surfaceFormats = Physical.m_Handle.getSurfaceFormatsKHR(surface);
-    vk::SurfaceFormatKHR surfaceFormat = surfaceFormats[0];
+    m_SurfaceFormat = surfaceFormats[0];
     for (vk::SurfaceFormatKHR format : surfaceFormats)
     {
         logger::debug(
@@ -121,12 +121,12 @@ vk::SwapchainKHR LogicalDevice::CreateSwapchain(
         );
 
         if (format.format == PreferredFormat && format.colorSpace == PreferredColorSpace)
-            surfaceFormat = format;
+            m_SurfaceFormat = format;
     }
 
     logger::info(
-        "Selected surface format {} ({})", vk::to_string(surfaceFormat.format),
-        vk::to_string(surfaceFormat.colorSpace)
+        "Selected surface format {} ({})", vk::to_string(m_SurfaceFormat.format),
+        vk::to_string(m_SurfaceFormat.colorSpace)
     );
 
     std::vector<vk::PresentModeKHR> modes = Physical.m_Handle.getSurfacePresentModesKHR(surface);
@@ -134,10 +134,10 @@ vk::SwapchainKHR LogicalDevice::CreateSwapchain(
     for (vk::PresentModeKHR mode : modes)
         logger::debug("Supported present mode: {}", vk::to_string(mode));
 
-    vk::PresentModeKHR selectedPresentMode = vk::PresentModeKHR::eFifo;
+    m_PresentMode = vk::PresentModeKHR::eFifo;
     if (std::find(modes.begin(), modes.end(), PreferredPresentMode) != modes.end())
-        selectedPresentMode = PreferredPresentMode;
-    logger::info("Selected present mode: {}", vk::to_string(selectedPresentMode));
+        m_PresentMode = PreferredPresentMode;
+    logger::info("Selected present mode: {}", vk::to_string(m_PresentMode));
 
     logger::debug(
         "Surface allowed image count: {} - {}", surfaceCapabilities.minImageCount,
@@ -148,18 +148,41 @@ vk::SwapchainKHR LogicalDevice::CreateSwapchain(
     if (maxImageCount == 0)
         maxImageCount = std::numeric_limits<uint32_t>::max();
 
-    uint32_t imageCount = std::clamp(3u, surfaceCapabilities.minImageCount, maxImageCount);
-    logger::info("Image Count: {}", imageCount);
+    m_SwapchainImageCount = std::clamp(
+        GetPreferredSwapchainImageCount(m_PresentMode), surfaceCapabilities.minImageCount, maxImageCount
+    );
+    logger::info("Swapchain Image Count: {}", m_SwapchainImageCount);
+    logger::info("Frame In Flight Count: {}", GetFrameInFlightCount());
 
     vk::SwapchainCreateInfoKHR createInfo(
-        vk::SwapchainCreateFlagsKHR(), surface, imageCount, surfaceFormat.format, surfaceFormat.colorSpace,
-        vk::Extent2D(width, height), 1,
+        vk::SwapchainCreateFlagsKHR(), surface, m_SwapchainImageCount, m_SurfaceFormat.format,
+        m_SurfaceFormat.colorSpace, vk::Extent2D(width, height), 1,
         vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferDst,
         vk::SharingMode::eExclusive, { m_GraphicsQueueFamilyIndex }, surfaceCapabilities.currentTransform,
-        vk::CompositeAlphaFlagBitsKHR::eOpaque, selectedPresentMode, vk::True, oldSwapchain
+        vk::CompositeAlphaFlagBitsKHR::eOpaque, m_PresentMode, vk::True, oldSwapchain
     );
 
     return m_Handle.createSwapchainKHR(createInfo);
+}
+
+vk::SurfaceFormatKHR LogicalDevice::GetSurfaceFormat() const
+{
+    return m_SurfaceFormat;
+}
+
+vk::PresentModeKHR LogicalDevice::GetPresentMode() const
+{
+    return m_PresentMode;
+}
+
+uint32_t LogicalDevice::GetSwapchainImageCount() const
+{
+    return m_SwapchainImageCount;
+}
+
+uint32_t LogicalDevice::GetFrameInFlightCount() const
+{
+    return m_SwapchainImageCount - 1;
 }
 
 BufferBuilder LogicalDevice::CreateBufferBuilder() const
@@ -180,6 +203,21 @@ std::unique_ptr<ImageBuilder> LogicalDevice::CreateImageBuilderUnique() const
 std::unique_ptr<ShaderLibrary> LogicalDevice::CreateShaderLibrary() const
 {
     return std::make_unique<ShaderLibrary>(*this, Physical);
+}
+
+uint32_t LogicalDevice::GetPreferredSwapchainImageCount(vk::PresentModeKHR presentMode) const
+{
+    switch (presentMode)
+    {
+    case vk::PresentModeKHR::eMailbox:
+        return 3;
+    case vk::PresentModeKHR::eFifo:
+        return 2;
+    case vk::PresentModeKHR::eImmediate:
+        return 2;
+    default:
+        throw error(std::format("Present mode {} not supported", vk::to_string(presentMode)));
+    }
 }
 
 static bool checkSupported(
