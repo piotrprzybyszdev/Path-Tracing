@@ -58,6 +58,11 @@ vk::Image Frame::GetImage() const
     return m_Image;
 }
 
+vk::Framebuffer Frame::GetFrameBuffer() const
+{
+    return m_FrameBuffer;
+}
+
 vk::CommandBuffer Frame::GetCommandBuffer() const
 {
     return m_CommandBuffer;

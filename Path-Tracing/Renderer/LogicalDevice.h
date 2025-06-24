@@ -18,7 +18,9 @@ public:
     ~LogicalDevice();
 
     vk::Device GetHandle() const;
+    vk::PhysicalDevice GetPhysicalDeviceHandle() const;
 
+    uint32_t GetGraphicsQueueFamilyIndex() const;
     vk::Queue GetGraphicsQueue() const;
     vk::CommandPool GetGraphicsCommandPool() const;
     vk::SwapchainKHR CreateSwapchain(

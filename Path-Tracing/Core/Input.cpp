@@ -1,4 +1,5 @@
 #include "Input.h"
+#include "UserInterface.h"
 
 namespace PathTracing
 {
@@ -22,11 +23,17 @@ void Input::UnlockCursor()
 
 bool Input::IsKeyPressed(Key key)
 {
+    if (UserInterface::GetIsFocused())
+        return false;
+
     return glfwGetKey(s_Window, key) == GLFW_PRESS;
 }
 
 bool Input::IsMouseButtonPressed(MouseButton mouseButton)
 {
+    if (UserInterface::GetIsFocused())
+        return false;
+
     return glfwGetMouseButton(s_Window, mouseButton) == GLFW_PRESS;
 }
 

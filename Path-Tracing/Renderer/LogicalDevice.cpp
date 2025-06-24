@@ -91,6 +91,16 @@ vk::Device LogicalDevice::GetHandle() const
     return m_Handle;
 }
 
+vk::PhysicalDevice LogicalDevice::GetPhysicalDeviceHandle() const
+{
+    return Physical.m_Handle;
+}
+
+uint32_t LogicalDevice::GetGraphicsQueueFamilyIndex() const
+{
+    return m_GraphicsQueueFamilyIndex;
+}
+
 vk::Queue LogicalDevice::GetGraphicsQueue() const
 {
     return m_GraphicsQueue;

@@ -20,6 +20,7 @@ public:
     Frame(Frame &&frame) noexcept;
 
     vk::Image GetImage() const;
+    vk::Framebuffer GetFrameBuffer() const;
     vk::CommandBuffer GetCommandBuffer() const;
 
 private:

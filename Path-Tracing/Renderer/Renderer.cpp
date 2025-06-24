@@ -10,6 +10,8 @@
 #include "Core/Core.h"
 #include "Renderer/Renderer.h"
 
+#include "UserInterface.h"
+
 namespace PathTracing
 {
 
@@ -184,6 +186,13 @@ Renderer::Renderer(Window &window, Camera &camera) : m_Window(window), m_Camera(
     RecreateSwapchain();
     CreateScene();
     SetupPipeline();
+    
+    // TODO: set minImageCount properly
+    UserInterface::Init(
+        m_Window.GetHandle(), m_Instance, m_Device.GetPhysicalDeviceHandle(), m_LogicalDevice,
+        m_Device.GetGraphicsQueueFamilyIndex(), m_Device.GetGraphicsQueue(), 2,
+        m_Device.GetSwapchainImageCount(), m_RenderPass
+    );
 
     camera.OnResize(m_Width, m_Height);
 }
@@ -191,6 +200,8 @@ Renderer::Renderer(Window &window, Camera &camera) : m_Window(window), m_Camera(
 Renderer::~Renderer()
 {
     m_LogicalDevice.waitIdle();
+
+    UserInterface::Shutdown();
 
     for (RenderingResources &res : m_RenderingResources)
     {
@@ -251,8 +262,8 @@ void Renderer::RecreateRenderPass()
 {
     vk::AttachmentDescription colorAttachment(
         vk::AttachmentDescriptionFlags(), m_Device.GetSurfaceFormat().format, vk::SampleCountFlagBits::e1,
-        vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eStore, vk::AttachmentLoadOp::eDontCare,
-        vk::AttachmentStoreOp::eDontCare, vk::ImageLayout::eUndefined, vk::ImageLayout::ePresentSrcKHR
+        vk::AttachmentLoadOp::eLoad, vk::AttachmentStoreOp::eStore, vk::AttachmentLoadOp::eDontCare,
+        vk::AttachmentStoreOp::eDontCare, vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::ePresentSrcKHR
     );
 
     vk::AttachmentReference colorReference(0, vk::ImageLayout::eColorAttachmentOptimal);
@@ -307,6 +318,8 @@ void Renderer::RecreateSwapchain()
             m_Height
         ));
     }
+
+    // TODO: Send to UI the min swapchain image count
 
     while (m_SynchronizationObjects.size() < m_Device.GetFrameInFlightCount())
     {
@@ -644,6 +657,7 @@ void Renderer::RecordCommandBuffer(const Frame &frame, const RenderingResources 
     vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
 
     vk::CommandBuffer commandBuffer = frame.GetCommandBuffer();
+    vk::Framebuffer frameBuffer = frame.GetFrameBuffer();
     vk::Image image = frame.GetImage();
 
     commandBuffer.begin(vk::CommandBufferBeginInfo());
@@ -693,7 +707,7 @@ void Renderer::RecordCommandBuffer(const Frame &frame, const RenderingResources 
 
     vk::ImageMemoryBarrier barrier3(
         vk::AccessFlagBits::eTransferWrite, vk::AccessFlagBits::eNone,
-        vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::ePresentSrcKHR, vk::QueueFamilyIgnored,
+        vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eColorAttachmentOptimal, vk::QueueFamilyIgnored,
         vk::QueueFamilyIgnored, image, range
     );
 
@@ -712,6 +726,14 @@ void Renderer::RecordCommandBuffer(const Frame &frame, const RenderingResources 
         vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eAllCommands,
         vk::DependencyFlags(), {}, {}, { barrier4 }
     );
+
+    std::vector<vk::ClearValue> clearValues = { vk::ClearValue({ 1.0f, 0.0f, 0.033f, 0.0f }) };
+    vk::RenderPassBeginInfo renderPassBeginInfo(
+        m_RenderPass, frameBuffer, vk::Rect2D({}, vk::Extent2D(m_Width, m_Height)), clearValues
+    );
+    commandBuffer.beginRenderPass(renderPassBeginInfo, vk::SubpassContents::eInline);
+    UserInterface::Render(commandBuffer);
+    commandBuffer.endRenderPass();
 
     commandBuffer.end();
 }
