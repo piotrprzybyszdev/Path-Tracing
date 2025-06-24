@@ -6,7 +6,7 @@ namespace PathTracing
 {
 
 Frame::Frame(
-    vk::Device device, vk::RenderPass renderPass, vk::CommandPool commandPool, vk::Image image,
+    vk::Device device, vk::CommandPool commandPool, vk::Image image,
     vk::Format format, uint32_t width, uint32_t height
 )
     : m_Device(device), m_CommandPool(commandPool), m_Image(image)
@@ -16,13 +16,6 @@ Frame::Frame(
         vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1)
     );
     m_ImageView = m_Device.createImageView(createInfo);
-
-    vk::FramebufferCreateInfo framebufferCreateInfo(
-        vk::FramebufferCreateFlags(), renderPass, {}, width, height, 1
-    );
-
-    framebufferCreateInfo.setAttachments({ m_ImageView });
-    m_FrameBuffer = m_Device.createFramebuffer(framebufferCreateInfo);
 
     vk::CommandBufferAllocateInfo allocateInfo(commandPool, vk::CommandBufferLevel::ePrimary, 1);
     m_CommandBuffer = m_Device.allocateCommandBuffers(allocateInfo)[0];
@@ -56,6 +49,11 @@ Frame::Frame(Frame &&frame) noexcept
 vk::Image Frame::GetImage() const
 {
     return m_Image;
+}
+
+vk::ImageView Frame::GetImageView() const
+{
+    return m_ImageView;
 }
 
 vk::Framebuffer Frame::GetFrameBuffer() const

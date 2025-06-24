@@ -9,7 +9,7 @@ class Frame
 {
 public:
     Frame(
-        vk::Device device, vk::RenderPass renderPass, vk::CommandPool commandPool, vk::Image image,
+        vk::Device device, vk::CommandPool commandPool, vk::Image image,
         vk::Format format, uint32_t width, uint32_t height
     );
     ~Frame();
@@ -20,6 +20,7 @@ public:
     Frame(Frame &&frame) noexcept;
 
     vk::Image GetImage() const;
+    vk::ImageView GetImageView() const;
     vk::Framebuffer GetFrameBuffer() const;
     vk::CommandBuffer GetCommandBuffer() const;
 

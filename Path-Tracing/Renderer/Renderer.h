@@ -119,12 +119,9 @@ private:
 
     vk::DescriptorPool m_DescriptorPool { nullptr };
 
-    vk::RenderPass m_RenderPass { nullptr };
-
 private:
     void OnResize(uint32_t width, uint32_t height);
 
-    void RecreateRenderPass();
     void RecreateSwapchain();
 
     void CreateStorageImage();

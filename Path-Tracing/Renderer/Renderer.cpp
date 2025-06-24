@@ -153,10 +153,12 @@ Renderer::Renderer(Window &window, Camera &camera) : m_Window(window), m_Camera(
         VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
         VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
         VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+        VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
     };
 
     vk::PhysicalDeviceFeatures2 features;
     vk::PhysicalDeviceBufferDeviceAddressFeatures bufferFeatures;
+
     bufferFeatures.setBufferDeviceAddress(vk::True);
     features.setPNext(&bufferFeatures);
 
@@ -167,6 +169,10 @@ Renderer::Renderer(Window &window, Camera &camera) : m_Window(window), m_Camera(
     vk::PhysicalDeviceRayTracingPipelineFeaturesKHR pipelineFeatures;
     pipelineFeatures.setRayTracingPipeline(vk::True);
     accelerationStructureFeatures.setPNext(&pipelineFeatures);
+
+    vk::PhysicalDeviceDynamicRenderingFeatures dynamicRenderingFeatures;
+    dynamicRenderingFeatures.setDynamicRendering(vk::True);
+    pipelineFeatures.setPNext(&dynamicRenderingFeatures);
 
     m_Surface = window.CreateSurface(m_Instance);
 
@@ -186,12 +192,11 @@ Renderer::Renderer(Window &window, Camera &camera) : m_Window(window), m_Camera(
     RecreateSwapchain();
     CreateScene();
     SetupPipeline();
-    
-    // TODO: set minImageCount properly
+
     UserInterface::Init(
-        m_Window.GetHandle(), m_Instance, m_Device.GetPhysicalDeviceHandle(), m_LogicalDevice,
-        m_Device.GetGraphicsQueueFamilyIndex(), m_Device.GetGraphicsQueue(), 2,
-        m_Device.GetSwapchainImageCount(), m_RenderPass
+        m_Window.GetHandle(), m_Instance, m_Device.GetSurfaceFormat().format,
+        m_Device.GetPhysicalDeviceHandle(), m_LogicalDevice, m_Device.GetGraphicsQueueFamilyIndex(),
+        m_Device.GetGraphicsQueue(), m_Device.GetSwapchainImageCount()
     );
 
     camera.OnResize(m_Width, m_Height);
@@ -218,7 +223,6 @@ Renderer::~Renderer()
     m_Frames.clear();
     m_LogicalDevice.destroySwapchainKHR(m_Swapchain);
 
-    m_LogicalDevice.destroyRenderPass(m_RenderPass);
     m_LogicalDevice.destroyDescriptorPool(m_DescriptorPool);
     m_LogicalDevice.destroyPipeline(m_Pipeline);
 
@@ -258,68 +262,22 @@ Renderer::~Renderer()
     m_Instance.destroy();
 }
 
-void Renderer::RecreateRenderPass()
-{
-    vk::AttachmentDescription colorAttachment(
-        vk::AttachmentDescriptionFlags(), m_Device.GetSurfaceFormat().format, vk::SampleCountFlagBits::e1,
-        vk::AttachmentLoadOp::eLoad, vk::AttachmentStoreOp::eStore, vk::AttachmentLoadOp::eDontCare,
-        vk::AttachmentStoreOp::eDontCare, vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::ePresentSrcKHR
-    );
-
-    vk::AttachmentReference colorReference(0, vk::ImageLayout::eColorAttachmentOptimal);
-
-    vk::SubpassDescription subpass(
-        vk::SubpassDescriptionFlags(), vk::PipelineBindPoint::eGraphics, {}, { colorReference }, {}
-    );
-
-    vk::SubpassDependency dependency1(
-        vk::SubpassExternal, 0, vk::PipelineStageFlagBits::eBottomOfPipe,
-        vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests |
-            vk::PipelineStageFlagBits::eLateFragmentTests,
-        vk::AccessFlagBits::eNone,
-        vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite |
-            vk::AccessFlagBits::eDepthStencilAttachmentRead |
-            vk::AccessFlagBits::eDepthStencilAttachmentWrite,
-        vk::DependencyFlagBits::eByRegion
-    );
-
-    vk::SubpassDependency dependency2(
-        0, vk::SubpassExternal,
-        vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests |
-            vk::PipelineStageFlagBits::eLateFragmentTests,
-        vk::PipelineStageFlagBits::eBottomOfPipe,
-        vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite |
-            vk::AccessFlagBits::eDepthStencilAttachmentRead |
-            vk::AccessFlagBits::eDepthStencilAttachmentWrite,
-        vk::AccessFlagBits::eMemoryRead, vk::DependencyFlagBits::eByRegion
-    );
-
-    std::vector<vk::AttachmentDescription> attachments = { colorAttachment };
-    std::vector<vk::SubpassDescription> subpasses = { subpass };
-    std::vector<vk::SubpassDependency> dependencies = { dependency1, dependency2 };
-    vk::RenderPassCreateInfo createInfo(vk::RenderPassCreateFlags(), attachments, subpasses, dependencies);
-
-    m_LogicalDevice.destroyRenderPass(m_RenderPass);
-    m_RenderPass = m_LogicalDevice.createRenderPass(createInfo);
-}
-
 void Renderer::RecreateSwapchain()
 {
     vk::SwapchainKHR oldSwapchain = m_Swapchain;
+    vk::Format oldFormat = m_Device.GetSurfaceFormat().format;
 
     m_Swapchain = m_Device.CreateSwapchain(m_Width, m_Height, oldSwapchain, m_Surface);
-
-    RecreateRenderPass();
 
     for (vk::Image image : m_LogicalDevice.getSwapchainImagesKHR(m_Swapchain))
     {
         m_Frames.emplace_back(Frame(
-            m_LogicalDevice, m_RenderPass, m_CommandPool, image, m_Device.GetSurfaceFormat().format, m_Width,
-            m_Height
+            m_LogicalDevice, m_CommandPool, image, m_Device.GetSurfaceFormat().format, m_Width, m_Height
         ));
     }
 
-    // TODO: Send to UI the min swapchain image count
+    // The UI depends on the surface format (otherwise the UI has to be reinitialized)
+    assert(!oldSwapchain || oldFormat == m_Device.GetSurfaceFormat().format);
 
     while (m_SynchronizationObjects.size() < m_Device.GetFrameInFlightCount())
     {
@@ -567,7 +525,7 @@ void Renderer::CreateDescriptorSets()
     m_DescriptorPool = m_LogicalDevice.createDescriptorPool(createInfo);
 
     vk::DescriptorSetAllocateInfo allocateInfo(m_DescriptorPool, { m_DescriptorSetLayout });
-    
+
     for (RenderingResources &res : m_RenderingResources)
     {
         res.DescriptorSet = m_LogicalDevice.allocateDescriptorSets(allocateInfo)[0];
@@ -681,8 +639,8 @@ void Renderer::RecordCommandBuffer(const Frame &frame, const RenderingResources 
     );
 
     commandBuffer.pipelineBarrier(
-        vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer,
-        vk::DependencyFlags(), {}, {}, { barrier }
+        vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer, vk::DependencyFlags(),
+        {}, {}, { barrier }
     );
 
     vk::ImageMemoryBarrier barrier2(
@@ -692,8 +650,8 @@ void Renderer::RecordCommandBuffer(const Frame &frame, const RenderingResources 
     );
 
     commandBuffer.pipelineBarrier(
-        vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eTransfer,
-        vk::DependencyFlags(), {}, {}, { barrier2 }
+        vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eTransfer, vk::DependencyFlags(),
+        {}, {}, { barrier2 }
     );
 
     vk::ImageSubresourceLayers subresource(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
@@ -706,34 +664,45 @@ void Renderer::RecordCommandBuffer(const Frame &frame, const RenderingResources 
     );
 
     vk::ImageMemoryBarrier barrier3(
-        vk::AccessFlagBits::eTransferWrite, vk::AccessFlagBits::eNone,
-        vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eColorAttachmentOptimal, vk::QueueFamilyIgnored,
-        vk::QueueFamilyIgnored, image, range
+        vk::AccessFlagBits::eTransferWrite, vk::AccessFlagBits::eNone, vk::ImageLayout::eTransferDstOptimal,
+        vk::ImageLayout::eColorAttachmentOptimal, vk::QueueFamilyIgnored, vk::QueueFamilyIgnored, image, range
     );
 
     commandBuffer.pipelineBarrier(
-        vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eBottomOfPipe,
-        vk::DependencyFlags(), {}, {}, { barrier3 }
+        vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eBottomOfPipe, vk::DependencyFlags(),
+        {}, {}, { barrier3 }
     );
 
     vk::ImageMemoryBarrier barrier4(
-        vk::AccessFlagBits::eTransferRead, vk::AccessFlagBits::eNone,
-        vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eGeneral, vk::QueueFamilyIgnored, vk::QueueFamilyIgnored,
+        vk::AccessFlagBits::eTransferRead, vk::AccessFlagBits::eNone, vk::ImageLayout::eTransferSrcOptimal,
+        vk::ImageLayout::eGeneral, vk::QueueFamilyIgnored, vk::QueueFamilyIgnored,
         resources.StorageImage->GetHandle(), range
     );
 
     commandBuffer.pipelineBarrier(
-        vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eAllCommands,
-        vk::DependencyFlags(), {}, {}, { barrier4 }
+        vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eAllCommands, vk::DependencyFlags(),
+        {}, {}, { barrier4 }
     );
 
-    std::vector<vk::ClearValue> clearValues = { vk::ClearValue({ 1.0f, 0.0f, 0.033f, 0.0f }) };
-    vk::RenderPassBeginInfo renderPassBeginInfo(
-        m_RenderPass, frameBuffer, vk::Rect2D({}, vk::Extent2D(m_Width, m_Height)), clearValues
-    );
-    commandBuffer.beginRenderPass(renderPassBeginInfo, vk::SubpassContents::eInline);
+    std::vector<vk::RenderingAttachmentInfo> colorAttachments = {
+        vk::RenderingAttachmentInfo(frame.GetImageView(), vk::ImageLayout::eColorAttachmentOptimal)
+    };
+    commandBuffer.beginRendering(vk::RenderingInfo(
+        vk::RenderingFlags(), vk::Rect2D({}, vk::Extent2D(m_Width, m_Height)), 1, 0, colorAttachments
+    ));
     UserInterface::Render(commandBuffer);
-    commandBuffer.endRenderPass();
+    commandBuffer.endRendering();
+
+    vk::ImageMemoryBarrier barrier5(
+        vk::AccessFlagBits::eColorAttachmentWrite, vk::AccessFlagBits::eNone,
+        vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::ePresentSrcKHR, vk::QueueFamilyIgnored,
+        vk::QueueFamilyIgnored, image, range
+    );
+
+    commandBuffer.pipelineBarrier(
+        vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eBottomOfPipe,
+        vk::DependencyFlags(), {}, {}, { barrier5 }
+    );
 
     commandBuffer.end();
 }

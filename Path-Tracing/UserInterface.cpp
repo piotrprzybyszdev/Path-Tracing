@@ -2,6 +2,9 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_vulkan.h>
 #include <vulkan/vulkan.hpp>
+#include <vulkan/vk_enum_string_helper.h>
+
+#include "Core/Core.h"
 
 #include "UserInterface.h"
 
@@ -10,13 +13,19 @@ namespace PathTracing
 
 bool UserInterface::s_IsFocused = false;
 
+static void CheckVkResult(VkResult err)
+{
+    if (err == VkResult::VK_SUCCESS)
+        return;
+
+    logger::error("ImGui Vulkan Error: {}", vk::to_string(static_cast<vk::Result>(err)));
+}
+
 void UserInterface::Init(
-    GLFWwindow *window, vk::Instance instance, vk::PhysicalDevice physicalDevice, vk::Device device,
-    uint32_t queueFamily, vk::Queue queue, uint32_t minImageCount,
-    uint32_t imageCount, vk::RenderPass renderPass
+    GLFWwindow *window, vk::Instance instance, vk::Format format, vk::PhysicalDevice physicalDevice,
+    vk::Device device, uint32_t queueFamily, vk::Queue queue, uint32_t swapchainImageCount
 )
 {
-    // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO &io = ImGui::GetIO();
@@ -25,7 +34,6 @@ void UserInterface::Init(
     ImGui::StyleColorsDark();
 
     // TODO: Add allocation Callback for when VMA is integrated
-    // TODO: Add debug vkcheck callback
     ImGui_ImplGlfw_InitForVulkan(window, true);
     ImGui_ImplVulkan_InitInfo init_info = {};
     init_info.Instance = instance;
@@ -33,13 +41,14 @@ void UserInterface::Init(
     init_info.Device = device;
     init_info.QueueFamily = queueFamily;
     init_info.Queue = queue;
-    init_info.DescriptorPoolSize = 2;
+    init_info.DescriptorPoolSize = swapchainImageCount;
     init_info.Allocator = nullptr;
-    init_info.RenderPass = renderPass;
-    init_info.MinImageCount = minImageCount;
-    init_info.ImageCount = imageCount;
-    init_info.CheckVkResultFn = nullptr;
-    init_info.UseDynamicRendering = false;
+    init_info.MinImageCount = swapchainImageCount;
+    init_info.ImageCount = swapchainImageCount;
+    init_info.CheckVkResultFn = CheckVkResult;
+    init_info.UseDynamicRendering = true;
+    std::vector<vk::Format> formats = { format };
+    init_info.PipelineRenderingCreateInfo = vk::PipelineRenderingCreateInfoKHR(0, formats);
     ImGui_ImplVulkan_Init(&init_info);
 }
 
