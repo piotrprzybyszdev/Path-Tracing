@@ -8,291 +8,94 @@
 #include <string_view>
 
 #include "Core/Core.h"
-#include "Renderer/Renderer.h"
 
+#include "DeviceContext.h"
+#include "Renderer.h"
+
+#include "Application.h"
 #include "UserInterface.h"
 
 namespace PathTracing
 {
 
-static bool checkSupported(
-    const std::vector<const char *> &extensions, const std::vector<const char *> &layers,
-    const std::vector<vk::ExtensionProperties> &supportedExtensions,
-    const std::vector<vk::LayerProperties> &supportedLayers
-)
+static inline constexpr uint32_t s_MaxFramesInFlight = 10;
+
+const Swapchain *Renderer::s_Swapchain = nullptr;
+vk::Extent2D Renderer::s_Extent = {};
+
+Renderer::CommandBuffer Renderer::s_MainCommandBuffer = { nullptr, nullptr };
+vk::CommandPool Renderer::s_MainCommandPool = nullptr;
+
+std::vector<Renderer::RenderingResources> Renderer::s_RenderingResources = {};
+std::unique_ptr<Buffer> Renderer::s_UniformBuffer = nullptr;
+vk::DescriptorSetLayout Renderer::s_DescriptorSetLayout = nullptr;
+vk::PipelineLayout Renderer::s_PipelineLayout = nullptr;
+vk::Pipeline Renderer::s_Pipeline = nullptr;
+vk::DescriptorPool Renderer::s_DescriptorPool = nullptr;
+
+std::unique_ptr<BufferBuilder> Renderer::s_BufferBuilder = nullptr;
+std::unique_ptr<ImageBuilder> Renderer::s_ImageBuilder = nullptr;
+std::unique_ptr<ShaderLibrary> Renderer::s_ShaderLibrary = nullptr;
+
+Renderer::SceneData Renderer::s_StaticSceneData = {};
+
+void Renderer::Init(const Swapchain *swapchain)
 {
-    for (const vk::ExtensionProperties &extension : supportedExtensions)
-        logger::debug("Extension {} is supported", extension.extensionName.data());
+    s_Swapchain = swapchain;
 
-    for (const char *extension : extensions)
-        if (std::none_of(
-                supportedExtensions.begin(), supportedExtensions.end(),
-                [extension](vk::ExtensionProperties prop) {
-                    return strcmp(prop.extensionName.data(), extension) == 0;
-                }
-            ))
-        {
-            logger::error("Extension {} is not supported", extension);
-            return false;
-        }
+    vk::CommandPoolCreateInfo createInfo(
+        vk::CommandPoolCreateFlagBits::eResetCommandBuffer, DeviceContext::GetGraphicsQueueFamilyIndex()
+    );
+    s_MainCommandPool = DeviceContext::GetLogical().createCommandPool(createInfo);
 
-    for (const vk::LayerProperties &layer : supportedLayers)
-        logger::debug("Layer {} is supported", layer.layerName.data());
+    s_MainCommandBuffer.Init();
 
-    for (std::string_view layer : layers)
-        if (std::none_of(supportedLayers.begin(), supportedLayers.end(), [layer](vk::LayerProperties prop) {
-                return strcmp(prop.layerName.data(), layer.data()) == 0;
-            }))
-        {
-            logger::error("Layer {} is not supported", layer);
-            return false;
-        }
+    s_BufferBuilder = std::make_unique<BufferBuilder>();
+    s_ImageBuilder = std::make_unique<ImageBuilder>();
 
-    return true;
-}
+    s_ShaderLibrary = std::make_unique<ShaderLibrary>();
 
-static VKAPI_ATTR vk::Bool32 VKAPI_CALL debugCallback(
-    vk::DebugUtilsMessageSeverityFlagBitsEXT messageSeverity, vk::DebugUtilsMessageTypeFlagsEXT messageType,
-    const vk::DebugUtilsMessengerCallbackDataEXT *pCallbackData, void *pUserData
-)
-{
-    switch (messageSeverity)
-    {
-    case vk::DebugUtilsMessageSeverityFlagBitsEXT::eError:
-        logger::error(pCallbackData->pMessage);
-        break;
-    case vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning:
-        logger::warn(pCallbackData->pMessage);
-        break;
-    case vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo:
-        logger::info(pCallbackData->pMessage);
-        break;
-    case vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose:
-        logger::debug(pCallbackData->pMessage);
-        break;
-    }
-
-    return VK_FALSE;
-}
-
-Renderer::Renderer(Window &window, Camera &camera) : m_Window(window), m_Camera(camera)
-{
-    uint32_t version = vk::enumerateInstanceVersion();
-
-    uint32_t major = vk::versionMajor(version);
-    uint32_t minor = vk::versionMinor(version);
-    uint32_t patch = vk::versionPatch(version);
-
-    logger::debug("Highest supported vulkan version: {}.{}.{}", major, minor, patch);
-
-    version = vk::makeVersion(major, minor, 0u);
-    logger::info("Selected vulkan version: {}.{}.{}", major, minor, 0u);
-
-    vk::ApplicationInfo applicationInfo("Path Tracing", 1, "Path Tracing", 1, version);
-
-    uint32_t glfwExtensionCount = 0;
-    const char **glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
-
-    std::vector<const char *> requestedExtensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
-
-    for (std::string_view extension : requestedExtensions)
-        logger::info("Extension {} is required", extension);
-
-    std::vector<const char *> requestedLayers;
-#ifndef NDEBUG
-    requestedExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-    requestedLayers.push_back("VK_LAYER_KHRONOS_validation");
-#endif
-
-    for (std::string_view layer : requestedLayers)
-        logger::info("Layer {} is required", layer);
-
-    {
-        std::vector<vk::ExtensionProperties> supportedExtensions = vk::enumerateInstanceExtensionProperties();
-        std::vector<vk::LayerProperties> supportedLayers = vk::enumerateInstanceLayerProperties();
-        if (!checkSupported(requestedExtensions, requestedLayers, supportedExtensions, supportedLayers))
-            throw error("Instance doesn't have required extensions or layers");
-
-        vk::InstanceCreateInfo createInfo(
-            vk::InstanceCreateFlags(), &applicationInfo, requestedLayers, requestedExtensions
-        );
-
-        try
-        {
-            m_Instance = vk::createInstance(createInfo);
-        }
-        catch (vk::SystemError &error)
-        {
-            throw PathTracing::error(error.what());
-        }
-    }
-
-    m_DispatchLoader = vk::detail::DispatchLoaderDynamic(m_Instance, vkGetInstanceProcAddr);
-
-#ifndef NDEBUG
-    {
-        vk::DebugUtilsMessengerCreateInfoEXT createInfo(
-            vk::DebugUtilsMessengerCreateFlagsEXT(),
-            vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose |
-                vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo |
-                vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning |
-                vk::DebugUtilsMessageSeverityFlagBitsEXT::eError,
-            vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral |
-                vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance |
-                vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation |
-                vk::DebugUtilsMessageTypeFlagBitsEXT::eDeviceAddressBinding,
-            debugCallback, nullptr
-        );
-
-        m_DebugMessenger = m_Instance.createDebugUtilsMessengerEXT(createInfo, nullptr, m_DispatchLoader);
-    }
-#endif
-
-    std::vector<const char *> deviceExtensions = {
-        VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-        VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
-        VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
-        VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
-        VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
-    };
-
-    vk::PhysicalDeviceFeatures2 features;
-    vk::PhysicalDeviceBufferDeviceAddressFeatures bufferFeatures;
-
-    bufferFeatures.setBufferDeviceAddress(vk::True);
-    features.setPNext(&bufferFeatures);
-
-    vk::PhysicalDeviceAccelerationStructureFeaturesKHR accelerationStructureFeatures;
-    accelerationStructureFeatures.setAccelerationStructure(vk::True);
-    bufferFeatures.setPNext(&accelerationStructureFeatures);
-
-    vk::PhysicalDeviceRayTracingPipelineFeaturesKHR pipelineFeatures;
-    pipelineFeatures.setRayTracingPipeline(vk::True);
-    accelerationStructureFeatures.setPNext(&pipelineFeatures);
-
-    vk::PhysicalDeviceDynamicRenderingFeatures dynamicRenderingFeatures;
-    dynamicRenderingFeatures.setDynamicRendering(vk::True);
-    pipelineFeatures.setPNext(&dynamicRenderingFeatures);
-
-    m_Surface = window.CreateSurface(m_Instance);
-
-    m_Device = LogicalDevice(m_Instance, m_Surface, requestedLayers, deviceExtensions, &features);
-    m_LogicalDevice = m_Device.GetHandle();
-
-    m_GraphicsQueue = m_Device.GetGraphicsQueue();
-    m_CommandPool = m_Device.GetGraphicsCommandPool();
-
-    m_BufferBuilder = m_Device.CreateBufferBuilderUnique();
-    m_ImageBuilder = m_Device.CreateImageBuilderUnique();
-
-    vk::CommandBufferAllocateInfo allocateInfo(m_CommandPool, vk::CommandBufferLevel::ePrimary, 1);
-    m_MainCommandBuffer.CommandBuffer = m_LogicalDevice.allocateCommandBuffers(allocateInfo)[0];
-    m_MainCommandBuffer.Fence = m_LogicalDevice.createFence(vk::FenceCreateInfo());
-
-    RecreateSwapchain();
     CreateScene();
     SetupPipeline();
-
-    UserInterface::Init(
-        m_Window.GetHandle(), m_Instance, m_Device.GetSurfaceFormat().format,
-        m_Device.GetPhysicalDeviceHandle(), m_LogicalDevice, m_Device.GetGraphicsQueueFamilyIndex(),
-        m_Device.GetGraphicsQueue(), m_Device.GetSwapchainImageCount()
-    );
-
-    camera.OnResize(m_Width, m_Height);
 }
 
-Renderer::~Renderer()
+void Renderer::Shutdown()
 {
-    m_LogicalDevice.waitIdle();
-
-    UserInterface::Shutdown();
-
-    for (RenderingResources &res : m_RenderingResources)
+    for (RenderingResources &res : s_RenderingResources)
     {
-        res.StorageImage.reset();
+        DeviceContext::GetLogical().destroyCommandPool(res.CommandPool);
     }
+    s_RenderingResources.clear();
 
-    for (SynchronizationObjects &sync : m_SynchronizationObjects)
-    {
-        m_LogicalDevice.destroyFence(sync.InFlightFence);
-        m_LogicalDevice.destroySemaphore(sync.RenderCompleteSemaphore);
-        m_LogicalDevice.destroySemaphore(sync.ImageAcquiredSemaphore);
-    }
+    DeviceContext::GetLogical().destroyDescriptorPool(s_DescriptorPool);
+    DeviceContext::GetLogical().destroyPipeline(s_Pipeline);
 
-    m_Frames.clear();
-    m_LogicalDevice.destroySwapchainKHR(m_Swapchain);
+    DeviceContext::GetLogical().destroyPipelineLayout(s_PipelineLayout);
+    DeviceContext::GetLogical().destroyDescriptorSetLayout(s_DescriptorSetLayout);
 
-    m_LogicalDevice.destroyDescriptorPool(m_DescriptorPool);
-    m_LogicalDevice.destroyPipeline(m_Pipeline);
-
-    m_ShaderLibrary.reset();
-
-    m_LogicalDevice.destroyPipelineLayout(m_PipelineLayout);
-    m_LogicalDevice.destroyDescriptorSetLayout(m_DescriptorSetLayout);
-
-    m_LogicalDevice.destroyAccelerationStructureKHR(
-        m_TopLevelAccelerationStructure, nullptr, m_DispatchLoader
+    DeviceContext::GetLogical().destroyAccelerationStructureKHR(
+        s_StaticSceneData.TopLevelAccelerationStructure, nullptr, Application::GetDispatchLoader()
     );
 
-    m_TopLevelAccelerationStructureBuffer.reset();
+    s_StaticSceneData.TopLevelAccelerationStructureBuffer.reset();
 
-    m_LogicalDevice.destroyAccelerationStructureKHR(
-        m_BottomLevelAccelerationStructure, nullptr, m_DispatchLoader
+    DeviceContext::GetLogical().destroyAccelerationStructureKHR(
+        s_StaticSceneData.BottomLevelAccelerationStructure, nullptr, Application::GetDispatchLoader()
     );
-    m_BottomLevelAccelerationStructureBuffer.reset();
+    s_StaticSceneData.BottomLevelAccelerationStructureBuffer.reset();
 
-    m_UniformBuffer.reset();
-    m_TransformMatrixBuffer.reset();
-    m_IndexBuffer.reset();
-    m_VertexBuffer.reset();
+    s_UniformBuffer.reset();
+    s_StaticSceneData.TransformMatrixBuffer.reset();
+    s_StaticSceneData.IndexBuffer.reset();
+    s_StaticSceneData.VertexBuffer.reset();
 
-    m_LogicalDevice.freeCommandBuffers(m_CommandPool, { m_MainCommandBuffer.CommandBuffer });
-    m_LogicalDevice.destroyFence(m_MainCommandBuffer.Fence);
+    s_ShaderLibrary.reset();
+    s_ImageBuilder.reset();
+    s_BufferBuilder.reset();
 
-    m_LogicalDevice.destroyCommandPool(m_CommandPool);
+    s_MainCommandBuffer.Destroy();
 
-    m_LogicalDevice.destroy();
-
-    m_Instance.destroySurfaceKHR(m_Surface);
-#ifndef NDEBUG
-    m_Instance.destroyDebugUtilsMessengerEXT(m_DebugMessenger, nullptr, m_DispatchLoader);
-#endif
-
-    m_Instance.destroy();
-}
-
-void Renderer::RecreateSwapchain()
-{
-    vk::SwapchainKHR oldSwapchain = m_Swapchain;
-    vk::Format oldFormat = m_Device.GetSurfaceFormat().format;
-
-    m_Swapchain = m_Device.CreateSwapchain(m_Width, m_Height, oldSwapchain, m_Surface);
-
-    for (vk::Image image : m_LogicalDevice.getSwapchainImagesKHR(m_Swapchain))
-    {
-        m_Frames.emplace_back(Frame(
-            m_LogicalDevice, m_CommandPool, image, m_Device.GetSurfaceFormat().format, m_Width, m_Height
-        ));
-    }
-
-    // The UI depends on the surface format (otherwise the UI has to be reinitialized)
-    assert(!oldSwapchain || oldFormat == m_Device.GetSurfaceFormat().format);
-
-    while (m_SynchronizationObjects.size() < m_Device.GetFrameInFlightCount())
-    {
-        m_SynchronizationObjects.push_back({
-            m_LogicalDevice.createSemaphore(vk::SemaphoreCreateInfo()),
-            m_LogicalDevice.createSemaphore(vk::SemaphoreCreateInfo()),
-            m_LogicalDevice.createFence(vk::FenceCreateInfo(vk::FenceCreateFlagBits::eSignaled)),
-        });
-        m_RenderingResources.push_back({ nullptr, nullptr });
-    }
-
-    assert(m_Frames.size() == m_Device.GetSwapchainImageCount());
-    assert(m_SynchronizationObjects.size() == m_Device.GetFrameInFlightCount());
-
-    m_LogicalDevice.destroySwapchainKHR(oldSwapchain);
+    DeviceContext::GetLogical().destroyCommandPool(s_MainCommandPool);
 }
 
 void Renderer::CreateScene()
@@ -314,7 +117,7 @@ void Renderer::CreateScene()
     }));
 
     {
-        m_BufferBuilder->ResetFlags()
+        s_BufferBuilder->ResetFlags()
             .SetUsageFlags(
                 vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR |
                 vk::BufferUsageFlagBits::eShaderDeviceAddress
@@ -324,26 +127,28 @@ void Renderer::CreateScene()
             )
             .SetAllocateFlags(vk::MemoryAllocateFlagBits::eDeviceAddress);
 
-        m_VertexBuffer = m_BufferBuilder->CreateBufferUnique(vertices.size() * sizeof(Vertex));
-        m_VertexBuffer->Upload(vertices.data());
+        s_StaticSceneData.VertexBuffer =
+            s_BufferBuilder->CreateBufferUnique(vertices.size() * sizeof(Vertex));
+        s_StaticSceneData.VertexBuffer->Upload(vertices.data());
 
-        m_IndexBuffer = m_BufferBuilder->CreateBufferUnique(indices.size() * sizeof(uint32_t));
-        m_IndexBuffer->Upload(indices.data());
+        s_StaticSceneData.IndexBuffer =
+            s_BufferBuilder->CreateBufferUnique(indices.size() * sizeof(uint32_t));
+        s_StaticSceneData.IndexBuffer->Upload(indices.data());
 
-        m_TransformMatrixBuffer = m_BufferBuilder->CreateBufferUnique(sizeof(matrix));
-        m_TransformMatrixBuffer->Upload(matrix.matrix.data());
+        s_StaticSceneData.TransformMatrixBuffer = s_BufferBuilder->CreateBufferUnique(sizeof(matrix));
+        s_StaticSceneData.TransformMatrixBuffer->Upload(matrix.matrix.data());
 
-        m_BufferBuilder->SetUsageFlags(
+        s_BufferBuilder->SetUsageFlags(
             vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress
         );
-        m_UniformBuffer = m_BufferBuilder->CreateBufferUnique(2 * sizeof(glm::mat4));
+        s_UniformBuffer = s_BufferBuilder->CreateBufferUnique(2 * sizeof(glm::mat4));
     }
 
     {
         vk::AccelerationStructureGeometryTrianglesDataKHR geometryData(
-            vk::Format::eR32G32B32Sfloat, m_VertexBuffer->GetDeviceAddress(), sizeof(Vertex),
-            vertices.size() - 1, vk::IndexType::eUint32, m_IndexBuffer->GetDeviceAddress(),
-            m_TransformMatrixBuffer->GetDeviceAddress()
+            vk::Format::eR32G32B32Sfloat, s_StaticSceneData.VertexBuffer->GetDeviceAddress(), sizeof(Vertex),
+            vertices.size() - 1, vk::IndexType::eUint32, s_StaticSceneData.IndexBuffer->GetDeviceAddress(),
+            s_StaticSceneData.TransformMatrixBuffer->GetDeviceAddress()
         );
 
         vk::AccelerationStructureGeometryKHR geometry(
@@ -359,13 +164,13 @@ void Renderer::CreateScene()
 
         const uint32_t primitiveCount[] = { 2 };
         vk::AccelerationStructureBuildSizesInfoKHR buildSizesInfo =
-            m_LogicalDevice.getAccelerationStructureBuildSizesKHR(
+            DeviceContext::GetLogical().getAccelerationStructureBuildSizesKHR(
                 vk::AccelerationStructureBuildTypeKHR::eDevice, bottomBuildInfo, primitiveCount,
-                m_DispatchLoader
+                Application::GetDispatchLoader()
             );
 
-        m_BottomLevelAccelerationStructureBuffer =
-            m_BufferBuilder->ResetFlags()
+        s_StaticSceneData.BottomLevelAccelerationStructureBuffer =
+            s_BufferBuilder->ResetFlags()
                 .SetUsageFlags(
                     vk::BufferUsageFlagBits::eStorageBuffer |
                     vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR |
@@ -375,40 +180,47 @@ void Renderer::CreateScene()
                 .SetAllocateFlags(vk::MemoryAllocateFlagBits::eDeviceAddress)
                 .CreateBufferUnique(buildSizesInfo.accelerationStructureSize);
 
-        Buffer scratchBuffer = m_BufferBuilder->CreateBuffer(buildSizesInfo.buildScratchSize);
+        Buffer scratchBuffer = s_BufferBuilder->CreateBuffer(buildSizesInfo.buildScratchSize);
 
         vk::AccelerationStructureCreateInfoKHR createInfo(
-            vk::AccelerationStructureCreateFlagsKHR(), m_BottomLevelAccelerationStructureBuffer->GetHandle(),
-            0, buildSizesInfo.accelerationStructureSize, vk::AccelerationStructureTypeKHR::eBottomLevel
+            vk::AccelerationStructureCreateFlagsKHR(),
+            s_StaticSceneData.BottomLevelAccelerationStructureBuffer->GetHandle(), 0,
+            buildSizesInfo.accelerationStructureSize, vk::AccelerationStructureTypeKHR::eBottomLevel
         );
 
-        m_BottomLevelAccelerationStructure =
-            m_LogicalDevice.createAccelerationStructureKHR(createInfo, nullptr, m_DispatchLoader);
+        s_StaticSceneData.BottomLevelAccelerationStructure =
+            DeviceContext::GetLogical().createAccelerationStructureKHR(
+                createInfo, nullptr, Application::GetDispatchLoader()
+            );
 
-        bottomBuildInfo.setDstAccelerationStructure(m_BottomLevelAccelerationStructure)
+        bottomBuildInfo.setDstAccelerationStructure(s_StaticSceneData.BottomLevelAccelerationStructure)
             .setScratchData(scratchBuffer.GetDeviceAddress());
 
         vk::AccelerationStructureBuildRangeInfoKHR rangeInfo(2, 0, 0, 0);
 
-        m_MainCommandBuffer.Begin();
-        m_MainCommandBuffer.CommandBuffer.buildAccelerationStructuresKHR(
-            { bottomBuildInfo }, { &rangeInfo }, m_DispatchLoader
+        s_MainCommandBuffer.Begin();
+        s_MainCommandBuffer.CommandBuffer.buildAccelerationStructuresKHR(
+            { bottomBuildInfo }, { &rangeInfo }, Application::GetDispatchLoader()
         );
-        m_MainCommandBuffer.Submit(m_LogicalDevice, m_GraphicsQueue);
+        s_MainCommandBuffer.Submit(DeviceContext::GetGraphicsQueue());
 
-        vk::AccelerationStructureDeviceAddressInfoKHR addressInfo(m_BottomLevelAccelerationStructure);
-        m_BottomLevelAccelerationStructureAddress =
-            m_LogicalDevice.getAccelerationStructureAddressKHR(addressInfo, m_DispatchLoader);
+        vk::AccelerationStructureDeviceAddressInfoKHR addressInfo(
+            s_StaticSceneData.BottomLevelAccelerationStructure
+        );
+        s_StaticSceneData.BottomLevelAccelerationStructureAddress =
+            DeviceContext::GetLogical().getAccelerationStructureAddressKHR(
+                addressInfo, Application::GetDispatchLoader()
+            );
     }
 
     {
         vk::AccelerationStructureInstanceKHR instance(
             matrix, 0, 0xff, 0, vk::GeometryInstanceFlagBitsKHR::eTriangleFacingCullDisable,
-            m_BottomLevelAccelerationStructureAddress
+            s_StaticSceneData.BottomLevelAccelerationStructureAddress
         );
 
         Buffer instanceBuffer =
-            m_BufferBuilder->ResetFlags()
+            s_BufferBuilder->ResetFlags()
                 .SetUsageFlags(
                     vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR |
                     vk::BufferUsageFlagBits::eShaderDeviceAddress
@@ -438,12 +250,13 @@ void Renderer::CreateScene()
 
         const uint32_t primitiveCount[] = { 1 };
         vk::AccelerationStructureBuildSizesInfoKHR buildSizesInfo =
-            m_LogicalDevice.getAccelerationStructureBuildSizesKHR(
-                vk::AccelerationStructureBuildTypeKHR::eDevice, buildInfo, primitiveCount, m_DispatchLoader
+            DeviceContext::GetLogical().getAccelerationStructureBuildSizesKHR(
+                vk::AccelerationStructureBuildTypeKHR::eDevice, buildInfo, primitiveCount,
+                Application::GetDispatchLoader()
             );
 
-        m_TopLevelAccelerationStructureBuffer =
-            m_BufferBuilder->ResetFlags()
+        s_StaticSceneData.TopLevelAccelerationStructureBuffer =
+            s_BufferBuilder->ResetFlags()
                 .SetUsageFlags(
                     vk::BufferUsageFlagBits::eStorageBuffer |
                     vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR |
@@ -454,14 +267,17 @@ void Renderer::CreateScene()
                 .CreateBufferUnique(buildSizesInfo.accelerationStructureSize);
 
         vk::AccelerationStructureCreateInfoKHR createInfo(
-            vk::AccelerationStructureCreateFlagsKHR(), m_TopLevelAccelerationStructureBuffer->GetHandle(), 0,
+            vk::AccelerationStructureCreateFlagsKHR(),
+            s_StaticSceneData.TopLevelAccelerationStructureBuffer->GetHandle(), 0,
             buildSizesInfo.accelerationStructureSize
         );
 
-        m_TopLevelAccelerationStructure =
-            m_LogicalDevice.createAccelerationStructureKHR(createInfo, nullptr, m_DispatchLoader);
+        s_StaticSceneData.TopLevelAccelerationStructure =
+            DeviceContext::GetLogical().createAccelerationStructureKHR(
+                createInfo, nullptr, Application::GetDispatchLoader()
+            );
 
-        Buffer scratchBuffer = m_BufferBuilder->CreateBuffer(buildSizesInfo.buildScratchSize);
+        Buffer scratchBuffer = s_BufferBuilder->CreateBuffer(buildSizesInfo.buildScratchSize);
 
         vk::AccelerationStructureBuildGeometryInfoKHR geometryInfo =
             vk::AccelerationStructureBuildGeometryInfoKHR(
@@ -469,107 +285,48 @@ void Renderer::CreateScene()
                 vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace
             )
                 .setGeometries({ geometry })
-                .setDstAccelerationStructure(m_TopLevelAccelerationStructure)
+                .setDstAccelerationStructure(s_StaticSceneData.TopLevelAccelerationStructure)
                 .setScratchData(scratchBuffer.GetDeviceAddress());
 
         vk::AccelerationStructureBuildRangeInfoKHR rangeInfo(1, 0, 0, 0);
 
-        m_MainCommandBuffer.Begin();
-        m_MainCommandBuffer.CommandBuffer.buildAccelerationStructuresKHR(
-            { geometryInfo }, { &rangeInfo }, m_DispatchLoader
+        s_MainCommandBuffer.Begin();
+        s_MainCommandBuffer.CommandBuffer.buildAccelerationStructuresKHR(
+            { geometryInfo }, { &rangeInfo }, Application::GetDispatchLoader()
         );
-        m_MainCommandBuffer.Submit(m_LogicalDevice, m_GraphicsQueue);
+        s_MainCommandBuffer.Submit(DeviceContext::GetGraphicsQueue());
 
-        vk::AccelerationStructureDeviceAddressInfoKHR addressInfo(m_TopLevelAccelerationStructure);
-        m_TopLevelAccelerationStructureAddress =
-            m_LogicalDevice.getAccelerationStructureAddressKHR(addressInfo, m_DispatchLoader);
+        vk::AccelerationStructureDeviceAddressInfoKHR addressInfo(
+            s_StaticSceneData.TopLevelAccelerationStructure
+        );
+        s_StaticSceneData.TopLevelAccelerationStructureAddress =
+            DeviceContext::GetLogical().getAccelerationStructureAddressKHR(
+                addressInfo, Application::GetDispatchLoader()
+            );
     }
 }
 
-void Renderer::CreateStorageImage()
+std::unique_ptr<Image> Renderer::CreateStorageImage(vk::Extent2D extent)
 {
-    m_ImageBuilder->ResetFlags()
+    s_ImageBuilder->ResetFlags()
         .SetFormat(vk::Format::eR8G8B8A8Unorm)
         .SetUsageFlags(vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eStorage)
         .SetMemoryFlags(vk::MemoryPropertyFlagBits::eDeviceLocal);
 
-    for (RenderingResources &res : m_RenderingResources)
-    {
-        res.StorageImage = m_ImageBuilder->CreateImageUnique(m_Width, m_Height);
+    auto image = s_ImageBuilder->CreateImageUnique(extent);
 
-        vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
-        vk::ImageMemoryBarrier barrier;
-        barrier.setNewLayout(vk::ImageLayout::eGeneral)
-            .setImage(res.StorageImage->GetHandle())
-            .setSubresourceRange(range);
+    vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
+    vk::ImageMemoryBarrier barrier;
+    barrier.setNewLayout(vk::ImageLayout::eGeneral).setImage(image->GetHandle()).setSubresourceRange(range);
 
-        vk::CommandBufferBeginInfo beginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
-        m_MainCommandBuffer.Begin();
-        m_MainCommandBuffer.CommandBuffer.pipelineBarrier(
-            vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands,
-            vk::DependencyFlags(), {}, {}, { barrier }
-        );
-        m_MainCommandBuffer.Submit(m_LogicalDevice, m_GraphicsQueue);
-    }
-}
+    s_MainCommandBuffer.Begin();
+    s_MainCommandBuffer.CommandBuffer.pipelineBarrier(
+        vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands,
+        vk::DependencyFlags(), {}, {}, { barrier }
+    );
+    s_MainCommandBuffer.Submit(DeviceContext::GetGraphicsQueue());
 
-void Renderer::CreateDescriptorSets()
-{
-    std::vector<vk::DescriptorPoolSize> poolSizes = {
-        vk::DescriptorPoolSize(vk::DescriptorType::eAccelerationStructureKHR, 1),
-        vk::DescriptorPoolSize(vk::DescriptorType::eStorageImage, 1),
-        vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, 1)
-    };
-
-    vk::DescriptorPoolCreateInfo createInfo(vk::DescriptorPoolCreateFlags(), 3, poolSizes);
-    m_DescriptorPool = m_LogicalDevice.createDescriptorPool(createInfo);
-
-    vk::DescriptorSetAllocateInfo allocateInfo(m_DescriptorPool, { m_DescriptorSetLayout });
-
-    for (RenderingResources &res : m_RenderingResources)
-    {
-        res.DescriptorSet = m_LogicalDevice.allocateDescriptorSets(allocateInfo)[0];
-
-        std::vector<vk::AccelerationStructureKHR> accelerationStructures = {
-            m_TopLevelAccelerationStructure
-        };
-        vk::WriteDescriptorSetAccelerationStructureKHR structureInfo(accelerationStructures);
-
-        vk::WriteDescriptorSet structureWrite =
-            vk::WriteDescriptorSet(res.DescriptorSet, 0, 0, 1, vk::DescriptorType::eAccelerationStructureKHR)
-                .setPNext(&structureInfo);
-
-        vk::DescriptorImageInfo imageInfo =
-            vk::DescriptorImageInfo(vk::Sampler(), res.StorageImage->GetView(), vk::ImageLayout::eGeneral);
-        vk::WriteDescriptorSet imageWrite =
-            vk::WriteDescriptorSet(res.DescriptorSet, 1, 0, 1, vk::DescriptorType::eStorageImage)
-                .setPImageInfo(&imageInfo);
-
-        vk::DescriptorBufferInfo bufferInfo =
-            vk::DescriptorBufferInfo(m_UniformBuffer->GetHandle(), 0, m_UniformBuffer->GetSize());
-        vk::WriteDescriptorSet bufferWrite =
-            vk::WriteDescriptorSet(res.DescriptorSet, 2, 0, 1, vk::DescriptorType::eUniformBuffer)
-                .setPBufferInfo(&bufferInfo);
-
-        std::vector<vk::WriteDescriptorSet> sets = { structureWrite, imageWrite, bufferWrite };
-
-        m_LogicalDevice.updateDescriptorSets(sets, {});
-    }
-}
-
-void Renderer::UpdateDescriptorSets()
-{
-    for (RenderingResources &res : m_RenderingResources)
-    {
-        vk::DescriptorImageInfo imageInfo =
-            vk::DescriptorImageInfo(vk::Sampler(), res.StorageImage->GetView(), vk::ImageLayout::eGeneral);
-
-        vk::WriteDescriptorSet imageWrite =
-            vk::WriteDescriptorSet(res.DescriptorSet, 1, 0, 1, vk::DescriptorType::eStorageImage)
-                .setPImageInfo(&imageInfo);
-
-        m_LogicalDevice.updateDescriptorSets({ imageWrite }, {});
-    }
+    return image;
 }
 
 void Renderer::SetupPipeline()
@@ -590,118 +347,105 @@ void Renderer::SetupPipeline()
         std::vector<vk::DescriptorSetLayoutBinding> bindings = { structure, result, uniform };
 
         vk::DescriptorSetLayoutCreateInfo createInfo(vk::DescriptorSetLayoutCreateFlags(), bindings);
-        m_DescriptorSetLayout = m_LogicalDevice.createDescriptorSetLayout(createInfo);
+        s_DescriptorSetLayout = DeviceContext::GetLogical().createDescriptorSetLayout(createInfo);
     }
 
     {
-        vk::PipelineLayoutCreateInfo createInfo(vk::PipelineLayoutCreateFlags(), { m_DescriptorSetLayout });
-        m_PipelineLayout = m_LogicalDevice.createPipelineLayout(createInfo);
+        vk::PipelineLayoutCreateInfo createInfo(vk::PipelineLayoutCreateFlags(), { s_DescriptorSetLayout });
+        s_PipelineLayout = DeviceContext::GetLogical().createPipelineLayout(createInfo);
     }
 
     {
-        m_ShaderLibrary = m_Device.CreateShaderLibrary();
-        m_ShaderLibrary->AddRaygenShader("Shaders/raygen.spv", "main");
-        m_ShaderLibrary->AddMissShader("Shaders/miss.spv", "main");
-        m_ShaderLibrary->AddClosestHitShader("Shaders/closesthit.spv", "main");
-        m_Pipeline = m_ShaderLibrary->CreatePipeline(m_PipelineLayout, m_DispatchLoader);
+        s_ShaderLibrary->AddRaygenShader("Shaders/raygen.spv", "main");
+        s_ShaderLibrary->AddMissShader("Shaders/miss.spv", "main");
+        s_ShaderLibrary->AddClosestHitShader("Shaders/closesthit.spv", "main");
+        s_Pipeline = s_ShaderLibrary->CreatePipeline(s_PipelineLayout, Application::GetDispatchLoader());
     }
 
-    CreateStorageImage();
-    CreateDescriptorSets();
+    {
+        std::vector<vk::DescriptorPoolSize> poolSizes = {
+            vk::DescriptorPoolSize(vk::DescriptorType::eAccelerationStructureKHR, 1),
+            vk::DescriptorPoolSize(vk::DescriptorType::eStorageImage, 1),
+            vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, 1)
+        };
+
+        vk::DescriptorPoolCreateInfo createInfo(
+            vk::DescriptorPoolCreateFlags(), s_MaxFramesInFlight, poolSizes
+        );
+        s_DescriptorPool = DeviceContext::GetLogical().createDescriptorPool(createInfo);
+    }
 }
 
-void Renderer::RecordCommandBuffer(const Frame &frame, const RenderingResources &resources)
+void Renderer::RecordCommandBuffer(const RenderingResources &resources)
 {
     vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
 
-    vk::CommandBuffer commandBuffer = frame.GetCommandBuffer();
-    vk::Framebuffer frameBuffer = frame.GetFrameBuffer();
-    vk::Image image = frame.GetImage();
+    vk::CommandBuffer commandBuffer = resources.CommandBuffer;
+    vk::Image image = s_Swapchain->GetCurrentFrame().Image;
+    vk::ImageView imageView = s_Swapchain->GetCurrentFrame().ImageView;
 
     commandBuffer.begin(vk::CommandBufferBeginInfo());
 
     vk::StridedDeviceAddressRegionKHR callableShaderEntry;
 
-    commandBuffer.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, m_Pipeline);
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, s_Pipeline);
     commandBuffer.bindDescriptorSets(
-        vk::PipelineBindPoint::eRayTracingKHR, m_PipelineLayout, 0, { resources.DescriptorSet }, {}
+        vk::PipelineBindPoint::eRayTracingKHR, s_PipelineLayout, 0, { resources.DescriptorSet }, {}
     );
 
+    vk::Extent2D extent = s_Swapchain->GetExtent();
     commandBuffer.traceRaysKHR(
-        m_ShaderLibrary->GetRaygenTableEntry(), m_ShaderLibrary->GetMissTableEntry(),
-        m_ShaderLibrary->GetClosestHitTableEntry(), callableShaderEntry, m_Width, m_Height, 1,
-        m_DispatchLoader
+        s_ShaderLibrary->GetRaygenTableEntry(), s_ShaderLibrary->GetMissTableEntry(),
+        s_ShaderLibrary->GetClosestHitTableEntry(), callableShaderEntry, extent.width, extent.height, 1,
+        Application::GetDispatchLoader()
     );
 
-    vk::ImageMemoryBarrier barrier(
-        vk::AccessFlagBits::eNone, vk::AccessFlagBits::eTransferWrite, vk::ImageLayout::eUndefined,
-        vk::ImageLayout::eTransferDstOptimal, vk::QueueFamilyIgnored, vk::QueueFamilyIgnored, image, range
+    ImageTransition(
+        commandBuffer, image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
+        vk::AccessFlagBits::eNone, vk::AccessFlagBits::eTransferWrite, vk::PipelineStageFlagBits::eTopOfPipe,
+        vk::PipelineStageFlagBits::eTransfer
     );
 
-    commandBuffer.pipelineBarrier(
-        vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer, vk::DependencyFlags(),
-        {}, {}, { barrier }
-    );
-
-    vk::ImageMemoryBarrier barrier2(
-        vk::AccessFlagBits::eNone, vk::AccessFlagBits::eTransferRead, vk::ImageLayout::eGeneral,
-        vk::ImageLayout::eTransferSrcOptimal, vk::QueueFamilyIgnored, vk::QueueFamilyIgnored,
-        resources.StorageImage->GetHandle(), range
-    );
-
-    commandBuffer.pipelineBarrier(
-        vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eTransfer, vk::DependencyFlags(),
-        {}, {}, { barrier2 }
+    ImageTransition(
+        commandBuffer, resources.StorageImage->GetHandle(), vk::ImageLayout::eGeneral,
+        vk::ImageLayout::eTransferSrcOptimal, vk::AccessFlagBits::eNone, vk::AccessFlagBits::eTransferRead,
+        vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eTransfer
     );
 
     vk::ImageSubresourceLayers subresource(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
     vk::Offset3D offset(0, 0, 0);
-    vk::ImageCopy copy(subresource, offset, subresource, offset, { m_Width, m_Height, 1 });
+    vk::ImageCopy copy(subresource, offset, subresource, offset, vk::Extent3D(extent, 1));
 
     commandBuffer.copyImage(
         resources.StorageImage->GetHandle(), vk::ImageLayout::eTransferSrcOptimal, image,
         vk::ImageLayout::eTransferDstOptimal, { copy }
     );
 
-    vk::ImageMemoryBarrier barrier3(
-        vk::AccessFlagBits::eTransferWrite, vk::AccessFlagBits::eNone, vk::ImageLayout::eTransferDstOptimal,
-        vk::ImageLayout::eColorAttachmentOptimal, vk::QueueFamilyIgnored, vk::QueueFamilyIgnored, image, range
+    ImageTransition(
+        commandBuffer, image, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eColorAttachmentOptimal,
+        vk::AccessFlagBits::eTransferWrite, vk::AccessFlagBits::eNone, vk::PipelineStageFlagBits::eTransfer,
+        vk::PipelineStageFlagBits::eAllCommands
     );
 
-    commandBuffer.pipelineBarrier(
-        vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eBottomOfPipe, vk::DependencyFlags(),
-        {}, {}, { barrier3 }
-    );
-
-    vk::ImageMemoryBarrier barrier4(
-        vk::AccessFlagBits::eTransferRead, vk::AccessFlagBits::eNone, vk::ImageLayout::eTransferSrcOptimal,
-        vk::ImageLayout::eGeneral, vk::QueueFamilyIgnored, vk::QueueFamilyIgnored,
-        resources.StorageImage->GetHandle(), range
-    );
-
-    commandBuffer.pipelineBarrier(
-        vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eAllCommands, vk::DependencyFlags(),
-        {}, {}, { barrier4 }
+    ImageTransition(
+        commandBuffer, resources.StorageImage->GetHandle(), vk::ImageLayout::eTransferSrcOptimal,
+        vk::ImageLayout::eGeneral, vk::AccessFlagBits::eTransferRead, vk::AccessFlagBits::eNone,
+        vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eBottomOfPipe
     );
 
     std::vector<vk::RenderingAttachmentInfo> colorAttachments = {
-        vk::RenderingAttachmentInfo(frame.GetImageView(), vk::ImageLayout::eColorAttachmentOptimal)
+        vk::RenderingAttachmentInfo(imageView, vk::ImageLayout::eColorAttachmentOptimal)
     };
-    commandBuffer.beginRendering(vk::RenderingInfo(
-        vk::RenderingFlags(), vk::Rect2D({}, vk::Extent2D(m_Width, m_Height)), 1, 0, colorAttachments
-    ));
+    commandBuffer.beginRendering(
+        vk::RenderingInfo(vk::RenderingFlags(), vk::Rect2D({}, extent), 1, 0, colorAttachments)
+    );
     UserInterface::Render(commandBuffer);
     commandBuffer.endRendering();
 
-    vk::ImageMemoryBarrier barrier5(
+    ImageTransition(
+        commandBuffer, image, vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::ePresentSrcKHR,
         vk::AccessFlagBits::eColorAttachmentWrite, vk::AccessFlagBits::eNone,
-        vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::ePresentSrcKHR, vk::QueueFamilyIgnored,
-        vk::QueueFamilyIgnored, image, range
-    );
-
-    commandBuffer.pipelineBarrier(
-        vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eBottomOfPipe,
-        vk::DependencyFlags(), {}, {}, { barrier5 }
+        vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::PipelineStageFlagBits::eBottomOfPipe
     );
 
     commandBuffer.end();
@@ -709,94 +453,151 @@ void Renderer::RecordCommandBuffer(const Frame &frame, const RenderingResources 
 
 void Renderer::OnUpdate(float timeStep)
 {
-    auto [width, height] = m_Window.GetSize();
+    if (s_Swapchain->GetExtent() != s_Extent)
+    {
+        s_Extent = s_Swapchain->GetExtent();
+        OnResize();
+    }
 
-    if (width != m_Width || height != m_Height)
-        OnResize(width, height);
+    assert(s_Swapchain->GetInFlightCount() < s_MaxFramesInFlight);
+    while (s_RenderingResources.size() < s_Swapchain->GetInFlightCount())
+    {
+        RenderingResources res;
 
-    glm::mat4 uniformData[2] = { m_Camera.GetInvViewMatrix(), m_Camera.GetInvProjectionMatrix() };
-    m_UniformBuffer->Upload(uniformData);
+        vk::CommandPoolCreateInfo commandPoolCreateInfo(
+            vk::CommandPoolCreateFlagBits::eResetCommandBuffer, DeviceContext::GetGraphicsQueueFamilyIndex()
+        );
+        res.CommandPool = DeviceContext::GetLogical().createCommandPool(commandPoolCreateInfo);
+
+        vk::CommandBufferAllocateInfo allocateCommandBufferInfo(
+            res.CommandPool, vk::CommandBufferLevel::ePrimary, 1
+        );
+        res.CommandBuffer = DeviceContext::GetLogical().allocateCommandBuffers(allocateCommandBufferInfo)[0];
+
+        vk::Extent2D extent = s_Swapchain->GetExtent();
+        res.StorageImage = CreateStorageImage(extent);
+
+        vk::DescriptorSetAllocateInfo allocateInfo(s_DescriptorPool, { s_DescriptorSetLayout });
+        res.DescriptorSet = DeviceContext::GetLogical().allocateDescriptorSets(allocateInfo)[0];
+
+        std::vector<vk::AccelerationStructureKHR> accelerationStructures = {
+            s_StaticSceneData.TopLevelAccelerationStructure
+        };
+        vk::WriteDescriptorSetAccelerationStructureKHR structureInfo(accelerationStructures);
+
+        vk::WriteDescriptorSet structureWrite =
+            vk::WriteDescriptorSet(res.DescriptorSet, 0, 0, 1, vk::DescriptorType::eAccelerationStructureKHR)
+                .setPNext(&structureInfo);
+
+        vk::DescriptorImageInfo imageInfo =
+            vk::DescriptorImageInfo(vk::Sampler(), res.StorageImage->GetView(), vk::ImageLayout::eGeneral);
+        vk::WriteDescriptorSet imageWrite =
+            vk::WriteDescriptorSet(res.DescriptorSet, 1, 0, 1, vk::DescriptorType::eStorageImage)
+                .setPImageInfo(&imageInfo);
+
+        vk::DescriptorBufferInfo bufferInfo =
+            vk::DescriptorBufferInfo(s_UniformBuffer->GetHandle(), 0, s_UniformBuffer->GetSize());
+        vk::WriteDescriptorSet bufferWrite =
+            vk::WriteDescriptorSet(res.DescriptorSet, 2, 0, 1, vk::DescriptorType::eUniformBuffer)
+                .setPBufferInfo(&bufferInfo);
+
+        std::vector<vk::WriteDescriptorSet> sets = { structureWrite, imageWrite, bufferWrite };
+
+        DeviceContext::GetLogical().updateDescriptorSets(sets, {});
+
+        s_RenderingResources.emplace_back(std::move(res));
+    }
 }
 
-void Renderer::OnRender()
+void Renderer::OnResize()
 {
-    if (m_Width == 0 || m_Height == 0)
-        return;
-
-    const SynchronizationObjects &sync = m_SynchronizationObjects[m_CurrentFrame];
-    const RenderingResources &res = m_RenderingResources[m_CurrentFrame];
-
-    m_CurrentFrame++;
-    if (m_CurrentFrame == m_Device.GetFrameInFlightCount())
-        m_CurrentFrame = 0;
-
+    for (RenderingResources &res : s_RenderingResources)
     {
-        vk::Result result = m_LogicalDevice.waitForFences(
-            { sync.InFlightFence }, vk::True, std::numeric_limits<uint64_t>::max()
-        );
-        assert(result == vk::Result::eSuccess);
+        res.StorageImage = CreateStorageImage(s_Extent);
 
-        m_LogicalDevice.resetFences({ sync.InFlightFence });
+        vk::DescriptorImageInfo imageInfo =
+            vk::DescriptorImageInfo(vk::Sampler(), res.StorageImage->GetView(), vk::ImageLayout::eGeneral);
+
+        vk::WriteDescriptorSet imageWrite =
+            vk::WriteDescriptorSet(res.DescriptorSet, 1, 0, 1, vk::DescriptorType::eStorageImage)
+                .setPImageInfo(&imageInfo);
+
+        DeviceContext::GetLogical().updateDescriptorSets({ imageWrite }, {});
     }
+}
 
-    uint32_t imageIndex;
-    try
-    {
-        vk::ResultValue result = m_LogicalDevice.acquireNextImageKHR(
-            m_Swapchain, std::numeric_limits<uint64_t>::max(), sync.ImageAcquiredSemaphore, nullptr
-        );
+void Renderer::Render(uint32_t frameInFlightIndex, const Camera &camera)
+{
+    glm::mat4 uniformData[2] = { camera.GetInvViewMatrix(), camera.GetInvProjectionMatrix() };
+    s_UniformBuffer->Upload(uniformData);
 
-        assert(result.result == vk::Result::eSuccess);
-        imageIndex = result.value;
-    }
-    catch (vk::OutOfDateKHRError error)
-    {
-        logger::warn(error.what());
-        return;
-    }
+    const Swapchain::SynchronizationObjects &sync = s_Swapchain->GetCurrentSyncObjects();
+    const RenderingResources &res = s_RenderingResources[frameInFlightIndex];
 
-    RecordCommandBuffer(m_Frames[imageIndex], res);
+    RecordCommandBuffer(res);
 
     std::vector<vk::PipelineStageFlags> stages = { vk::PipelineStageFlagBits::eColorAttachmentOutput };
-    std::vector<vk::CommandBuffer> commandBuffers = { m_Frames[imageIndex].GetCommandBuffer() };
+    std::vector<vk::CommandBuffer> commandBuffers = { res.CommandBuffer };
 
     vk::SubmitInfo submitInfo(
         { sync.ImageAcquiredSemaphore }, stages, commandBuffers, { sync.RenderCompleteSemaphore }
     );
 
-    m_GraphicsQueue.submit({ submitInfo }, sync.InFlightFence);
-
-    vk::PresentInfoKHR presentInfo({ sync.RenderCompleteSemaphore }, { m_Swapchain }, { imageIndex });
-    try
-    {
-        vk::Result res = m_GraphicsQueue.presentKHR(presentInfo);
-        assert(res == vk::Result::eSuccess);
-    }
-    catch (vk::OutOfDateKHRError error)
-    {
-        logger::warn(error.what());
-        return;
-    }
+    DeviceContext::GetGraphicsQueue().submit({ submitInfo }, sync.InFlightFence);
 }
 
-void Renderer::OnResize(uint32_t width, uint32_t height)
+void Renderer::ImageTransition(
+    vk::CommandBuffer buffer, vk::Image image, vk::ImageLayout layoutFrom, vk::ImageLayout layoutTo,
+    vk::AccessFlagBits accessFrom, vk::AccessFlagBits accessTo, vk::PipelineStageFlagBits stageFrom,
+    vk::PipelineStageFlagBits stageTo
+)
 {
-    m_LogicalDevice.waitIdle();
-    m_Frames.clear();
+    vk::ImageMemoryBarrier barrier(
+        accessFrom, accessTo, layoutFrom, layoutTo, vk::QueueFamilyIgnored, vk::QueueFamilyIgnored, image,
+        vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1)
+    );
 
-    m_Width = width;
-    m_Height = height;
+    buffer.pipelineBarrier(stageFrom, stageTo, vk::DependencyFlags(), {}, {}, { barrier });
+}
 
-    if (m_Width == 0 || m_Height == 0)
-        return;
+void Renderer::CommandBuffer::Init()
+{
+    vk::CommandBufferAllocateInfo allocateInfo(s_MainCommandPool, vk::CommandBufferLevel::ePrimary, 1);
+    s_MainCommandBuffer.CommandBuffer = DeviceContext::GetLogical().allocateCommandBuffers(allocateInfo)[0];
+    s_MainCommandBuffer.Fence = DeviceContext::GetLogical().createFence(vk::FenceCreateInfo());
+}
 
-    CreateStorageImage();
+void Renderer::CommandBuffer::Destroy()
+{
+    DeviceContext::GetLogical().freeCommandBuffers(s_MainCommandPool, { s_MainCommandBuffer.CommandBuffer });
+    DeviceContext::GetLogical().destroyFence(s_MainCommandBuffer.Fence);
+}
 
-    m_CurrentFrame = 0;
+void Renderer::CommandBuffer::Begin() const
+{
+    vk::CommandBufferBeginInfo beginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
+    CommandBuffer.begin(beginInfo);
+}
 
-    RecreateSwapchain();
-    UpdateDescriptorSets();
-    m_Camera.OnResize(m_Width, m_Height);
+void Renderer::CommandBuffer::Submit(vk::Queue queue) const
+{
+    CommandBuffer.end();
+    vk::SubmitInfo submitInfo = {};
+    submitInfo.setCommandBuffers({ CommandBuffer });
+    DeviceContext::GetLogical().resetFences({ Fence });
+    queue.submit({ submitInfo }, Fence);
+
+    try
+    {
+        vk::Result result = DeviceContext::GetLogical().waitForFences(
+            { Fence }, vk::True, std::numeric_limits<uint64_t>::max()
+        );
+        assert(result == vk::Result::eSuccess);
+    }
+    catch (vk::SystemError err)
+    {
+        throw PathTracing::error(err.what());
+    }
 }
 
 }

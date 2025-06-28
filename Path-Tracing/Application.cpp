@@ -1,0 +1,309 @@
+#include <GLFW/glfw3.h>
+#include <vulkan/vulkan.hpp>
+
+#include <ranges>
+#include <string_view>
+
+#include "Core/Camera.h"
+#include "Core/Core.h"
+#include "Core/Input.h"
+
+#include "Renderer/DeviceContext.h"
+#include "Renderer/Renderer.h"
+#include "Renderer/Swapchain.h"
+
+#include "Application.h"
+#include "UserInterface.h"
+#include "Window.h"
+
+namespace PathTracing
+{
+
+static VKAPI_ATTR vk::Bool32 VKAPI_CALL debugCallback(
+    vk::DebugUtilsMessageSeverityFlagBitsEXT messageSeverity, vk::DebugUtilsMessageTypeFlagsEXT messageType,
+    const vk::DebugUtilsMessengerCallbackDataEXT *pCallbackData, void *pUserData
+)
+{
+    switch (messageSeverity)
+    {
+    case vk::DebugUtilsMessageSeverityFlagBitsEXT::eError:
+        logger::error(pCallbackData->pMessage);
+        break;
+    case vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning:
+        logger::warn(pCallbackData->pMessage);
+        break;
+    case vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo:
+        logger::info(pCallbackData->pMessage);
+        break;
+    case vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose:
+        logger::debug(pCallbackData->pMessage);
+        break;
+    }
+
+    return VK_FALSE;
+}
+
+static void GlfwErrorCallback(int error, const char *description)
+{
+    throw PathTracing::error(std::format("GLFW error {} {}", error, description).c_str());
+}
+
+vk::Instance Application::s_Instance = nullptr;
+vk::detail::DispatchLoaderDynamic *Application::s_DispatchLoader = nullptr;
+
+#ifndef NDEBUG
+vk::DebugUtilsMessengerEXT Application::s_DebugMessenger = nullptr;
+#endif
+
+vk::SurfaceKHR Application::s_Surface = nullptr;
+std::unique_ptr<Swapchain> Application::s_Swapchain = nullptr;
+
+Application::State Application::s_State = Application::State::Shutdown;
+
+void Application::Init()
+{
+    uint32_t version = vk::enumerateInstanceVersion();
+
+    uint32_t major = vk::apiVersionMajor(version);
+    uint32_t minor = vk::apiVersionMinor(version);
+    uint32_t patch = vk::apiVersionPatch(version);
+
+    logger::debug("Highest supported vulkan version: {}.{}.{}", major, minor, patch);
+
+    version = vk::makeVersion(major, minor, 0u);
+    logger::info("Selected vulkan version: {}.{}.{}", major, minor, 0u);
+
+    vk::ApplicationInfo applicationInfo("Path Tracing", 1, "Path Tracing", 1, version);
+
+    {
+        int result = glfwInit();
+
+#ifndef NDEBUG
+        if (result == GLFW_FALSE)
+            throw error("Glfw initialization failed!");
+
+        glfwSetErrorCallback(GlfwErrorCallback);
+#endif
+    }
+
+    uint32_t glfwExtensionCount = 0;
+    const char **glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
+
+    std::vector<const char *> requestedExtensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
+    std::vector<const char *> requestedLayers;
+#ifndef NDEBUG
+    requestedExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+    requestedLayers.push_back("VK_LAYER_KHRONOS_validation");
+#endif
+
+    if (!CheckInstanceSupport(requestedExtensions, requestedLayers))
+        throw error("Instance doesn't have required extensions or layers");
+
+    vk::InstanceCreateInfo createInfo(
+        vk::InstanceCreateFlags(), &applicationInfo, requestedLayers, requestedExtensions
+    );
+
+    s_Instance = vk::createInstance(createInfo);
+    s_State = State::HasInstance;
+
+    s_DispatchLoader = new vk::detail::DispatchLoaderDynamic(s_Instance, vkGetInstanceProcAddr);
+
+#ifndef NDEBUG
+    {
+        vk::DebugUtilsMessengerCreateInfoEXT createInfo(
+            vk::DebugUtilsMessengerCreateFlagsEXT(),
+            vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose |
+                vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo |
+                vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning |
+                vk::DebugUtilsMessageSeverityFlagBitsEXT::eError,
+            vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral |
+                vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance |
+                vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation |
+                vk::DebugUtilsMessageTypeFlagBitsEXT::eDeviceAddressBinding,
+            debugCallback, nullptr
+        );
+
+        s_DebugMessenger = s_Instance.createDebugUtilsMessengerEXT(createInfo, nullptr, *s_DispatchLoader);
+    }
+#endif
+
+    Window::Create(1280, 720, "Path Tracing");
+    s_Surface = Window::CreateSurface(s_Instance);
+    Input::SetWindow(Window::GetHandle());
+    s_State = State::HasWindow;
+
+    DeviceContext::Init(s_Instance, requestedLayers, s_Surface);
+    s_State = State::HasDevice;
+
+    s_Swapchain = std::make_unique<Swapchain>(
+        s_Surface, vk::SurfaceFormatKHR(vk::Format::eR8G8B8A8Unorm, vk::ColorSpaceKHR::eSrgbNonlinear),
+        vk::PresentModeKHR::eMailbox
+    );
+    s_State = State::HasSwapchain;
+
+    UserInterface::Init(
+        s_Instance, s_Swapchain->GetSurfaceFormat().format, DeviceContext::GetPhysical(),
+        DeviceContext::GetLogical(), DeviceContext::GetGraphicsQueueFamilyIndex(),
+        DeviceContext::GetGraphicsQueue(), s_Swapchain->GetImageCount()
+    );
+    s_State = State::HasUserInterface;
+
+    Renderer::Init(s_Swapchain.get());
+    s_State = State::Initialized;
+}
+
+void Application::Shutdown()
+{
+    if (DeviceContext::GetLogical())
+        DeviceContext::GetLogical().waitIdle();
+
+    switch (s_State)
+    {
+    case State::Initialized:
+        Renderer::Shutdown();
+        [[fallthrough]];
+    case State::HasUserInterface:
+        UserInterface::Shutdown();
+        [[fallthrough]];
+    case State::HasSwapchain:
+        s_Swapchain.reset();
+        [[fallthrough]];
+    case State::HasDevice:
+        DeviceContext::Shutdown();
+        [[fallthrough]];
+    case State::HasWindow:
+        s_Instance.destroySurfaceKHR(s_Surface);
+        Window::Destroy();
+        [[fallthrough]];
+    case State::HasInstance:
+#ifndef NDEBUG
+        s_Instance.destroyDebugUtilsMessengerEXT(s_DebugMessenger, nullptr, *s_DispatchLoader);
+#endif
+        delete s_DispatchLoader;
+        s_Instance.destroy();
+    }
+
+    s_State = State::Shutdown;
+}
+
+void Application::Run()
+{
+    s_State = State::Running;
+
+    float lastFrameTime = 0.0f;
+    vk::Extent2D windowSize = {};
+
+    Camera camera(45.0f, 100.0f, 0.1f);
+
+    while (!Window::ShouldClose())
+    {
+        Timer timer("Frame total");
+
+        float time = glfwGetTime();
+
+        float timeStep = time - lastFrameTime;
+        lastFrameTime = time;
+
+        {
+            Timer timer("Update");
+
+            vk::Extent2D currentSize = s_Swapchain->GetExtent();
+
+            if (currentSize != windowSize)
+            {
+                windowSize = currentSize;
+                logger::info("Resizing to: {}x{}", windowSize.width, windowSize.height);
+
+                camera.OnResize(windowSize.width, windowSize.height);
+            }
+
+            Window::OnUpdate(timeStep);
+            camera.OnUpdate(timeStep);
+            Renderer::OnUpdate(timeStep);
+        }
+
+        if (Window::IsMinimized())
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            continue;
+        }
+
+        {
+            Timer timer("Render");
+
+            if (s_Swapchain->GetPresentMode() != UserInterface::GetPresentMode())
+            {
+                DeviceContext::GetLogical().waitIdle();
+                s_Swapchain->Recreate(UserInterface::GetPresentMode());
+                continue;
+            }
+
+            if (!s_Swapchain->AcquireImage())
+            {
+                DeviceContext::GetLogical().waitIdle();
+                s_Swapchain->Recreate();
+                continue;
+            }
+
+            Renderer::Render(s_Swapchain->GetCurrentFrameInFlightIndex(), camera);
+
+            if (!s_Swapchain->Present())
+            {
+                DeviceContext::GetLogical().waitIdle();
+                s_Swapchain->Recreate();
+                continue;
+            }
+        }
+
+        Stats::FlushTimers();
+    }
+
+    s_State = State::Initialized;
+}
+
+const vk::detail::DispatchLoaderDynamic &Application::GetDispatchLoader()
+{
+    return *s_DispatchLoader;
+}
+
+bool Application::CheckInstanceSupport(
+    const std::vector<const char *> &requestedExtensions, const std::vector<const char *> &requestedLayers
+)
+{
+    std::vector<vk::ExtensionProperties> supportedExtensions = vk::enumerateInstanceExtensionProperties();
+    auto supportedExtensionNames =
+        supportedExtensions | std::views::transform([](auto &props) { return props.extensionName.data(); });
+    for (const auto &extension : supportedExtensionNames)
+        logger::debug("Instance supports extension {}", extension);
+
+    for (std::string_view extension : requestedExtensions)
+    {
+        logger::info("Instance Extension {} is required", extension);
+        if (std::ranges::find(supportedExtensionNames, extension) == supportedExtensionNames.end())
+        {
+            logger::error("Instance Extension {} not supported", extension);
+            return false;
+        }
+    }
+
+    std::vector<vk::LayerProperties> supportedLayers = vk::enumerateInstanceLayerProperties();
+    auto supportedLayerNames =
+        supportedLayers | std::views::transform([](auto &props) { return props.layerName.data(); });
+
+    for (const auto &extension : supportedLayerNames)
+        logger::debug("Instance supports layer {}", extension);
+
+    for (std::string_view layer : requestedLayers)
+    {
+        logger::info("Layer {} is required", layer);
+        if (std::ranges::find(supportedLayerNames, layer) == supportedLayerNames.end())
+        {
+            logger::error("Instance Layer {} not supported", layer);
+            return false;
+        }
+    }
+
+    return true;
+}
+
+}

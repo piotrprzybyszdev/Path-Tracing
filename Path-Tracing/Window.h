@@ -13,23 +13,19 @@ namespace PathTracing
 class Window
 {
 public:
-    Window(int width, int height, const char *title, bool vsync);
-    ~Window();
+    static void Create(int width, int height, const char *title);
+    static void Destroy();
 
-    GLFWwindow *GetHandle() const;
-    std::pair<uint32_t, uint32_t> GetSize() const;
+    static GLFWwindow *GetHandle();
+    static bool IsMinimized();
+    static bool ShouldClose();
 
-    bool ShouldClose() const;
-    vk::SurfaceKHR CreateSurface(vk::Instance instance);
+    static vk::SurfaceKHR CreateSurface(vk::Instance instance);
 
-    void OnUpdate(float timeStep);
-    void OnRender();
+    static void OnUpdate(float timeStep);
 
 private:
-    uint32_t m_Width, m_Height;
-    bool m_Vsync;
-
-    GLFWwindow *m_Handle;
+    static GLFWwindow *s_Handle;
 };
 
 }

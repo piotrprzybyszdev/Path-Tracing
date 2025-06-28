@@ -1,38 +1,34 @@
-#include <optional>
-
 #include "Core/Core.h"
 
 #include "Buffer.h"
-#include "PhysicalDevice.h"
+#include "DeviceContext.h"
 
 namespace PathTracing
 {
 
 Buffer::Buffer(
-    vk::Device device, const PhysicalDevice &physicalDevice, vk::BufferCreateFlags createFlags,
-    vk::DeviceSize size, vk::BufferUsageFlags usageFlags, vk::MemoryPropertyFlags memoryFlags,
-    vk::MemoryAllocateFlags allocateFlags
+    vk::BufferCreateFlags createFlags, vk::DeviceSize size, vk::BufferUsageFlags usageFlags,
+    vk::MemoryPropertyFlags memoryFlags, vk::MemoryAllocateFlags allocateFlags
 )
-    : m_Device(device), m_Size(size)
+    : m_Size(size)
 {
     vk::BufferCreateInfo createInfo(createFlags, size, usageFlags);
-    m_Handle = m_Device.createBuffer(createInfo);
-    vk::MemoryRequirements requirements = m_Device.getBufferMemoryRequirements(m_Handle);
+    m_Handle = DeviceContext::GetLogical().createBuffer(createInfo);
+    vk::MemoryRequirements requirements = DeviceContext::GetLogical().getBufferMemoryRequirements(m_Handle);
 
-    uint32_t memoryTypeIndex = physicalDevice.FindMemoryTypeIndex(requirements, memoryFlags);
+    uint32_t memoryTypeIndex = DeviceContext::FindMemoryTypeIndex(requirements, memoryFlags);
 
     vk::MemoryAllocateFlagsInfo allocateFlagsInfo(allocateFlags);
     vk::MemoryAllocateInfo allocateInfo(requirements.size, memoryTypeIndex, &allocateFlagsInfo);
-    m_Memory = m_Device.allocateMemory(allocateInfo);
-    m_Device.bindBufferMemory(m_Handle, m_Memory, 0);
+    m_Memory = DeviceContext::GetLogical().allocateMemory(allocateInfo);
+    DeviceContext::GetLogical().bindBufferMemory(m_Handle, m_Memory, 0);
 }
 
 Buffer &Buffer::operator=(Buffer &&buffer) noexcept
 {
-    if (m_Device)
+    if (m_Size != 0)
         this->~Buffer();
 
-    m_Device = buffer.m_Device;
     m_Size = buffer.m_Size;
     m_Handle = buffer.m_Handle;
     m_Memory = buffer.m_Memory;
@@ -47,15 +43,15 @@ Buffer::~Buffer()
     if (m_IsMoved)
         return;
 
-    m_Device.destroyBuffer(m_Handle);
-    m_Device.freeMemory(m_Memory);
+    DeviceContext::GetLogical().destroyBuffer(m_Handle);
+    DeviceContext::GetLogical().freeMemory(m_Memory);
 }
 
-void Buffer::Upload(const void *data)
+void Buffer::Upload(const void *data) const
 {
-    void *dst = m_Device.mapMemory(m_Memory, 0, m_Size);
+    void *dst = DeviceContext::GetLogical().mapMemory(m_Memory, 0, m_Size);
     memcpy(dst, data, m_Size);
-    m_Device.unmapMemory(m_Memory);
+    DeviceContext::GetLogical().unmapMemory(m_Memory);
 }
 
 vk::Buffer Buffer::GetHandle() const
@@ -65,17 +61,12 @@ vk::Buffer Buffer::GetHandle() const
 
 vk::DeviceAddress Buffer::GetDeviceAddress() const
 {
-    return m_Device.getBufferAddress(vk::BufferDeviceAddressInfo(m_Handle));
+    return DeviceContext::GetLogical().getBufferAddress(vk::BufferDeviceAddressInfo(m_Handle));
 }
 
 vk::DeviceSize Buffer::GetSize() const
 {
     return m_Size;
-}
-
-BufferBuilder::BufferBuilder(vk::Device device, const PhysicalDevice &physicalDevice)
-    : m_Device(device), m_PhysicalDevice(physicalDevice)
-{
 }
 
 BufferBuilder &BufferBuilder::SetCreateFlags(vk::BufferCreateFlags createFlags)
@@ -113,16 +104,12 @@ BufferBuilder &BufferBuilder::ResetFlags()
 
 Buffer BufferBuilder::CreateBuffer(vk::DeviceSize size) const
 {
-    return Buffer(
-        m_Device, m_PhysicalDevice, m_CreateFlags, size, m_UsageFlags, m_MemoryFlags, m_AllocateFlags
-    );
+    return Buffer(m_CreateFlags, size, m_UsageFlags, m_MemoryFlags, m_AllocateFlags);
 }
 
 std::unique_ptr<Buffer> BufferBuilder::CreateBufferUnique(vk::DeviceSize size) const
 {
-    return std::make_unique<Buffer>(
-        m_Device, m_PhysicalDevice, m_CreateFlags, size, m_UsageFlags, m_MemoryFlags, m_AllocateFlags
-    );
+    return std::make_unique<Buffer>(m_CreateFlags, size, m_UsageFlags, m_MemoryFlags, m_AllocateFlags);
 }
 
 }

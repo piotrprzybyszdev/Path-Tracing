@@ -5,59 +5,47 @@
 namespace PathTracing
 {
 
-static void GlfwErrorCallback(int error, const char *description)
+GLFWwindow *Window::s_Handle = nullptr;
+
+void Window::Create(int width, int height, const char *title)
 {
-    throw PathTracing::error(std::format("GLFW error {} {}", error, description).c_str());
-}
-
-Window::Window(int width, int height, const char *title, bool vsync)
-    : m_Width(width), m_Height(height), m_Vsync(vsync)
-{
-    int result = glfwInit();
-
-#ifndef NDEBUG
-    if (result == GLFW_FALSE)
-        throw error("Glfw initialization failed!");
-
-    glfwSetErrorCallback(GlfwErrorCallback);
-#endif
-
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
-    m_Handle = glfwCreateWindow(width, height, title, nullptr, nullptr);
+    s_Handle = glfwCreateWindow(width, height, title, nullptr, nullptr);
 
 #ifndef NDEBUG
-    if (m_Handle == nullptr)
+    if (s_Handle == nullptr)
         throw error("Window creation failed!");
 #endif
 }
 
-Window::~Window()
+void Window::Destroy()
 {
-    glfwDestroyWindow(m_Handle);
+    glfwDestroyWindow(s_Handle);
     glfwTerminate();
 }
 
-GLFWwindow *Window::GetHandle() const
+GLFWwindow *Window::GetHandle()
 {
-    return m_Handle;
+    return s_Handle;
 }
 
-std::pair<uint32_t, uint32_t> Window::GetSize() const
+bool Window::IsMinimized()
 {
-    return std::make_pair(m_Width, m_Height);
+    int width, height;
+    glfwGetWindowSize(s_Handle, &width, &height);
+    return glfwGetWindowAttrib(s_Handle, GLFW_ICONIFIED) == GLFW_TRUE || width == 0 || height == 0;
 }
 
-bool Window::ShouldClose() const
+bool Window::ShouldClose()
 {
-    return glfwWindowShouldClose(m_Handle) == GLFW_TRUE;
+    return glfwWindowShouldClose(s_Handle) == GLFW_TRUE;
 }
 
 vk::SurfaceKHR Window::CreateSurface(vk::Instance instance)
 {
     VkSurfaceKHR surface;
-    glfwCreateWindowSurface(instance, m_Handle, nullptr, &surface);
+    glfwCreateWindowSurface(instance, s_Handle, nullptr, &surface);
 
     return surface;
 }
@@ -65,15 +53,6 @@ vk::SurfaceKHR Window::CreateSurface(vk::Instance instance)
 void Window::OnUpdate(float timeStep)
 {
     glfwPollEvents();
-
-    int width, height;
-    glfwGetWindowSize(m_Handle, &width, &height);
-    m_Width = width;
-    m_Height = height;
-}
-
-void Window::OnRender()
-{
 }
 
 }

@@ -2,6 +2,7 @@
 
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan.hpp>
+#include <imgui.h>
 
 namespace PathTracing
 {
@@ -10,7 +11,7 @@ class UserInterface
 {
 public:
     static void Init(
-        GLFWwindow *window, vk::Instance instance, vk::Format format, vk::PhysicalDevice physicalDevice,
+        vk::Instance instance, vk::Format format, vk::PhysicalDevice physicalDevice,
         vk::Device device, uint32_t queueFamily, vk::Queue queue, uint32_t swapchainImageCount
     );
 
@@ -18,10 +19,18 @@ public:
 
     static void Render(vk::CommandBuffer commandBuffer);
 
+    static void ToggleVisible();
     static bool GetIsFocused();
 
+    static vk::PresentModeKHR GetPresentMode();
+
 private:
+    static bool s_IsVisible;
     static bool s_IsFocused;
+    static ImGuiIO *s_Io;
+
+private:
+    static void DefineUI();
 };
 
 }

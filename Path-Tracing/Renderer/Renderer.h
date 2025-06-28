@@ -5,13 +5,12 @@
 #include <filesystem>
 
 #include "Core/Camera.h"
+#include "Core/Core.h"
 
 #include "Buffer.h"
-#include "Frame.h"
 #include "Image.h"
-#include "LogicalDevice.h"
-#include "PhysicalDevice.h"
 #include "ShaderLibrary.h"
+#include "Swapchain.h"
 #include "Window.h"
 
 namespace PathTracing
@@ -20,124 +19,87 @@ namespace PathTracing
 class Renderer
 {
 public:
-    Renderer(Window &window, Camera &camera);
-    ~Renderer();
+    static void Init(const Swapchain *swapchain);
+    static void Shutdown();
 
-    void OnUpdate(float timeStep);
-    void OnRender();
+    static void OnUpdate(float timeStep);
+    static void Render(uint32_t frameInFlightIndex, const Camera &camera);
 
 private:
-    Window &m_Window;
-    Camera &m_Camera;
-
-    uint32_t m_Width = 1280, m_Height = 720;
-
-    vk::Instance m_Instance { nullptr };
-    vk::SurfaceKHR m_Surface { nullptr };
-
-    vk::detail::DispatchLoaderDynamic m_DispatchLoader;
-
-#ifndef NDEBUG
-    vk::DebugUtilsMessengerEXT m_DebugMessenger { nullptr };
-#endif
+    static const Swapchain *s_Swapchain;
+    static vk::Extent2D s_Extent;
 
     // Blocking one time submission buffer
-    struct CommandBuffer
+    static struct CommandBuffer
     {
         vk::CommandBuffer CommandBuffer;
         vk::Fence Fence;
 
-        void Begin()
-        {
-            vk::CommandBufferBeginInfo beginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
-            CommandBuffer.begin(beginInfo);
-        }
+        void Init();
+        void Destroy();
 
-        void Submit(vk::Device device, vk::Queue queue)
-        {
-            CommandBuffer.end();
-            vk::SubmitInfo submitInfo = {};
-            submitInfo.setCommandBuffers({ CommandBuffer });
-            device.resetFences({ Fence });
-            queue.submit({ submitInfo }, Fence);
+        void Begin() const;
+        void Submit(vk::Queue queue) const;
+    } s_MainCommandBuffer;
 
-            try
-            {
-                vk::Result result =
-                    device.waitForFences({ Fence }, vk::True, std::numeric_limits<uint64_t>::max());
-                assert(result == vk::Result::eSuccess);
-            }
-            catch (vk::SystemError error)
-            {
-                throw PathTracing::error(error.what());
-            }
-        }
-    } m_MainCommandBuffer;
+    static vk::CommandPool s_MainCommandPool;
 
-    LogicalDevice m_Device;
-
-    vk::Device m_LogicalDevice { nullptr };
-    vk::Queue m_GraphicsQueue { nullptr };
-    vk::CommandPool m_CommandPool;
-
-    struct SynchronizationObjects
-    {
-        vk::Semaphore ImageAcquiredSemaphore;
-        vk::Semaphore RenderCompleteSemaphore;
-        vk::Fence InFlightFence;
-    };
     struct RenderingResources
     {
+        vk::CommandPool CommandPool;
+        vk::CommandBuffer CommandBuffer;
+
         vk::DescriptorSet DescriptorSet;
         std::unique_ptr<Image> StorageImage;
     };
 
-    vk::SwapchainKHR m_Swapchain { nullptr };
-    std::vector<Frame> m_Frames;
-    std::vector<SynchronizationObjects> m_SynchronizationObjects;
-    std::vector<RenderingResources> m_RenderingResources;
+    static std::vector<RenderingResources> s_RenderingResources;
 
-    std::unique_ptr<Buffer> m_VertexBuffer = nullptr;
-    std::unique_ptr<Buffer> m_IndexBuffer = nullptr;
-    std::unique_ptr<Buffer> m_TransformMatrixBuffer = nullptr;
-    std::unique_ptr<Buffer> m_UniformBuffer = nullptr;
+    static struct SceneData
+    {
+        std::unique_ptr<Buffer> VertexBuffer = nullptr;
+        std::unique_ptr<Buffer> IndexBuffer = nullptr;
+        std::unique_ptr<Buffer> TransformMatrixBuffer = nullptr;
 
-    std::unique_ptr<Buffer> m_BottomLevelAccelerationStructureBuffer = nullptr;
-    vk::AccelerationStructureKHR m_BottomLevelAccelerationStructure { nullptr };
-    vk::DeviceAddress m_BottomLevelAccelerationStructureAddress { 0 };
+        std::unique_ptr<Buffer> BottomLevelAccelerationStructureBuffer = nullptr;
+        vk::AccelerationStructureKHR BottomLevelAccelerationStructure { nullptr };
+        vk::DeviceAddress BottomLevelAccelerationStructureAddress { 0 };
 
-    std::unique_ptr<Buffer> m_TopLevelAccelerationStructureBuffer = nullptr;
-    vk::AccelerationStructureKHR m_TopLevelAccelerationStructure { nullptr };
-    vk::DeviceAddress m_TopLevelAccelerationStructureAddress { 0 };
+        std::unique_ptr<Buffer> TopLevelAccelerationStructureBuffer = nullptr;
+        vk::AccelerationStructureKHR TopLevelAccelerationStructure { nullptr };
+        vk::DeviceAddress TopLevelAccelerationStructureAddress { 0 };
+    } s_StaticSceneData;
 
-    vk::DescriptorSetLayout m_DescriptorSetLayout { nullptr };
-    vk::PipelineLayout m_PipelineLayout { nullptr };
+    static std::unique_ptr<Buffer> s_UniformBuffer;
 
-    std::unique_ptr<ShaderLibrary> m_ShaderLibrary = nullptr;
+    static vk::DescriptorSetLayout s_DescriptorSetLayout;
+    static vk::PipelineLayout s_PipelineLayout;
 
-    vk::Pipeline m_Pipeline { nullptr };
+    static vk::Pipeline s_Pipeline;
 
-    vk::DescriptorPool m_DescriptorPool { nullptr };
-
-private:
-    void OnResize(uint32_t width, uint32_t height);
-
-    void RecreateSwapchain();
-
-    void CreateStorageImage();
-
-    void CreateScene();
-    void SetupPipeline();
-
-    void CreateDescriptorSets();
-    void UpdateDescriptorSets();
-    void RecordCommandBuffer(const Frame &frame, const RenderingResources &resources);
-
-    int m_CurrentFrame = 0;
+    static vk::DescriptorPool s_DescriptorPool;
 
 private:
-    std::unique_ptr<BufferBuilder> m_BufferBuilder = nullptr;
-    std::unique_ptr<ImageBuilder> m_ImageBuilder = nullptr;
+    static void OnResize();
+
+    static std::unique_ptr<Image> CreateStorageImage(vk::Extent2D extent);
+
+    static void CreateScene();
+    static void SetupPipeline();
+
+    static void RecordCommandBuffer(const RenderingResources &resources);
+
+private:
+    static std::unique_ptr<BufferBuilder> s_BufferBuilder;
+    static std::unique_ptr<ImageBuilder> s_ImageBuilder;
+
+    static std::unique_ptr<ShaderLibrary> s_ShaderLibrary;
+
+    static void ImageTransition(
+        vk::CommandBuffer buffer, vk::Image image, vk::ImageLayout layoutFrom, vk::ImageLayout layoutTo,
+        vk::AccessFlagBits accessFrom, vk::AccessFlagBits accessTo, vk::PipelineStageFlagBits stageFrom,
+        vk::PipelineStageFlagBits stageTo
+    );
 };
 
 }

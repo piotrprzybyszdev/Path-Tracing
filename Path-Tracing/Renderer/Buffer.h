@@ -7,33 +7,27 @@
 namespace PathTracing
 {
 
-class PhysicalDevice;
-
 class Buffer
 {
 public:
     Buffer() = default;
     Buffer(
-        vk::Device device, const PhysicalDevice &physicalDevice, vk::BufferCreateFlags createFlags,
-        vk::DeviceSize size, vk::BufferUsageFlags usageFlags, vk::MemoryPropertyFlags memoryFlags,
-        vk::MemoryAllocateFlags allocateFlags
+        vk::BufferCreateFlags createFlags, vk::DeviceSize size, vk::BufferUsageFlags usageFlags,
+        vk::MemoryPropertyFlags memoryFlags, vk::MemoryAllocateFlags allocateFlags
     );
     ~Buffer();
 
     Buffer(Buffer &buffer) = delete;
     Buffer &operator=(Buffer &buffer) = delete;
-
     Buffer &operator=(Buffer &&buffer) noexcept;
 
-    void Upload(const void *data);
+    void Upload(const void *data) const;
 
     vk::Buffer GetHandle() const;
     vk::DeviceAddress GetDeviceAddress() const;
     vk::DeviceSize GetSize() const;
 
 private:
-    vk::Device m_Device { nullptr };
-
     vk::DeviceSize m_Size = 0;
     vk::Buffer m_Handle { nullptr };
     vk::DeviceMemory m_Memory { nullptr };
@@ -44,8 +38,6 @@ private:
 class BufferBuilder
 {
 public:
-    BufferBuilder(vk::Device device, const PhysicalDevice &physicalDevice);
-
     BufferBuilder &SetCreateFlags(vk::BufferCreateFlags createFlags);
     BufferBuilder &SetUsageFlags(vk::BufferUsageFlags usageFlags);
     BufferBuilder &SetMemoryFlags(vk::MemoryPropertyFlags memoryFlags);
@@ -57,9 +49,6 @@ public:
     std::unique_ptr<Buffer> CreateBufferUnique(vk::DeviceSize size) const;
 
 private:
-    vk::Device m_Device { nullptr };
-    const PhysicalDevice &m_PhysicalDevice;
-
     vk::BufferCreateFlags m_CreateFlags = {};
     vk::BufferUsageFlags m_UsageFlags = {};
     vk::MemoryPropertyFlags m_MemoryFlags = {};

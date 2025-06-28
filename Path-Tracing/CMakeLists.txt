@@ -12,7 +12,7 @@ foreach(SHADER_SOURCE IN LISTS SHADER_SOURCE_FILES)
                        DEPENDS ${SHADER_SOURCE} VERBATIM)
 endforeach()
 
-add_executable(Path-Tracing Core/Core.h Core/Core.cpp Core/Input.h Core/Input.cpp Core/Camera.h Core/Camera.cpp Renderer/PhysicalDevice.h Renderer/PhysicalDevice.cpp Renderer/LogicalDevice.h Renderer/LogicalDevice.cpp Renderer/Buffer.h Renderer/Buffer.cpp Renderer/Image.h Renderer/Image.cpp Renderer/Frame.h Renderer/Frame.cpp Renderer/ShaderLibrary.h Renderer/ShaderLibrary.cpp Renderer/Renderer.h Renderer/Renderer.cpp UserInterface.h UserInterface.cpp Window.h Window.cpp main.cpp)
+add_executable(Path-Tracing Core/Core.h Core/Core.cpp Core/Input.h Core/Input.cpp Core/Camera.h Core/Camera.cpp Renderer/DeviceContext.h Renderer/DeviceContext.cpp Renderer/Buffer.h Renderer/Buffer.cpp Renderer/Image.h Renderer/Image.cpp Renderer/ShaderLibrary.h Renderer/ShaderLibrary.cpp Renderer/Swapchain.h Renderer/Swapchain.cpp Renderer/Renderer.h Renderer/Renderer.cpp UserInterface.h UserInterface.cpp Window.h Window.cpp Application.h Application.cpp main.cpp)
 
 target_sources(Path-Tracing PRIVATE ${SHADER_SOURCE_FILES})
 target_sources(Path-Tracing PRIVATE ${SHADER_SPV_FILES})

@@ -9,14 +9,14 @@
 namespace PathTracing
 {
 
-class PhysicalDevice;
-class LogicalDevice;
-
 class ShaderLibrary
 {
 public:
-    ShaderLibrary(const LogicalDevice &logicalDevice, const PhysicalDevice &physicalDevice);
+    ShaderLibrary();
     ~ShaderLibrary();
+
+    ShaderLibrary(const ShaderLibrary &) = delete;
+    ShaderLibrary &operator=(const ShaderLibrary &) = delete;
 
     void AddRaygenShader(std::filesystem::path path, std::string_view entry);
     void AddMissShader(std::filesystem::path path, std::string_view entry);
@@ -24,14 +24,12 @@ public:
 
     vk::Pipeline CreatePipeline(vk::PipelineLayout layout, vk::detail::DispatchLoaderDynamic loader);
 
-    vk::StridedDeviceAddressRegionKHR GetRaygenTableEntry();
-    vk::StridedDeviceAddressRegionKHR GetMissTableEntry();
-    vk::StridedDeviceAddressRegionKHR GetClosestHitTableEntry();
+    vk::StridedDeviceAddressRegionKHR GetRaygenTableEntry() const;
+    vk::StridedDeviceAddressRegionKHR GetMissTableEntry() const;
+    vk::StridedDeviceAddressRegionKHR GetClosestHitTableEntry() const;
 
 private:
-    const uint32_t m_AlignedHandleSize;
-    const LogicalDevice &m_LogicalDevice;
-    vk::Device m_Device;
+    uint32_t m_AlignedHandleSize;
 
     std::vector<vk::ShaderModule> m_Modules;
     std::vector<vk::PipelineShaderStageCreateInfo> m_Stages;
@@ -48,7 +46,7 @@ private:
     );
     vk::ShaderModule LoadShader(std::filesystem::path path);
 
-    vk::StridedDeviceAddressRegionKHR CreateTableEntry(vk::DeviceAddress address);
+    vk::StridedDeviceAddressRegionKHR CreateTableEntry(vk::DeviceAddress address) const;
 };
 
 }

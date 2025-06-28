@@ -6,9 +6,16 @@ namespace PathTracing
 
 GLFWwindow *Input::s_Window = nullptr;
 
+static void glfwKeyCallback(GLFWwindow *window, int key, int scancode, int action, int mods)
+{
+    if (key == GLFW_KEY_SPACE && action == GLFW_RELEASE)
+        UserInterface::ToggleVisible();
+}
+
 void Input::SetWindow(GLFWwindow *window)
 {
     s_Window = window;
+    glfwSetKeyCallback(s_Window, glfwKeyCallback);
 }
 
 void Input::LockCursor()

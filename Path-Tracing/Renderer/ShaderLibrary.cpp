@@ -1,21 +1,28 @@
 #include <fstream>
 
-#include "LogicalDevice.h"
+#include "Buffer.h"
+#include "DeviceContext.h"
 #include "ShaderLibrary.h"
 
 namespace PathTracing
 {
 
-ShaderLibrary::ShaderLibrary(const LogicalDevice &logicalDevice, const PhysicalDevice &physicalDevice)
-    : m_LogicalDevice(logicalDevice), m_Device(logicalDevice.GetHandle()),
-      m_AlignedHandleSize(physicalDevice.GetAlignedShaderGroupHandleSize())
+ShaderLibrary::ShaderLibrary()
 {
+    auto &properties =
+        DeviceContext::GetPhysical()
+            .getProperties2<vk::PhysicalDeviceProperties2, vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>(
+            )
+            .get<vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>();
+
+    m_AlignedHandleSize = (properties.shaderGroupHandleSize + properties.shaderGroupHandleAlignment - 1) &
+                          ~(properties.shaderGroupHandleAlignment - 1);
 }
 
 ShaderLibrary::~ShaderLibrary()
 {
     for (vk::ShaderModule module : m_Modules)
-        m_Device.destroyShaderModule(module);
+        DeviceContext::GetLogical().destroyShaderModule(module);
 }
 
 void ShaderLibrary::AddRaygenShader(std::filesystem::path path, std::string_view entry)
@@ -45,13 +52,14 @@ vk::Pipeline ShaderLibrary::CreatePipeline(
     vk::RayTracingPipelineCreateInfoKHR createInfo(vk::PipelineCreateFlags(), m_Stages, m_Groups, 1);
     createInfo.setLayout(layout);
 
-    vk::ResultValue<vk::Pipeline> result =
-        m_Device.createRayTracingPipelineKHR(nullptr, nullptr, createInfo, nullptr, loader);
+    vk::ResultValue<vk::Pipeline> result = DeviceContext::GetLogical().createRayTracingPipelineKHR(
+        nullptr, nullptr, createInfo, nullptr, loader
+    );
     assert(result.result == vk::Result::eSuccess);
 
     const uint32_t shaderGroupCount = 3;
 
-    BufferBuilder builder = m_LogicalDevice.CreateBufferBuilder();
+    BufferBuilder builder;
     builder
         .SetUsageFlags(
             vk::BufferUsageFlagBits::eShaderBindingTableKHR | vk::BufferUsageFlagBits::eTransferSrc |
@@ -64,9 +72,10 @@ vk::Pipeline ShaderLibrary::CreatePipeline(
     m_MissShaderBindingTable = builder.CreateBuffer(m_AlignedHandleSize);
     m_ClosestHitShaderBindingTable = builder.CreateBuffer(m_AlignedHandleSize);
 
-    std::vector<uint8_t> shaderHandles = m_Device.getRayTracingShaderGroupHandlesKHR<uint8_t>(
-        result.value, 0, shaderGroupCount, m_AlignedHandleSize * shaderGroupCount, loader
-    );
+    std::vector<uint8_t> shaderHandles =
+        DeviceContext::GetLogical().getRayTracingShaderGroupHandlesKHR<uint8_t>(
+            result.value, 0, shaderGroupCount, m_AlignedHandleSize * shaderGroupCount, loader
+        );
 
     m_RaygenShaderBindingTable.Upload(shaderHandles.data());
     m_MissShaderBindingTable.Upload(shaderHandles.data() + m_AlignedHandleSize);
@@ -75,17 +84,17 @@ vk::Pipeline ShaderLibrary::CreatePipeline(
     return result.value;
 }
 
-vk::StridedDeviceAddressRegionKHR ShaderLibrary::GetRaygenTableEntry()
+vk::StridedDeviceAddressRegionKHR ShaderLibrary::GetRaygenTableEntry() const
 {
     return CreateTableEntry(m_RaygenShaderBindingTable.GetDeviceAddress());
 }
 
-vk::StridedDeviceAddressRegionKHR ShaderLibrary::GetMissTableEntry()
+vk::StridedDeviceAddressRegionKHR ShaderLibrary::GetMissTableEntry() const
 {
     return CreateTableEntry(m_MissShaderBindingTable.GetDeviceAddress());
 }
 
-vk::StridedDeviceAddressRegionKHR ShaderLibrary::GetClosestHitTableEntry()
+vk::StridedDeviceAddressRegionKHR ShaderLibrary::GetClosestHitTableEntry() const
 {
     return CreateTableEntry(m_ClosestHitShaderBindingTable.GetDeviceAddress());
 }
@@ -96,12 +105,7 @@ void ShaderLibrary::AddShader(
 )
 {
     vk::ShaderModule module = LoadShader(path);
-    m_Stages.push_back({
-        vk::PipelineShaderStageCreateFlags(),
-        stage,
-        module,
-        entry.data(),
-    });
+    m_Stages.push_back({ vk::PipelineShaderStageCreateFlags(), stage, module, entry.data() });
 
     if (stage == vk::ShaderStageFlagBits::eClosestHitKHR)
     {
@@ -130,10 +134,10 @@ vk::ShaderModule ShaderLibrary::LoadShader(std::filesystem::path path)
     file.close();
 
     vk::ShaderModuleCreateInfo createInfo(vk::ShaderModuleCreateFlags(), size, (uint32_t *)buffer.data());
-    return m_Device.createShaderModule(createInfo);
+    return DeviceContext::GetLogical().createShaderModule(createInfo);
 }
 
-vk::StridedDeviceAddressRegionKHR ShaderLibrary::CreateTableEntry(vk::DeviceAddress address)
+vk::StridedDeviceAddressRegionKHR ShaderLibrary::CreateTableEntry(vk::DeviceAddress address) const
 {
     return vk::StridedDeviceAddressRegionKHR(address, m_AlignedHandleSize, m_AlignedHandleSize);
 }
