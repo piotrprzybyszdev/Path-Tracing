@@ -32,6 +32,7 @@ private:
     uint32_t m_Width = 0;
     uint32_t m_Height = 0;
 
+    bool m_WasPreviousPressed;
     glm::vec2 m_PreviousMousePos;
 
     float m_Yaw;

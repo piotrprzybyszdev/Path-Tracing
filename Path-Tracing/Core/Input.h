@@ -37,7 +37,6 @@ public:
 
 private:
     static GLFWwindow *s_Window;
-    static bool s_IsCursorLocked;
 };
 
 }

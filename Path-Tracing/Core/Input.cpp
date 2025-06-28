@@ -4,7 +4,6 @@ namespace PathTracing
 {
 
 GLFWwindow *Input::s_Window = nullptr;
-bool Input::s_IsCursorLocked = false;
 
 void Input::SetWindow(GLFWwindow *window)
 {
@@ -13,20 +12,12 @@ void Input::SetWindow(GLFWwindow *window)
 
 void Input::LockCursor()
 {
-    if (s_IsCursorLocked)
-        return;
-
     glfwSetInputMode(s_Window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-    s_IsCursorLocked = true;
 }
 
 void Input::UnlockCursor()
 {
-    if (!s_IsCursorLocked)
-        return;
-
     glfwSetInputMode(s_Window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-    s_IsCursorLocked = false;
 }
 
 bool Input::IsKeyPressed(Key key)
