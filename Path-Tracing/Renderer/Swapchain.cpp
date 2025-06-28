@@ -1,6 +1,6 @@
+#include "Swapchain.h"
 #include "Application.h"
 #include "DeviceContext.h"
-#include "Swapchain.h"
 
 #include "Core/Core.h"
 
@@ -8,9 +8,10 @@ namespace PathTracing
 {
 
 Swapchain::Swapchain(
-    vk::SurfaceKHR surface, vk::SurfaceFormatKHR surfaceFormat, vk::PresentModeKHR presentMode
+    vk::SurfaceKHR surface, vk::SurfaceFormatKHR surfaceFormat, vk::PresentModeKHR presentMode,
+    vk::Extent2D extent
 )
-    : m_Surface(surface), m_SurfaceFormat(surfaceFormat)
+    : m_Surface(surface), m_SurfaceFormat(surfaceFormat), m_Extent(extent)
 {
     Recreate(presentMode);
 }
@@ -52,6 +53,12 @@ void Swapchain::Recreate()
     Recreate(m_PresentMode);
 }
 
+void Swapchain::Recreate(vk::Extent2D extent)
+{
+    m_Extent = extent;
+    Recreate();
+}
+
 void Swapchain::Recreate(vk::PresentModeKHR presentMode)
 {
     auto surfaceCapabilities = DeviceContext::GetPhysical().getSurfaceCapabilitiesKHR(m_Surface);
@@ -88,7 +95,7 @@ void Swapchain::Recreate(vk::PresentModeKHR presentMode)
     if (maxImageCount == 0)
         maxImageCount = std::numeric_limits<uint32_t>::max();
 
-    m_ImageCount = std::clamp(GetImageCount(presentMode), surfaceCapabilities.minImageCount, maxImageCount);
+    m_ImageCount = std::clamp(GetImageCount(m_PresentMode), surfaceCapabilities.minImageCount, maxImageCount);
     m_InFlightCount = m_ImageCount - 1;
     logger::info("Swapchain Image Count: {}", m_ImageCount);
     logger::info("Frame In Flight Count: {}", m_InFlightCount);
@@ -102,7 +109,11 @@ void Swapchain::Recreate(vk::PresentModeKHR presentMode)
     for (auto &[name, extent] : extents)
         logger::debug("Surface {} extent: {}x{}", name, extent.width, extent.height);
 
-    m_Extent = surfaceCapabilities.currentExtent;
+    if (m_Extent < surfaceCapabilities.minImageExtent || m_Extent > surfaceCapabilities.maxImageExtent)
+        m_Extent = surfaceCapabilities.currentExtent;
+
+    logger::info("Swapchain resizing to: {}x{}", m_Extent.width, m_Extent.height);
+
     auto queueFamilyIndices = DeviceContext::GetQueueFamilyIndices();
 
     vk::SwapchainCreateInfoKHR createInfo(
@@ -184,8 +195,6 @@ bool Swapchain::AcquireImage()
             { sync.InFlightFence }, vk::True, std::numeric_limits<uint64_t>::max()
         );
         assert(result == vk::Result::eSuccess);
-
-        DeviceContext::GetLogical().resetFences({ sync.InFlightFence });
     }
 
     try
@@ -194,14 +203,20 @@ bool Swapchain::AcquireImage()
             m_Handle, std::numeric_limits<uint64_t>::max(), sync.ImageAcquiredSemaphore, nullptr
         );
 
-        assert(result.result == vk::Result::eSuccess);
         m_CurrentFrameIndex = result.value;
+
+        if (result.result == vk::Result::eSuboptimalKHR)
+            logger::warn("Swapchain Acquire: ", vk::to_string(result.result));
+        else
+            assert(result.result == vk::Result::eSuccess);
     }
     catch (vk::OutOfDateKHRError error)
     {
         logger::warn(error.what());
         return false;
     }
+
+    DeviceContext::GetLogical().resetFences({ sync.InFlightFence });
 
     return true;
 }
@@ -214,6 +229,11 @@ bool Swapchain::Present()
     try
     {
         vk::Result res = DeviceContext::GetPresentQueue().presentKHR(presentInfo);
+        if (res == vk::Result::eSuboptimalKHR)
+        {
+            logger::warn("Swapchain Acquire: ", vk::to_string(res));
+            return false;
+        }
         assert(res == vk::Result::eSuccess);
     }
     catch (vk::OutOfDateKHRError error)
@@ -239,5 +259,4 @@ vk::PresentModeKHR Swapchain::GetPresentMode() const
 {
     return m_PresentMode;
 }
-
 }

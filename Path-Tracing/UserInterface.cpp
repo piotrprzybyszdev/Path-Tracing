@@ -12,7 +12,7 @@
 namespace PathTracing
 {
 
-vk::PresentModeKHR s_PresentMode = vk::PresentModeKHR::eMailbox;
+vk::PresentModeKHR s_PresentMode = vk::PresentModeKHR::eFifo;
 bool UserInterface::s_IsVisible = false;
 bool UserInterface::s_IsFocused = false;
 ImGuiIO *UserInterface::s_Io = nullptr;
@@ -92,19 +92,21 @@ vk::PresentModeKHR UserInterface::GetPresentMode()
 
 void UserInterface::DefineUI()
 {
+    s_IsFocused = false;
+
     ImGui::ShowDemoWindow();  // TODO: Remove
 
     ImGui::Begin("Settings");
     s_IsFocused |= ImGui::IsWindowFocused();
 
     static constexpr vk::PresentModeKHR modes[] = {
-        vk::PresentModeKHR::eMailbox,
         vk::PresentModeKHR::eFifo,
+        vk::PresentModeKHR::eMailbox,
         vk::PresentModeKHR::eImmediate,
     };
     static constexpr const char *modeNames[] = {
-        "Mailbox",
         "Fifo",
+        "Mailbox",
         "Immediate",
     };
 
@@ -125,8 +127,6 @@ void UserInterface::DefineUI()
         ImGui::EndCombo();
     }
 
-    s_IsFocused = false;
-
     char textBuf[256] = {};
     ImGui::InputText("Text", textBuf, 256);
     ImGui::End();
@@ -138,7 +138,7 @@ void UserInterface::DefineUI()
     );
 
     for (auto &[key, value] : Stats::GetStats())
-        ImGui::Text(value.c_str());
+        ImGui::Text("%s", value.c_str());
     ImGui::End();
 }
 

@@ -10,11 +10,15 @@ namespace PathTracing
 class Swapchain
 {
 public:
-    Swapchain(vk::SurfaceKHR surface, vk::SurfaceFormatKHR surfaceFormat, vk::PresentModeKHR presentMode);
+    Swapchain(
+        vk::SurfaceKHR surface, vk::SurfaceFormatKHR surfaceFormat, vk::PresentModeKHR presentMode,
+        vk::Extent2D extent
+    );
     ~Swapchain();
 
     void Recreate();
     void Recreate(vk::PresentModeKHR presentMode);
+    void Recreate(vk::Extent2D extent);
 
     Swapchain(const Swapchain &) = delete;
     Swapchain &operator=(const Swapchain &) = delete;
@@ -38,7 +42,7 @@ public:
     const Frame &GetCurrentFrame() const;
     const SynchronizationObjects &GetCurrentSyncObjects() const;
     uint32_t GetCurrentFrameInFlightIndex() const;
-    
+
     bool AcquireImage();
     bool Present();
 

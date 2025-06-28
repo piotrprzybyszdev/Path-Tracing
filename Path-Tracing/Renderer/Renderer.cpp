@@ -21,7 +21,6 @@ namespace PathTracing
 static inline constexpr uint32_t s_MaxFramesInFlight = 10;
 
 const Swapchain *Renderer::s_Swapchain = nullptr;
-vk::Extent2D Renderer::s_Extent = {};
 
 Renderer::CommandBuffer Renderer::s_MainCommandBuffer = { nullptr, nullptr };
 vk::CommandPool Renderer::s_MainCommandPool = nullptr;
@@ -364,9 +363,9 @@ void Renderer::SetupPipeline()
 
     {
         std::vector<vk::DescriptorPoolSize> poolSizes = {
-            vk::DescriptorPoolSize(vk::DescriptorType::eAccelerationStructureKHR, 1),
-            vk::DescriptorPoolSize(vk::DescriptorType::eStorageImage, 1),
-            vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, 1)
+            vk::DescriptorPoolSize(vk::DescriptorType::eAccelerationStructureKHR, s_MaxFramesInFlight),
+            vk::DescriptorPoolSize(vk::DescriptorType::eStorageImage, s_MaxFramesInFlight),
+            vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, s_MaxFramesInFlight)
         };
 
         vk::DescriptorPoolCreateInfo createInfo(
@@ -453,12 +452,6 @@ void Renderer::RecordCommandBuffer(const RenderingResources &resources)
 
 void Renderer::OnUpdate(float timeStep)
 {
-    if (s_Swapchain->GetExtent() != s_Extent)
-    {
-        s_Extent = s_Swapchain->GetExtent();
-        OnResize();
-    }
-
     assert(s_Swapchain->GetInFlightCount() < s_MaxFramesInFlight);
     while (s_RenderingResources.size() < s_Swapchain->GetInFlightCount())
     {
@@ -509,11 +502,11 @@ void Renderer::OnUpdate(float timeStep)
     }
 }
 
-void Renderer::OnResize()
+void Renderer::OnResize(vk::Extent2D extent)
 {
     for (RenderingResources &res : s_RenderingResources)
     {
-        res.StorageImage = CreateStorageImage(s_Extent);
+        res.StorageImage = CreateStorageImage(extent);
 
         vk::DescriptorImageInfo imageInfo =
             vk::DescriptorImageInfo(vk::Sampler(), res.StorageImage->GetView(), vk::ImageLayout::eGeneral);

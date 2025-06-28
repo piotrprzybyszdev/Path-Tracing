@@ -23,11 +23,11 @@ public:
     static void Shutdown();
 
     static void OnUpdate(float timeStep);
+    static void OnResize(vk::Extent2D extent);
     static void Render(uint32_t frameInFlightIndex, const Camera &camera);
 
 private:
     static const Swapchain *s_Swapchain;
-    static vk::Extent2D s_Extent;
 
     // Blocking one time submission buffer
     static struct CommandBuffer
@@ -80,8 +80,6 @@ private:
     static vk::DescriptorPool s_DescriptorPool;
 
 private:
-    static void OnResize();
-
     static std::unique_ptr<Image> CreateStorageImage(vk::Extent2D extent);
 
     static void CreateScene();

@@ -64,16 +64,19 @@ void Application::Init()
 {
     uint32_t version = vk::enumerateInstanceVersion();
 
+    uint32_t variant = vk::apiVersionVariant(version);
     uint32_t major = vk::apiVersionMajor(version);
     uint32_t minor = vk::apiVersionMinor(version);
     uint32_t patch = vk::apiVersionPatch(version);
 
     logger::debug("Highest supported vulkan version: {}.{}.{}", major, minor, patch);
 
-    version = vk::makeVersion(major, minor, 0u);
+    version = vk::makeApiVersion(variant, major, minor, 0u);
     logger::info("Selected vulkan version: {}.{}.{}", major, minor, 0u);
+    assert(variant == 0);
 
-    vk::ApplicationInfo applicationInfo("Path Tracing", 1, "Path Tracing", 1, version);
+    const char *applicationName = "Path Tracing";
+    vk::ApplicationInfo applicationInfo(applicationName, 1, applicationName, 1, version);
 
     {
         int result = glfwInit();
@@ -118,8 +121,7 @@ void Application::Init()
                 vk::DebugUtilsMessageSeverityFlagBitsEXT::eError,
             vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral |
                 vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance |
-                vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation |
-                vk::DebugUtilsMessageTypeFlagBitsEXT::eDeviceAddressBinding,
+                vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation,
             debugCallback, nullptr
         );
 
@@ -127,7 +129,9 @@ void Application::Init()
     }
 #endif
 
-    Window::Create(1280, 720, "Path Tracing");
+    constexpr vk::Extent2D windowSize(1280, 720);
+
+    Window::Create(windowSize.width, windowSize.height, applicationName);
     s_Surface = Window::CreateSurface(s_Instance);
     Input::SetWindow(Window::GetHandle());
     s_State = State::HasWindow;
@@ -137,7 +141,7 @@ void Application::Init()
 
     s_Swapchain = std::make_unique<Swapchain>(
         s_Surface, vk::SurfaceFormatKHR(vk::Format::eR8G8B8A8Unorm, vk::ColorSpaceKHR::eSrgbNonlinear),
-        vk::PresentModeKHR::eMailbox
+        UserInterface::GetPresentMode(), windowSize
     );
     s_State = State::HasSwapchain;
 
@@ -190,37 +194,19 @@ void Application::Run()
 {
     s_State = State::Running;
 
-    float lastFrameTime = 0.0f;
-    vk::Extent2D windowSize = {};
-
     Camera camera(45.0f, 100.0f, 0.1f);
+    
+    float lastFrameTime = 0.0f;
+    vk::Extent2D previousSize = {};
 
     while (!Window::ShouldClose())
     {
-        Timer timer("Frame total");
-
         float time = glfwGetTime();
 
         float timeStep = time - lastFrameTime;
         lastFrameTime = time;
 
-        {
-            Timer timer("Update");
-
-            vk::Extent2D currentSize = s_Swapchain->GetExtent();
-
-            if (currentSize != windowSize)
-            {
-                windowSize = currentSize;
-                logger::info("Resizing to: {}x{}", windowSize.width, windowSize.height);
-
-                camera.OnResize(windowSize.width, windowSize.height);
-            }
-
-            Window::OnUpdate(timeStep);
-            camera.OnUpdate(timeStep);
-            Renderer::OnUpdate(timeStep);
-        }
+        Window::PollEvents();
 
         if (Window::IsMinimized())
         {
@@ -228,30 +214,47 @@ void Application::Run()
             continue;
         }
 
+        if (s_Swapchain->GetPresentMode() != UserInterface::GetPresentMode())
         {
-            Timer timer("Render");
+            DeviceContext::GetLogical().waitIdle();
+            s_Swapchain->Recreate(UserInterface::GetPresentMode());
+        }
 
-            if (s_Swapchain->GetPresentMode() != UserInterface::GetPresentMode())
+        const vk::Extent2D windowSize = Window::GetSize();
+        if (windowSize != previousSize)
+        {
+            logger::info("Resize event for: {}x{}", windowSize.width, windowSize.height);
+
+            DeviceContext::GetLogical().waitIdle();
+            s_Swapchain->Recreate(windowSize);
+
+            camera.OnResize(windowSize.width, windowSize.height);
+            Renderer::OnResize(windowSize);
+
+            previousSize = windowSize;
+        }
+
+        {
+            Timer timer("Frame total");
+
             {
-                DeviceContext::GetLogical().waitIdle();
-                s_Swapchain->Recreate(UserInterface::GetPresentMode());
-                continue;
+                Timer timer("Update");
+
+                Window::OnUpdate(timeStep);
+                camera.OnUpdate(timeStep);
+                Renderer::OnUpdate(timeStep);
             }
 
-            if (!s_Swapchain->AcquireImage())
             {
-                DeviceContext::GetLogical().waitIdle();
-                s_Swapchain->Recreate();
-                continue;
-            }
+                Timer timer("Render");
 
-            Renderer::Render(s_Swapchain->GetCurrentFrameInFlightIndex(), camera);
+                if (!s_Swapchain->AcquireImage())
+                    continue;
 
-            if (!s_Swapchain->Present())
-            {
-                DeviceContext::GetLogical().waitIdle();
-                s_Swapchain->Recreate();
-                continue;
+                Renderer::Render(s_Swapchain->GetCurrentFrameInFlightIndex(), camera);
+
+                if (!s_Swapchain->Present())
+                    continue;
             }
         }
 

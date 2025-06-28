@@ -25,6 +25,18 @@ void Window::Destroy()
     glfwTerminate();
 }
 
+void Window::PollEvents()
+{
+    glfwPollEvents();
+}
+
+vk::Extent2D Window::GetSize()
+{
+    int x, y;
+    glfwGetWindowSize(s_Handle, &x, &y);
+    return vk::Extent2D(x, y);
+}
+
 GLFWwindow *Window::GetHandle()
 {
     return s_Handle;
@@ -52,7 +64,6 @@ vk::SurfaceKHR Window::CreateSurface(vk::Instance instance)
 
 void Window::OnUpdate(float timeStep)
 {
-    glfwPollEvents();
 }
 
 }

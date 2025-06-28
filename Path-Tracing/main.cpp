@@ -9,7 +9,11 @@ using namespace PathTracing;
 
 int main()
 {
+#ifndef NDEBUG
+    logger::set_level(logger::level::debug);
+#else
     logger::set_level(logger::level::info);
+#endif
 
     try
     {

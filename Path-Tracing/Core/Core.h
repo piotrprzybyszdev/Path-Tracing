@@ -40,7 +40,7 @@ private:
 template<typename... Args>
 void Stats::AddStat(std::string_view statName, const std::format_string<Args...> format, Args &&...args)
 {
-    logger::debug(std::vformat(format.get(), std::make_format_args(args...)));
+    logger::trace(std::vformat(format.get(), std::make_format_args(args...)));
     s_Stats[statName.data()] = std::vformat(format.get(), std::make_format_args(args...));
 }
 

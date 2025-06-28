@@ -91,12 +91,9 @@ void Camera::OnUpdate(float timeStep)
 
 void Camera::OnResize(uint32_t width, uint32_t height)
 {
-    m_Width = width;
-    m_Height = height;
-
-    m_InvProjection = glm::inverse(glm::perspectiveFov(
-        glm::radians(m_VerticalFOV), (float)m_Width, (float)m_Height, m_NearClip, m_FarClip
-    ));
+    m_InvProjection = glm::inverse(
+        glm::perspectiveFov(glm::radians(m_VerticalFOV), (float)width, (float)height, m_NearClip, m_FarClip)
+    );
 }
 
 glm::mat4 Camera::GetInvProjectionMatrix() const

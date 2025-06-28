@@ -5,8 +5,6 @@
 #include <imgui.h>
 #include <vulkan/vulkan.hpp>
 
-#include <cstdint>
-
 namespace PathTracing
 {
 
@@ -16,7 +14,11 @@ public:
     static void Create(int width, int height, const char *title);
     static void Destroy();
 
+    static void PollEvents();
+
     static GLFWwindow *GetHandle();
+    static vk::Extent2D GetSize();
+
     static bool IsMinimized();
     static bool ShouldClose();
 
