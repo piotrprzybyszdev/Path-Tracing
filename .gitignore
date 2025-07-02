@@ -20,3 +20,6 @@ INSTALL.*
 
 # Shader binaries
 *.spv
+
+# Assets
+assets
