@@ -15,16 +15,35 @@ public:
 
     ~Image();
 
+    Image(Image &&image) noexcept;
+
     Image(Image &image) = delete;
     Image &operator=(Image &image) = delete;
 
     vk::Image GetHandle() const;
     vk::ImageView GetView() const;
 
+    void UploadStaging(const uint8_t *data) const;
+
+    void Transition(vk::CommandBuffer buffer, vk::ImageLayout layoutFrom, vk::ImageLayout layoutTo) const;
+    
+public:
+    static void Transition(
+        vk::CommandBuffer buffer, vk::Image image, vk::ImageLayout layoutFrom, vk::ImageLayout layoutTo
+    );
+
 private:
     vk::Image m_Handle { nullptr };
     vk::DeviceMemory m_Memory { nullptr };
     vk::ImageView m_View { nullptr };
+    vk::Format m_Format;
+    vk::Extent2D m_Extent;
+
+    bool m_IsMoved = false;
+
+private:
+    static vk::AccessFlags GetAccessFlags(vk::ImageLayout layout);
+    static vk::PipelineStageFlagBits GetPipelineStageFlags(vk::ImageLayout layout);
 };
 
 class ImageBuilder

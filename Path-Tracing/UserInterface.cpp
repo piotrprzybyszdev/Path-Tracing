@@ -12,7 +12,9 @@
 namespace PathTracing
 {
 
-vk::PresentModeKHR s_PresentMode = vk::PresentModeKHR::eFifo;
+static vk::PresentModeKHR s_PresentMode = vk::PresentModeKHR::eFifo;
+static Shaders::EnabledTextureFlags s_EnabledTextures = Shaders::TexturesEnableAll;
+static Shaders::RenderModeFlags s_RenderMode = Shaders::RenderModeColor;
 bool UserInterface::s_IsVisible = false;
 bool UserInterface::s_IsFocused = false;
 ImGuiIO *UserInterface::s_Io = nullptr;
@@ -90,6 +92,16 @@ vk::PresentModeKHR UserInterface::GetPresentMode()
     return s_PresentMode;
 }
 
+Shaders::EnabledTextureFlags UserInterface::GetEnabledTextures()
+{
+    return s_EnabledTextures;
+}
+
+Shaders::RenderModeFlags UserInterface::GetRenderMode()
+{
+    return s_RenderMode;
+}
+
 void UserInterface::DefineUI()
 {
     s_IsFocused = false;
@@ -117,16 +129,69 @@ void UserInterface::DefineUI()
     {
         for (int i = 0; i < 3; i++)
         {
+            ImGui::PushID(i);
             const bool is_selected = (selected_idx == i);
             if (ImGui::Selectable(modeNames[i], is_selected))
             {
                 selected_idx = i;
                 s_PresentMode = modes[i];
             }
+            ImGui::PopID();
         }
         ImGui::EndCombo();
     }
 
+    static constexpr Shaders::EnabledTextureFlags textureFlags[] = {
+        Shaders::TexturesEnableAlbedo,
+        Shaders::TexturesEnableNormal,
+        Shaders::TexturesEnableMetalic,
+        Shaders::TexturesEnableRoughness,
+    };
+    static constexpr const char *textureNames[] = {
+        "Albedo",
+        "Normal",
+        "Metalic",
+        "Roughness",
+    };
+
+    // FIX: If you change the starting flags this will be out of sync
+    static bool isTextureEnabled[] = { true, true, true, true };
+
+    for (int i = 0; i < 4; i++)
+    {
+        ImGui::PushID(i);
+        if (ImGui::Checkbox(textureNames[i], &isTextureEnabled[i]))
+        {
+            s_EnabledTextures ^= textureFlags[i];
+        }
+        ImGui::PopID();
+    }
+
+    static constexpr Shaders::RenderModeFlags renderModes[] = {
+        Shaders::RenderModeColor,
+        Shaders::RenderModeWorldPosition,
+        Shaders::RenderModeNormal,
+        Shaders::RenderModeTextureCoords,
+    };
+
+    static constexpr const char *renderModeNames[] = {
+        "Color",
+        "World Position",
+        "Normal",
+        "TextureCoords",
+    };
+
+    for (int i = 0; i < 4; i++)
+    {
+        ImGui::PushID(i);
+        if (ImGui::RadioButton(renderModeNames[i], s_RenderMode == renderModes[i]))
+        {
+            s_RenderMode = renderModes[i];
+        }
+        ImGui::PopID();
+    }
+
+    // TODO: Remove
     char textBuf[256] = {};
     ImGui::InputText("Text", textBuf, 256);
     ImGui::End();

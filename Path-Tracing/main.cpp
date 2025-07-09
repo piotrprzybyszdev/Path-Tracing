@@ -1,6 +1,3 @@
-#include <cassert>
-#include <iostream>
-
 #include "Core/Core.h"
 
 #include "Application.h"

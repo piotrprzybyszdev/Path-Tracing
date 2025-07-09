@@ -8,7 +8,9 @@
 #include "Core/Core.h"
 
 #include "Buffer.h"
+#include "DescriptorSet.h"
 #include "Image.h"
+#include "MaterialSystem.h"
 #include "ShaderLibrary.h"
 #include "Swapchain.h"
 #include "Window.h"
@@ -22,12 +24,14 @@ public:
     static void Init(const Swapchain *swapchain);
     static void Shutdown();
 
+    static void SetScene();
+
     static void OnUpdate(float timeStep);
     static void OnResize(vk::Extent2D extent);
-    static void Render(uint32_t frameInFlightIndex, const Camera &camera);
+    static void Render(const Camera &camera);
 
-private:
-    static const Swapchain *s_Swapchain;
+    static Shaders::RenderModeFlags s_RenderMode;
+    static Shaders::EnabledTextureFlags s_EnabledTextures;
 
     // Blocking one time submission buffer
     static struct CommandBuffer
@@ -42,6 +46,9 @@ private:
         void Submit(vk::Queue queue) const;
     } s_MainCommandBuffer;
 
+private:
+    static const Swapchain *s_Swapchain;
+
     static vk::CommandPool s_MainCommandPool;
 
     struct RenderingResources
@@ -49,7 +56,6 @@ private:
         vk::CommandPool CommandPool;
         vk::CommandBuffer CommandBuffer;
 
-        vk::DescriptorSet DescriptorSet;
         std::unique_ptr<Image> StorageImage;
     };
 
@@ -59,25 +65,29 @@ private:
     {
         std::unique_ptr<Buffer> VertexBuffer = nullptr;
         std::unique_ptr<Buffer> IndexBuffer = nullptr;
+        std::unique_ptr<Buffer> GeometryBuffer = nullptr;
         std::unique_ptr<Buffer> TransformMatrixBuffer = nullptr;
 
-        std::unique_ptr<Buffer> BottomLevelAccelerationStructureBuffer = nullptr;
-        vk::AccelerationStructureKHR BottomLevelAccelerationStructure { nullptr };
-        vk::DeviceAddress BottomLevelAccelerationStructureAddress { 0 };
+        std::unique_ptr<Buffer> BottomLevelAccelerationStructureBuffer1 = nullptr;
+        vk::AccelerationStructureKHR BottomLevelAccelerationStructure1 { nullptr };
+        vk::DeviceAddress BottomLevelAccelerationStructureAddress1 { 0 };
+
+        std::unique_ptr<Buffer> BottomLevelAccelerationStructureBuffer2 = nullptr;
+        vk::AccelerationStructureKHR BottomLevelAccelerationStructure2 { nullptr };
+        vk::DeviceAddress BottomLevelAccelerationStructureAddress2 { 0 };
 
         std::unique_ptr<Buffer> TopLevelAccelerationStructureBuffer = nullptr;
         vk::AccelerationStructureKHR TopLevelAccelerationStructure { nullptr };
         vk::DeviceAddress TopLevelAccelerationStructureAddress { 0 };
     } s_StaticSceneData;
 
-    static std::unique_ptr<Buffer> s_UniformBuffer;
+    static std::unique_ptr<Buffer> s_RaygenUniformBuffer;
+    static std::unique_ptr<Buffer> s_ClosestHitUniformBuffer;
 
-    static vk::DescriptorSetLayout s_DescriptorSetLayout;
+    static std::unique_ptr<DescriptorSet> s_DescriptorSet;
+
     static vk::PipelineLayout s_PipelineLayout;
-
     static vk::Pipeline s_Pipeline;
-
-    static vk::DescriptorPool s_DescriptorPool;
 
 private:
     static std::unique_ptr<Image> CreateStorageImage(vk::Extent2D extent);
@@ -92,12 +102,9 @@ private:
     static std::unique_ptr<ImageBuilder> s_ImageBuilder;
 
     static std::unique_ptr<ShaderLibrary> s_ShaderLibrary;
+    static std::unique_ptr<MaterialSystem> s_MaterialSystem;
 
-    static void ImageTransition(
-        vk::CommandBuffer buffer, vk::Image image, vk::ImageLayout layoutFrom, vk::ImageLayout layoutTo,
-        vk::AccessFlagBits accessFrom, vk::AccessFlagBits accessTo, vk::PipelineStageFlagBits stageFrom,
-        vk::PipelineStageFlagBits stageTo
-    );
+    static vk::Sampler s_Sampler;
 };
 
 }

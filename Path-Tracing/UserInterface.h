@@ -4,6 +4,8 @@
 #include <imgui.h>
 #include <vulkan/vulkan.hpp>
 
+#include "Shaders/ShaderTypes.incl"
+
 namespace PathTracing
 {
 
@@ -23,6 +25,8 @@ public:
     static bool GetIsFocused();
 
     static vk::PresentModeKHR GetPresentMode();
+    static Shaders::EnabledTextureFlags GetEnabledTextures();
+    static Shaders::RenderModeFlags GetRenderMode();
 
 private:
     static bool s_IsVisible;

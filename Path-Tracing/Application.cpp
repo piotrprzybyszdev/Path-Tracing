@@ -13,6 +13,7 @@
 #include "Renderer/Swapchain.h"
 
 #include "Application.h"
+#include "MaterialSystem.h"
 #include "UserInterface.h"
 #include "Window.h"
 
@@ -73,7 +74,9 @@ void Application::Init()
 
     version = vk::makeApiVersion(variant, major, minor, 0u);
     logger::info("Selected vulkan version: {}.{}.{}", major, minor, 0u);
-    assert(variant == 0);
+
+    if (version == 0)
+        logger::error(std::format("Vulkan API version variant is not equal to 0: ({})", variant));
 
     const char *applicationName = "Path Tracing";
     vk::ApplicationInfo applicationInfo(applicationName, 1, applicationName, 1, version);
@@ -154,12 +157,39 @@ void Application::Init()
 
     Renderer::Init(s_Swapchain.get());
     s_State = State::Initialized;
+
+    MaterialSystem::Init();
+
+    // TODO: Move to Scene class when implementing model loading
+    const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets";
+    const std::array<std::string, 3> assetNames = { "Metal", "PavingStones", "Logs" };
+    const std::array<std::string, 3> materials = {
+        "Metal062C_1K-JPG",
+        "PavingStones142_1K-JPG",
+        "Logs001_1K-JPG",
+    };
+
+    for (int i = 0; i < 3; i++)
+    {
+        const std::filesystem::path materialPath = base / assetNames[i];
+        const std::string &material = materials[i];
+        MaterialSystem::AddMaterial(
+            assetNames[i], materialPath / (material + "_Color.jpg"),
+            materialPath / (material + "_NormalGL.jpg"),
+            materialPath / (material + "_Roughness.jpg"), materialPath / (material + "_Roughness.jpg")
+        );
+    }
+
+    MaterialSystem::UploadBuffer();
+    Renderer::SetScene();
 }
 
 void Application::Shutdown()
 {
     if (DeviceContext::GetLogical())
         DeviceContext::GetLogical().waitIdle();
+
+    MaterialSystem::Shutdown();
 
     switch (s_State)
     {
@@ -195,7 +225,7 @@ void Application::Run()
     s_State = State::Running;
 
     Camera camera(45.0f, 100.0f, 0.1f);
-    
+
     float lastFrameTime = 0.0f;
     vk::Extent2D previousSize = {};
 
@@ -242,6 +272,8 @@ void Application::Run()
 
                 Window::OnUpdate(timeStep);
                 camera.OnUpdate(timeStep);
+                Renderer::s_EnabledTextures = UserInterface::GetEnabledTextures();
+                Renderer::s_RenderMode = UserInterface::GetRenderMode();
                 Renderer::OnUpdate(timeStep);
             }
 
@@ -251,7 +283,7 @@ void Application::Run()
                 if (!s_Swapchain->AcquireImage())
                     continue;
 
-                Renderer::Render(s_Swapchain->GetCurrentFrameInFlightIndex(), camera);
+                Renderer::Render(camera);
 
                 if (!s_Swapchain->Present())
                     continue;

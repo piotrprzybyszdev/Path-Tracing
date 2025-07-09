@@ -1,7 +1,11 @@
+#include <vulkan/vulkan_format_traits.hpp>
+
 #include "Core/Core.h"
 
+#include "Buffer.h"
 #include "DeviceContext.h"
 #include "Image.h"
+#include "Renderer.h"
 
 namespace PathTracing
 {
@@ -10,6 +14,7 @@ Image::Image(
     vk::Format format, vk::Extent2D extent, vk::ImageUsageFlags usageFlags,
     vk::MemoryPropertyFlags memoryFlags
 )
+    : m_Format(format), m_Extent(extent)
 {
     vk::ImageCreateInfo createInfo(
         vk::ImageCreateFlags(), vk::ImageType::e2D, format, vk::Extent3D(extent, 1), 1, 1,
@@ -34,8 +39,22 @@ Image::Image(
     m_View = DeviceContext::GetLogical().createImageView(viewCreateInfo);
 }
 
+Image::Image(Image &&image) noexcept
+{
+    image.m_IsMoved = true;
+
+    m_Handle = image.m_Handle;
+    m_Memory = image.m_Memory;
+    m_View = image.m_View;
+    m_Format = image.m_Format;
+    m_Extent = image.m_Extent;
+}
+
 Image::~Image()
 {
+    if (m_IsMoved)
+        return;
+
     DeviceContext::GetLogical().destroyImageView(m_View);
     DeviceContext::GetLogical().destroyImage(m_Handle);
     DeviceContext::GetLogical().freeMemory(m_Memory);
@@ -49,6 +68,105 @@ vk::Image Image::GetHandle() const
 vk::ImageView Image::GetView() const
 {
     return m_View;
+}
+
+void Image::UploadStaging(const uint8_t *data) const
+{
+    BufferBuilder builder;
+    builder.SetUsageFlags(vk::BufferUsageFlagBits::eTransferSrc)
+        .SetMemoryFlags(vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+
+    Buffer buffer = builder.CreateBuffer(m_Extent.width * m_Extent.height * vk::blockSize(m_Format));
+
+    buffer.Upload(data);
+
+    Renderer::s_MainCommandBuffer.Begin();
+
+    Transition(
+        Renderer::s_MainCommandBuffer.CommandBuffer, vk::ImageLayout::eUndefined,
+        vk::ImageLayout::eTransferDstOptimal
+    );
+
+    Renderer::s_MainCommandBuffer.CommandBuffer.copyBufferToImage(
+        buffer.GetHandle(), m_Handle, vk::ImageLayout::eTransferDstOptimal,
+        { vk::BufferImageCopy(
+            0, 0, 0, vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1),
+            vk::Offset3D(0, 0, 0), vk::Extent3D(m_Extent, 1)
+        ) }
+    );
+
+    Transition(
+        Renderer::s_MainCommandBuffer.CommandBuffer, vk::ImageLayout::eTransferDstOptimal,
+        vk::ImageLayout::eShaderReadOnlyOptimal
+    );
+
+    Renderer::s_MainCommandBuffer.Submit(DeviceContext::GetGraphicsQueue());
+}
+
+vk::AccessFlags Image::GetAccessFlags(vk::ImageLayout layout)
+{
+    switch (layout)
+    {
+    case vk::ImageLayout::eUndefined:
+    case vk::ImageLayout::ePresentSrcKHR:
+        return vk::AccessFlagBits::eNone;
+    case vk::ImageLayout::eColorAttachmentOptimal:
+        return vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite;
+    case vk::ImageLayout::eShaderReadOnlyOptimal:
+        return vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite;
+    case vk::ImageLayout::eTransferSrcOptimal:
+        return vk::AccessFlagBits::eTransferRead;
+    case vk::ImageLayout::eTransferDstOptimal:
+        return vk::AccessFlagBits::eTransferWrite;
+    case vk::ImageLayout::eGeneral:
+        return vk::AccessFlagBits::eNone;
+    default:
+        throw new error("Unsupported layout transition");
+    }
+}
+
+vk::PipelineStageFlagBits Image::GetPipelineStageFlags(vk::ImageLayout layout)
+{
+    switch (layout)
+    {
+    case vk::ImageLayout::eUndefined:
+        return vk::PipelineStageFlagBits::eTopOfPipe;
+    case vk::ImageLayout::eTransferSrcOptimal:
+        return vk::PipelineStageFlagBits::eTransfer;
+    case vk::ImageLayout::eTransferDstOptimal:
+        return vk::PipelineStageFlagBits::eTransfer;
+    case vk::ImageLayout::eColorAttachmentOptimal:
+        return vk::PipelineStageFlagBits::eColorAttachmentOutput;
+    case vk::ImageLayout::eShaderReadOnlyOptimal:
+        return vk::PipelineStageFlagBits::eRayTracingShaderKHR;
+    case vk::ImageLayout::ePresentSrcKHR:
+        return vk::PipelineStageFlagBits::eBottomOfPipe;
+    case vk::ImageLayout::eGeneral:
+        return vk::PipelineStageFlagBits::eAllCommands;
+    default:
+        throw new error("Unsupported layout transition");
+    }
+}
+
+void Image::Transition(vk::CommandBuffer buffer, vk::ImageLayout layoutFrom, vk::ImageLayout layoutTo) const
+{
+    Transition(buffer, m_Handle, layoutFrom, layoutTo);
+}
+
+void Image::Transition(
+    vk::CommandBuffer buffer, vk::Image image, vk::ImageLayout layoutFrom, vk::ImageLayout layoutTo
+)
+{
+    vk::ImageMemoryBarrier barrier(
+        Image::GetAccessFlags(layoutFrom), Image::GetAccessFlags(layoutTo), layoutFrom, layoutTo,
+        vk::QueueFamilyIgnored, vk::QueueFamilyIgnored, image,
+        vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1)
+    );
+
+    buffer.pipelineBarrier(
+        Image::GetPipelineStageFlags(layoutFrom), Image::GetPipelineStageFlags(layoutTo),
+        vk::DependencyFlags(), {}, {}, { barrier }
+    );
 }
 
 ImageBuilder &ImageBuilder::SetFormat(vk::Format format)

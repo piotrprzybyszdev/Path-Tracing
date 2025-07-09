@@ -40,7 +40,7 @@ void DeviceContext::Init(
         if (CheckSuitable(device, deviceExtensions, requestedLayers))
             suitableDevices.push_back(device);
     }
-
+  
     if (suitableDevices.empty())
         throw error("No suitable devices found");
 
@@ -95,6 +95,11 @@ void DeviceContext::Init(
     vk::PhysicalDeviceDynamicRenderingFeatures dynamicRenderingFeatures;
     dynamicRenderingFeatures.setDynamicRendering(vk::True);
     pipelineFeatures.setPNext(&dynamicRenderingFeatures);
+
+    vk::PhysicalDeviceDescriptorIndexingFeatures descriptorIndexingFeatures;
+    descriptorIndexingFeatures.setDescriptorBindingPartiallyBound(vk::True);
+    descriptorIndexingFeatures.setRuntimeDescriptorArray(vk::True);
+    dynamicRenderingFeatures.setPNext(&descriptorIndexingFeatures);
 
     vk::DeviceCreateInfo createInfo(
         vk::DeviceCreateFlags(), { mainQueueCreateInfo }, requestedLayers, deviceExtensions, nullptr,

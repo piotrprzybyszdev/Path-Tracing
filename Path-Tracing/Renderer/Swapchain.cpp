@@ -55,6 +55,9 @@ void Swapchain::Recreate()
 
 void Swapchain::Recreate(vk::Extent2D extent)
 {
+    if (m_Extent == extent)
+        return;
+
     m_Extent = extent;
     Recreate();
 }

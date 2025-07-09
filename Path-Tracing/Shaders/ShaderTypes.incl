@@ -1,0 +1,81 @@
+#ifndef GL_core_profile
+#pragma once
+
+#include <glm/glm.hpp>
+
+namespace PathTracing::Shaders
+{
+
+using namespace glm;
+
+using RenderModeFlags = uint;
+using EnabledTextureFlags = uint;
+#endif
+
+struct Camera
+{
+    mat4 ViewInverse;
+    mat4 ProjInverse;
+};
+
+struct RaygenUniformData
+{
+    Camera u_Camera;
+};
+
+const vec3 DefaultAlbedo = vec3(1.0f);
+const vec3 DefaultNormal = vec3(0.0f, 0.0f, 1.0f);
+const float DefaultMetalness = 0.0f;
+const float DefaultRoughness = 0.0f;
+
+const uint RenderModeColor         = 0x1u;
+const uint RenderModeWorldPosition = 0x2u;
+const uint RenderModeNormal	       = 0x3u;
+const uint RenderModeTextureCoords = 0x4u;
+
+const uint TexturesEnableNone      = 0x0u;
+const uint TexturesEnableAlbedo    = 0x1u;
+const uint TexturesEnableNormal    = 0x2u;
+const uint TexturesEnableMetalic   = 0x4u;
+const uint TexturesEnableRoughness = 0x8u;
+const uint TexturesEnableAll       = 0xfu;
+
+struct ClosestHitUniformData
+{
+    uint u_RenderMode;       // enum
+    uint u_EnabledTextures;  // enum
+};
+
+struct Vertex
+{
+    vec3 Position;
+    vec2 TexCoords;
+    vec3 Normal;
+    vec3 Tangent;
+    vec3 Bitangent;
+};
+
+struct Geometry
+{
+    uint VertexBufferOffset;
+    uint IndexBufferOffset;
+};
+
+struct Material
+{
+	uint AlbedoIdx;
+    uint NormalIdx;
+    uint RoughnessIdx;
+    uint MetalicIdx;
+};
+
+struct SBTBuffer
+{
+    uint GeometryIndex;
+    uint MaterialIndex;
+};
+
+
+#ifndef GL_core_profile
+}
+#endif

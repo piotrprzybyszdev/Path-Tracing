@@ -23,3 +23,6 @@ INSTALL.*
 
 # Assets
 assets
+
+# Other
+imgui.ini

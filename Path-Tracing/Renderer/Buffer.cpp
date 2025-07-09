@@ -2,6 +2,7 @@
 
 #include "Buffer.h"
 #include "DeviceContext.h"
+#include "Renderer.h"
 
 namespace PathTracing
 {
@@ -10,7 +11,7 @@ Buffer::Buffer(
     vk::BufferCreateFlags createFlags, vk::DeviceSize size, vk::BufferUsageFlags usageFlags,
     vk::MemoryPropertyFlags memoryFlags, vk::MemoryAllocateFlags allocateFlags
 )
-    : m_Size(size)
+    : m_Size(size), m_IsDevice(memoryFlags & vk::MemoryPropertyFlagBits::eDeviceLocal)
 {
     vk::BufferCreateInfo createInfo(createFlags, size, usageFlags);
     m_Handle = DeviceContext::GetLogical().createBuffer(createInfo);
@@ -49,9 +50,26 @@ Buffer::~Buffer()
 
 void Buffer::Upload(const void *data) const
 {
-    void *dst = DeviceContext::GetLogical().mapMemory(m_Memory, 0, m_Size);
-    memcpy(dst, data, m_Size);
-    DeviceContext::GetLogical().unmapMemory(m_Memory);
+    if (!m_IsDevice)
+    {
+        void *dst = DeviceContext::GetLogical().mapMemory(m_Memory, 0, m_Size);
+        memcpy(dst, data, m_Size);
+        DeviceContext::GetLogical().unmapMemory(m_Memory);
+        return;
+    }
+
+    BufferBuilder builder;
+    builder.SetUsageFlags(vk::BufferUsageFlagBits::eTransferSrc)
+        .SetMemoryFlags(vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+
+    Buffer staging = builder.CreateBuffer(m_Size);
+    staging.Upload(data);
+
+    Renderer::s_MainCommandBuffer.Begin();
+    Renderer::s_MainCommandBuffer.CommandBuffer.copyBuffer(
+        staging.GetHandle(), m_Handle, { vk::BufferCopy(0, 0, m_Size) }
+    );
+    Renderer::s_MainCommandBuffer.Submit(DeviceContext::GetGraphicsQueue());
 }
 
 vk::Buffer Buffer::GetHandle() const

@@ -32,6 +32,8 @@ private:
     vk::Buffer m_Handle { nullptr };
     vk::DeviceMemory m_Memory { nullptr };
 
+    bool m_IsDevice = false;
+
     bool m_IsMoved = false;
 };
 
