@@ -3,6 +3,7 @@
 #include <vector>
 
 #include <vulkan/vulkan.hpp>
+#include <vk_mem_alloc.h>
 
 namespace PathTracing
 {
@@ -11,7 +12,8 @@ class DeviceContext
 {
 public:
     static void Init(
-        vk::Instance instance, std::vector<const char *> requestedLayers, vk::SurfaceKHR surface
+        vk::Instance instance, uint32_t vulkanApiVersion, const std::vector<const char *> &requestedLayers,
+        vk::SurfaceKHR surface
     );
     static void Shutdown();
 
@@ -24,7 +26,7 @@ public:
     static vk::Queue GetPresentQueue();
     static vk::Queue GetGraphicsQueue();
 
-    static uint32_t FindMemoryTypeIndex(vk::MemoryRequirements requirements, vk::MemoryPropertyFlags flags);
+    static VmaAllocator GetAllocator();
 
 private:
     static struct PhysicalDevice
@@ -44,6 +46,8 @@ private:
         uint32_t MainQueueFamilyIndex = vk::QueueFamilyIgnored;
         vk::Queue MainQueue;
     } s_LogicalDevice;
+
+    static VmaAllocator s_Allocator;
 
 private:
     static bool CheckSuitable(

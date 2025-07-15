@@ -5,22 +5,20 @@
 #include "Buffer.h"
 #include "DeviceContext.h"
 #include "ShaderLibrary.h"
+#include "Utils.h"
 
 namespace PathTracing
 {
 
 ShaderLibrary::ShaderLibrary()
 {
-    auto properties =
+    auto &properties =
         DeviceContext::GetPhysical()
             .getProperties2<vk::PhysicalDeviceProperties2, vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>(
             )
             .get<vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>();
 
     auto align = [](uint32_t size, uint32_t alignment) { return (size + alignment - 1) & ~(alignment - 1); };
-
-    // TODO: Make sure that the alignment is fulfilled when integrating VMA
-    assert(properties.shaderGroupBaseAlignment % properties.shaderGroupHandleAlignment == 0);
 
     const uint32_t alignment = properties.shaderGroupHandleAlignment;
     const uint32_t hitGroupSize = properties.shaderGroupHandleSize + sizeof(Shaders::SBTBuffer);
@@ -95,9 +93,11 @@ vk::Pipeline ShaderLibrary::CreatePipeline(
         .SetMemoryFlags(vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent)
         .SetAllocateFlags(vk::MemoryAllocateFlagBits::eDeviceAddress);
 
-    m_RaygenShaderBindingTable = builder.CreateBuffer(m_AlignedHandleSize);
-    m_MissShaderBindingTable = builder.CreateBuffer(m_AlignedHandleSize);
-    m_ClosestHitShaderBindingTable = builder.CreateBuffer(m_HitRecord->GetSize());
+    m_RaygenShaderBindingTable =
+        builder.CreateBuffer(m_AlignedHandleSize, "Raygen Shader Binding Table Buffer");
+    m_MissShaderBindingTable = builder.CreateBuffer(m_AlignedHandleSize, "Miss Shader Binding Table Buffer");
+    m_ClosestHitShaderBindingTable =
+        builder.CreateBuffer(m_HitRecord->GetSize(), "Closest Hit Shader Binding Table Buffer");
 
     std::vector<uint8_t> shaderHandles =
         DeviceContext::GetLogical().getRayTracingShaderGroupHandlesKHR<uint8_t>(
@@ -145,6 +145,8 @@ void ShaderLibrary::AddShader(
         m_Groups.push_back({ type, index });
 
     m_Modules.push_back(module);
+
+    Utils::SetDebugName(module, vk::ObjectType::eShaderModule, path.filename().string());
 }
 
 vk::ShaderModule ShaderLibrary::LoadShader(std::filesystem::path path)

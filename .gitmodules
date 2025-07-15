@@ -13,3 +13,6 @@
 [submodule "vendor/stb/stb"]
 	path = vendor/stb/stb
 	url = https://github.com/nothings/stb.git
+[submodule "vendor/vma/VulkanMemoryAllocator"]
+	path = vendor/vma/VulkanMemoryAllocator
+	url = https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git

@@ -12,10 +12,7 @@ namespace PathTracing
 class UserInterface
 {
 public:
-    static void Init(
-        vk::Instance instance, vk::Format format, vk::PhysicalDevice physicalDevice, vk::Device device,
-        uint32_t queueFamily, vk::Queue queue, uint32_t swapchainImageCount
-    );
+    static void Init(vk::Instance instance, vk::Format format, uint32_t swapchainImageCount);
 
     static void Shutdown();
 

@@ -1,6 +1,7 @@
 #include "Swapchain.h"
 #include "Application.h"
 #include "DeviceContext.h"
+#include "Utils.h"
 
 #include "Core/Core.h"
 
@@ -158,6 +159,14 @@ void Swapchain::Recreate(vk::PresentModeKHR presentMode)
 
     m_CurrentFrameInFlightIndex = 0;
     m_CurrentFrameIndex = 0;
+
+    for (int i = 0; i < m_Frames.size(); i++)
+    {
+        Utils::SetDebugName(m_Frames[i].Image, vk::ObjectType::eImage, std::format("Swapchain Image {}", i));
+        Utils::SetDebugName(
+            m_Frames[i].ImageView, vk::ObjectType::eImageView, std::format("Swapchain ImageView {}", i)
+        );
+    }
 }
 
 uint32_t Swapchain::GetImageCount() const

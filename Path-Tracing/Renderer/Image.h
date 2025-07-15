@@ -1,6 +1,9 @@
 #pragma once
 
+#include <string_view>
+
 #include <vulkan/vulkan.hpp>
+#include <vk_mem_alloc.h>
 
 namespace PathTracing
 {
@@ -16,14 +19,17 @@ public:
     ~Image();
 
     Image(Image &&image) noexcept;
+    Image(const Image &image) = delete;
 
-    Image(Image &image) = delete;
-    Image &operator=(Image &image) = delete;
+    Image &operator=(Image &&image) noexcept;
+    Image &operator=(const Image &image) = delete;
 
     vk::Image GetHandle() const;
     vk::ImageView GetView() const;
 
     void UploadStaging(const uint8_t *data) const;
+
+    void SetDebugName(std::string_view name) const;
 
     void Transition(vk::CommandBuffer buffer, vk::ImageLayout layoutFrom, vk::ImageLayout layoutTo) const;
     
@@ -34,7 +40,7 @@ public:
 
 private:
     vk::Image m_Handle { nullptr };
-    vk::DeviceMemory m_Memory { nullptr };
+    VmaAllocation m_Allocation { nullptr };
     vk::ImageView m_View { nullptr };
     vk::Format m_Format;
     vk::Extent2D m_Extent;
@@ -56,7 +62,9 @@ public:
     ImageBuilder &ResetFlags();
 
     Image CreateImage(vk::Extent2D extent) const;
+    Image CreateImage(vk::Extent2D extent, std::string_view name) const;
     std::unique_ptr<Image> CreateImageUnique(vk::Extent2D extent) const;
+    std::unique_ptr<Image> CreateImageUnique(vk::Extent2D extent, std::string_view name) const;
 
 private:
     vk::Format m_Format = vk::Format::eUndefined;

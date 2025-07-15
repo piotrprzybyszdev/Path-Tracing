@@ -2,10 +2,12 @@
 
 #include "Core/Core.h"
 
+#include "Application.h"
 #include "Buffer.h"
 #include "DeviceContext.h"
 #include "Image.h"
 #include "Renderer.h"
+#include "Utils.h"
 
 namespace PathTracing
 {
@@ -16,20 +18,20 @@ Image::Image(
 )
     : m_Format(format), m_Extent(extent)
 {
-    vk::ImageCreateInfo createInfo(
+    VkImageCreateInfo createInfo = vk::ImageCreateInfo(
         vk::ImageCreateFlags(), vk::ImageType::e2D, format, vk::Extent3D(extent, 1), 1, 1,
         vk::SampleCountFlagBits::e1, vk::ImageTiling::eOptimal, usageFlags
     );
 
-    m_Handle = DeviceContext::GetLogical().createImage(createInfo);
+    VmaAllocationCreateInfo allocinfo = {};
+    allocinfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 
-    vk::MemoryRequirements requirements = DeviceContext::GetLogical().getImageMemoryRequirements(m_Handle);
-
-    uint32_t memoryTypeIndex = DeviceContext::FindMemoryTypeIndex(requirements, memoryFlags);
-
-    vk::MemoryAllocateInfo memoryAllocateInfo(requirements.size, memoryTypeIndex);
-    m_Memory = DeviceContext::GetLogical().allocateMemory(memoryAllocateInfo);
-    DeviceContext::GetLogical().bindImageMemory(m_Handle, m_Memory, 0);
+    VkImage image = nullptr;
+    VkResult result = vmaCreateImage(
+        DeviceContext::GetAllocator(), &createInfo, &allocinfo, &image, &m_Allocation, nullptr
+    );
+    assert(result == VkResult::VK_SUCCESS);
+    m_Handle = image;
 
     vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
     vk::ImageViewCreateInfo viewCreateInfo =
@@ -39,25 +41,35 @@ Image::Image(
     m_View = DeviceContext::GetLogical().createImageView(viewCreateInfo);
 }
 
-Image::Image(Image &&image) noexcept
-{
-    image.m_IsMoved = true;
-
-    m_Handle = image.m_Handle;
-    m_Memory = image.m_Memory;
-    m_View = image.m_View;
-    m_Format = image.m_Format;
-    m_Extent = image.m_Extent;
-}
-
 Image::~Image()
 {
     if (m_IsMoved)
         return;
 
     DeviceContext::GetLogical().destroyImageView(m_View);
-    DeviceContext::GetLogical().destroyImage(m_Handle);
-    DeviceContext::GetLogical().freeMemory(m_Memory);
+    vmaDestroyImage(DeviceContext::GetAllocator(), m_Handle, m_Allocation);
+}
+
+Image::Image(Image &&image) noexcept
+{
+    image.m_IsMoved = true;
+
+    m_Handle = image.m_Handle;
+    m_Allocation = image.m_Allocation;
+    m_View = image.m_View;
+    m_Format = image.m_Format;
+    m_Extent = image.m_Extent;
+}
+
+Image &Image::operator=(Image &&image) noexcept
+{
+    if (m_Handle != nullptr)
+        this->~Image();
+
+    static_assert(!std::is_polymorphic_v<Image>);
+    new (this) Image(std::move(image));
+
+    return *this;
 }
 
 vk::Image Image::GetHandle() const
@@ -76,7 +88,7 @@ void Image::UploadStaging(const uint8_t *data) const
     builder.SetUsageFlags(vk::BufferUsageFlagBits::eTransferSrc)
         .SetMemoryFlags(vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
-    Buffer buffer = builder.CreateBuffer(m_Extent.width * m_Extent.height * vk::blockSize(m_Format));
+    Buffer buffer = builder.CreateBuffer(m_Extent.width * m_Extent.height * vk::blockSize(m_Format), "Image Staging Buffer");
 
     buffer.Upload(data);
 
@@ -103,6 +115,12 @@ void Image::UploadStaging(const uint8_t *data) const
     Renderer::s_MainCommandBuffer.Submit(DeviceContext::GetGraphicsQueue());
 }
 
+void Image::SetDebugName(std::string_view name) const
+{
+    Utils::SetDebugName(m_Handle, vk::ObjectType::eImage, name);
+    Utils::SetDebugName(m_View, vk::ObjectType::eImageView, std::format("ImageView: {}", name));
+}
+
 vk::AccessFlags Image::GetAccessFlags(vk::ImageLayout layout)
 {
     switch (layout)
@@ -121,7 +139,7 @@ vk::AccessFlags Image::GetAccessFlags(vk::ImageLayout layout)
     case vk::ImageLayout::eGeneral:
         return vk::AccessFlagBits::eNone;
     default:
-        throw new error("Unsupported layout transition");
+        throw error("Unsupported layout transition");
     }
 }
 
@@ -144,7 +162,7 @@ vk::PipelineStageFlagBits Image::GetPipelineStageFlags(vk::ImageLayout layout)
     case vk::ImageLayout::eGeneral:
         return vk::PipelineStageFlagBits::eAllCommands;
     default:
-        throw new error("Unsupported layout transition");
+        throw error("Unsupported layout transition");
     }
 }
 
@@ -200,9 +218,23 @@ Image ImageBuilder::CreateImage(vk::Extent2D extent) const
     return Image(m_Format, extent, m_UsageFlags, m_MemoryFlags);
 }
 
+Image ImageBuilder::CreateImage(vk::Extent2D extent, std::string_view name) const
+{
+    Image image = CreateImage(extent);
+    image.SetDebugName(name);
+    return image;
+}
+
 std::unique_ptr<Image> ImageBuilder::CreateImageUnique(vk::Extent2D extent) const
 {
     return std::make_unique<Image>(m_Format, extent, m_UsageFlags, m_MemoryFlags);
+}
+
+std::unique_ptr<Image> ImageBuilder::CreateImageUnique(vk::Extent2D extent, std::string_view name) const
+{
+    auto image = CreateImageUnique(extent);
+    image->SetDebugName(name);
+    return image;
 }
 
 }

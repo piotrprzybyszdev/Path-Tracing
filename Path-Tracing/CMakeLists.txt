@@ -24,4 +24,4 @@ source_group("Compiled Shaders" FILES ${SHADER_SPV_FILES})
 
 target_include_directories(Path-Tracing PRIVATE ${CMAKE_SOURCE_DIR}/Path-Tracing)
 target_include_directories(Path-Tracing PRIVATE Vulkan::Vulkan)
-target_link_libraries(Path-Tracing glfw imgui glm spdlog stb Vulkan::Vulkan)
+target_link_libraries(Path-Tracing glfw imgui glm spdlog stb vma Vulkan::Vulkan)

@@ -1,8 +1,10 @@
 #pragma once
 
 #include <vulkan/vulkan.hpp>
+#include <vk_mem_alloc.h>
 
 #include <memory>
+#include <string_view>
 
 namespace PathTracing
 {
@@ -17,9 +19,11 @@ public:
     );
     ~Buffer();
 
-    Buffer(Buffer &buffer) = delete;
-    Buffer &operator=(Buffer &buffer) = delete;
+    Buffer(Buffer &&buffer) noexcept;
+    Buffer(const Buffer &buffer) = delete;
+
     Buffer &operator=(Buffer &&buffer) noexcept;
+    Buffer &operator=(const Buffer &buffer) = delete;
 
     void Upload(const void *data) const;
 
@@ -27,10 +31,12 @@ public:
     vk::DeviceAddress GetDeviceAddress() const;
     vk::DeviceSize GetSize() const;
 
+    void SetDebugName(std::string_view name) const;
+
 private:
     vk::DeviceSize m_Size = 0;
     vk::Buffer m_Handle { nullptr };
-    vk::DeviceMemory m_Memory { nullptr };
+    VmaAllocation m_Allocation { nullptr };
 
     bool m_IsDevice = false;
 
@@ -48,7 +54,9 @@ public:
     BufferBuilder &ResetFlags();
 
     Buffer CreateBuffer(vk::DeviceSize size) const;
+    Buffer CreateBuffer(vk::DeviceSize size, std::string_view name) const;
     std::unique_ptr<Buffer> CreateBufferUnique(vk::DeviceSize size) const;
+    std::unique_ptr<Buffer> CreateBufferUnique(vk::DeviceSize size, std::string_view name) const;
 
 private:
     vk::BufferCreateFlags m_CreateFlags = {};

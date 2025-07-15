@@ -65,7 +65,7 @@ void MaterialSystem::UploadBuffer()
     builder.SetMemoryFlags(vk::MemoryPropertyFlagBits::eDeviceLocal)
         .SetUsageFlags(vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst);
 
-    s_MaterialBuffer = builder.CreateBufferUnique(s_Materials.size() * sizeof(Material));
+    s_MaterialBuffer = builder.CreateBufferUnique(s_Materials.size() * sizeof(Material), "Material Buffer");
     s_MaterialBuffer->Upload(s_Materials.data());
 }
 
@@ -94,7 +94,7 @@ uint32_t MaterialSystem::AddTexture(std::filesystem::path path)
         .SetUsageFlags(vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst)
         .SetMemoryFlags(vk::MemoryPropertyFlagBits::eDeviceLocal);
 
-    s_Textures.emplace_back(builder.CreateImage(vk::Extent2D(x, y)));
+    s_Textures.emplace_back(builder.CreateImage(vk::Extent2D(x, y), std::format("Texture {}", textureName)));
     s_Textures.back().UploadStaging(static_cast<uint8_t*>(data));
     stbi_image_free(data);
 

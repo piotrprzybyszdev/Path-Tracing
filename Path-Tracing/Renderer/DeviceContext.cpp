@@ -11,9 +11,11 @@ namespace PathTracing
 
 DeviceContext::PhysicalDevice DeviceContext::s_PhysicalDevice = {};
 DeviceContext::LogicalDevice DeviceContext::s_LogicalDevice = {};
+VmaAllocator DeviceContext::s_Allocator = nullptr;
 
 void DeviceContext::Init(
-    vk::Instance instance, std::vector<const char *> requestedLayers, vk::SurfaceKHR surface
+    vk::Instance instance, uint32_t vulkanApiVersion, const std::vector<const char *> &requestedLayers,
+    vk::SurfaceKHR surface
 )
 {
     std::vector<const char *> deviceExtensions = {
@@ -108,10 +110,19 @@ void DeviceContext::Init(
 
     s_LogicalDevice.Handle = s_PhysicalDevice.Handle.createDevice(createInfo);
     s_LogicalDevice.MainQueue = s_LogicalDevice.Handle.getQueue(s_LogicalDevice.MainQueueFamilyIndex, 0);
+
+    VmaAllocatorCreateInfo allocatorInfo = {};
+    allocatorInfo.physicalDevice = s_PhysicalDevice.Handle;
+    allocatorInfo.device = s_LogicalDevice.Handle;
+    allocatorInfo.instance = instance;
+    allocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+    allocatorInfo.vulkanApiVersion = vulkanApiVersion;
+    vmaCreateAllocator(&allocatorInfo, &s_Allocator);
 }
 
 void DeviceContext::Shutdown()
 {
+    vmaDestroyAllocator(s_Allocator);
     s_LogicalDevice.Handle.destroy();
 }
 
@@ -145,20 +156,9 @@ vk::Queue DeviceContext::GetGraphicsQueue()
     return s_LogicalDevice.MainQueue;
 }
 
-uint32_t DeviceContext::FindMemoryTypeIndex(
-    vk::MemoryRequirements requirements, vk::MemoryPropertyFlags flags
-)
+VmaAllocator DeviceContext::GetAllocator()
 {
-    for (int index = 0; index < s_PhysicalDevice.MemoryProperties.memoryTypeCount; index++)
-    {
-        const vk::MemoryType memoryType = s_PhysicalDevice.MemoryProperties.memoryTypes[index];
-
-        if (((0x1u << index) & requirements.memoryTypeBits) != 0x0u &&
-            (memoryType.propertyFlags & flags) == flags)
-            return index;
-    }
-
-    throw PathTracing::error("No suitable memory type found");
+    return s_Allocator;
 }
 
 bool DeviceContext::CheckSuitable(

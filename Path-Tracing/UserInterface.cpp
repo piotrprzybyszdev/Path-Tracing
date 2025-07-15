@@ -6,6 +6,7 @@
 
 #include "Core/Core.h"
 
+#include "Renderer/DeviceContext.h"
 #include "UserInterface.h"
 #include "Window.h"
 
@@ -27,10 +28,7 @@ static void CheckVkResult(VkResult err)
     logger::error("ImGui Vulkan Error: {}", vk::to_string(static_cast<vk::Result>(err)));
 }
 
-void UserInterface::Init(
-    vk::Instance instance, vk::Format format, vk::PhysicalDevice physicalDevice, vk::Device device,
-    uint32_t queueFamily, vk::Queue queue, uint32_t swapchainImageCount
-)
+void UserInterface::Init(vk::Instance instance, vk::Format format, uint32_t swapchainImageCount)
 {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -38,16 +36,14 @@ void UserInterface::Init(
 
     ImGui::StyleColorsDark();
 
-    // TODO: Add allocation Callback for when VMA is integrated
     ImGui_ImplGlfw_InitForVulkan(Window::GetHandle(), true);
     ImGui_ImplVulkan_InitInfo init_info = {};
     init_info.Instance = instance;
-    init_info.PhysicalDevice = physicalDevice;
-    init_info.Device = device;
-    init_info.QueueFamily = queueFamily;
-    init_info.Queue = queue;
+    init_info.PhysicalDevice = DeviceContext::GetPhysical();
+    init_info.Device = DeviceContext::GetLogical();
+    init_info.QueueFamily = DeviceContext::GetGraphicsQueueFamilyIndex();
+    init_info.Queue = DeviceContext::GetGraphicsQueue();
     init_info.DescriptorPoolSize = swapchainImageCount;
-    init_info.Allocator = nullptr;
     init_info.MinImageCount = swapchainImageCount;
     init_info.ImageCount = swapchainImageCount;
     init_info.CheckVkResultFn = CheckVkResult;

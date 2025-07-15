@@ -81,16 +81,12 @@ void Application::Init()
     const char *applicationName = "Path Tracing";
     vk::ApplicationInfo applicationInfo(applicationName, 1, applicationName, 1, version);
 
-    {
-        int result = glfwInit();
+    if (glfwInit() == GLFW_FALSE)
+        throw error("Glfw initialization failed!");
 
 #ifndef NDEBUG
-        if (result == GLFW_FALSE)
-            throw error("Glfw initialization failed!");
-
-        glfwSetErrorCallback(GlfwErrorCallback);
+    glfwSetErrorCallback(GlfwErrorCallback);
 #endif
-    }
 
     uint32_t glfwExtensionCount = 0;
     const char **glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
@@ -139,7 +135,7 @@ void Application::Init()
     Input::SetWindow(Window::GetHandle());
     s_State = State::HasWindow;
 
-    DeviceContext::Init(s_Instance, requestedLayers, s_Surface);
+    DeviceContext::Init(s_Instance, version, requestedLayers, s_Surface);
     s_State = State::HasDevice;
 
     s_Swapchain = std::make_unique<Swapchain>(
@@ -148,11 +144,7 @@ void Application::Init()
     );
     s_State = State::HasSwapchain;
 
-    UserInterface::Init(
-        s_Instance, s_Swapchain->GetSurfaceFormat().format, DeviceContext::GetPhysical(),
-        DeviceContext::GetLogical(), DeviceContext::GetGraphicsQueueFamilyIndex(),
-        DeviceContext::GetGraphicsQueue(), s_Swapchain->GetImageCount()
-    );
+    UserInterface::Init(s_Instance, s_Swapchain->GetSurfaceFormat().format, s_Swapchain->GetImageCount());
     s_State = State::HasUserInterface;
 
     Renderer::Init(s_Swapchain.get());

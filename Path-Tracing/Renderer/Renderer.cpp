@@ -17,6 +17,7 @@
 
 #include "DeviceContext.h"
 #include "Renderer.h"
+#include "Utils.h"
 
 #include "Application.h"
 #include "UserInterface.h"
@@ -71,6 +72,7 @@ void Renderer::Init(const Swapchain *swapchain)
     {
         vk::SamplerCreateInfo createInfo(vk::SamplerCreateFlags(), vk::Filter::eLinear, vk::Filter::eLinear);
         s_Sampler = DeviceContext::GetLogical().createSampler(createInfo);
+        Utils::SetDebugName(s_Sampler, vk::ObjectType::eSampler, "Texture Sampler");
     }
 }
 
@@ -186,7 +188,7 @@ void Renderer::CreateScene()
             .SetAllocateFlags(vk::MemoryAllocateFlagBits::eDeviceAddress);
 
         // TODO: Use when implementing model loading
-        // s_StaticSceneData.TransformMatrixBuffer = s_BufferBuilder->CreateBufferUnique(sizeof(matrix));
+        // s_StaticSceneData.TransformMatrixBuffer = s_BufferBuilder->CreateBufferUnique(sizeof(matrix), "Transform Buffer");
         // s_StaticSceneData.TransformMatrixBuffer->Upload(matrix.matrix.data());
 
         s_BufferBuilder->SetUsageFlags(
@@ -195,23 +197,23 @@ void Renderer::CreateScene()
         );
 
         s_StaticSceneData.VertexBuffer =
-            s_BufferBuilder->CreateBufferUnique(vertices.size() * sizeof(Shaders::Vertex));
+            s_BufferBuilder->CreateBufferUnique(vertices.size() * sizeof(Shaders::Vertex), "Vertex Buffer");
         s_StaticSceneData.VertexBuffer->Upload(vertices.data());
 
         s_StaticSceneData.IndexBuffer =
-            s_BufferBuilder->CreateBufferUnique(indices.size() * sizeof(uint32_t));
+            s_BufferBuilder->CreateBufferUnique(indices.size() * sizeof(uint32_t), "Index Buffer");
         s_StaticSceneData.IndexBuffer->Upload(indices.data());
 
         s_BufferBuilder->SetUsageFlags(vk::BufferUsageFlagBits::eStorageBuffer);
 
         s_StaticSceneData.GeometryBuffer =
-            s_BufferBuilder->CreateBufferUnique(geometries.size() * sizeof(Shaders::Geometry));
+            s_BufferBuilder->CreateBufferUnique(geometries.size() * sizeof(Shaders::Geometry), "Geometry Buffer");
         s_StaticSceneData.GeometryBuffer->Upload(geometries.data());
 
         s_BufferBuilder->SetUsageFlags(vk::BufferUsageFlagBits::eUniformBuffer);
-        s_RaygenUniformBuffer = s_BufferBuilder->CreateBufferUnique(sizeof(Shaders::RaygenUniformData));
+        s_RaygenUniformBuffer = s_BufferBuilder->CreateBufferUnique(sizeof(Shaders::RaygenUniformData), "Raygen Uniform Buffer");
         s_ClosestHitUniformBuffer =
-            s_BufferBuilder->CreateBufferUnique(sizeof(Shaders::ClosestHitUniformData));
+            s_BufferBuilder->CreateBufferUnique(sizeof(Shaders::ClosestHitUniformData), "Closest Hit Uniform Buffer");
     }
 
     {
@@ -259,13 +261,17 @@ void Renderer::CreateScene()
             )
             .SetMemoryFlags(vk::MemoryPropertyFlagBits::eDeviceLocal)
             .SetAllocateFlags(vk::MemoryAllocateFlagBits::eDeviceAddress);
-        s_StaticSceneData.BottomLevelAccelerationStructureBuffer1 =
-            s_BufferBuilder->CreateBufferUnique(buildSizesInfo.accelerationStructureSize);
-        s_StaticSceneData.BottomLevelAccelerationStructureBuffer2 =
-            s_BufferBuilder->CreateBufferUnique(buildSizesInfo.accelerationStructureSize);
+        s_StaticSceneData.BottomLevelAccelerationStructureBuffer1 = s_BufferBuilder->CreateBufferUnique(
+            buildSizesInfo.accelerationStructureSize, "Bottom Level Acceleration Structure Buffer 1"
+        );
+        s_StaticSceneData.BottomLevelAccelerationStructureBuffer2 = s_BufferBuilder->CreateBufferUnique(
+            buildSizesInfo.accelerationStructureSize, "Bottom Level Acceleration Structure Buffer 2"
+        );
 
-        Buffer scratchBuffer1 = s_BufferBuilder->CreateBuffer(buildSizesInfo.buildScratchSize);
-        Buffer scratchBuffer2 = s_BufferBuilder->CreateBuffer(buildSizesInfo.buildScratchSize);
+        Buffer scratchBuffer1 =
+            s_BufferBuilder->CreateBuffer(buildSizesInfo.buildScratchSize, "Scratch Buffer (BLAS 1)");
+        Buffer scratchBuffer2 =
+            s_BufferBuilder->CreateBuffer(buildSizesInfo.buildScratchSize, "Scratch Buffer (BLAS 2)");
 
         vk::AccelerationStructureCreateInfoKHR createInfo(
             vk::AccelerationStructureCreateFlagsKHR(),
@@ -354,7 +360,7 @@ void Renderer::CreateScene()
                     vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
                 )
                 .SetAllocateFlags(vk::MemoryAllocateFlagBits::eDeviceAddress)
-                .CreateBuffer(sizeof(vk::AccelerationStructureInstanceKHR) * instances.size());
+                .CreateBuffer(sizeof(vk::AccelerationStructureInstanceKHR) * instances.size(), "Instance Buffer");
 
         instanceBuffer.Upload(instances.data());
 
@@ -389,7 +395,7 @@ void Renderer::CreateScene()
                 )
                 .SetMemoryFlags(vk::MemoryPropertyFlagBits::eDeviceLocal)
                 .SetAllocateFlags(vk::MemoryAllocateFlagBits::eDeviceAddress)
-                .CreateBufferUnique(buildSizesInfo.accelerationStructureSize);
+                .CreateBufferUnique(buildSizesInfo.accelerationStructureSize, "Top Level Acceleration Structure Buffer");
 
         vk::AccelerationStructureCreateInfoKHR createInfo(
             vk::AccelerationStructureCreateFlagsKHR(),
@@ -402,7 +408,7 @@ void Renderer::CreateScene()
                 createInfo, nullptr, Application::GetDispatchLoader()
             );
 
-        Buffer scratchBuffer = s_BufferBuilder->CreateBuffer(buildSizesInfo.buildScratchSize);
+        Buffer scratchBuffer = s_BufferBuilder->CreateBuffer(buildSizesInfo.buildScratchSize, "Scratch Buffer (TLAS)");
 
         vk::AccelerationStructureBuildGeometryInfoKHR geometryInfo =
             vk::AccelerationStructureBuildGeometryInfoKHR(
@@ -496,60 +502,68 @@ void Renderer::RecordCommandBuffer(const RenderingResources &resources)
     vk::CommandBuffer commandBuffer = resources.CommandBuffer;
     vk::Image image = s_Swapchain->GetCurrentFrame().Image;
     vk::ImageView imageView = s_Swapchain->GetCurrentFrame().ImageView;
+    vk::Extent2D extent = s_Swapchain->GetExtent();
 
     commandBuffer.begin(vk::CommandBufferBeginInfo());
+    {
+        Utils::DebugLabel label(commandBuffer, "Path tracing pass", { 0.35f, 0.9f, 0.29f, 1.0f });
 
-    vk::StridedDeviceAddressRegionKHR callableShaderEntry;
+        commandBuffer.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, s_Pipeline);
+        commandBuffer.bindDescriptorSets(
+            vk::PipelineBindPoint::eRayTracingKHR, s_PipelineLayout, 0,
+            { s_DescriptorSet->GetSet(s_Swapchain->GetCurrentFrameInFlightIndex()) }, {}
+        );
 
-    commandBuffer.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, s_Pipeline);
-    commandBuffer.bindDescriptorSets(
-        vk::PipelineBindPoint::eRayTracingKHR, s_PipelineLayout, 0,
-        { s_DescriptorSet->GetSet(s_Swapchain->GetCurrentFrameInFlightIndex()) }, {}
-    );
+        commandBuffer.traceRaysKHR(
+            s_ShaderLibrary->GetRaygenTableEntry(), s_ShaderLibrary->GetMissTableEntry(),
+            s_ShaderLibrary->GetClosestHitTableEntry(), vk::StridedDeviceAddressRegionKHR(), extent.width,
+            extent.height, 1, Application::GetDispatchLoader()
+        );
 
-    vk::Extent2D extent = s_Swapchain->GetExtent();
-    commandBuffer.traceRaysKHR(
-        s_ShaderLibrary->GetRaygenTableEntry(), s_ShaderLibrary->GetMissTableEntry(),
-        s_ShaderLibrary->GetClosestHitTableEntry(), callableShaderEntry, extent.width, extent.height, 1,
-        Application::GetDispatchLoader()
-    );
+        Image::Transition(
+            commandBuffer, image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal
+        );
 
-    Image::Transition(commandBuffer, image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
+        resources.StorageImage->Transition(
+            commandBuffer, vk::ImageLayout::eGeneral, vk::ImageLayout::eTransferSrcOptimal
+        );
 
-    resources.StorageImage->Transition(
-        commandBuffer, vk::ImageLayout::eGeneral, vk::ImageLayout::eTransferSrcOptimal
-    );
+        vk::ImageSubresourceLayers subresource(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
+        vk::Offset3D offset(0, 0, 0);
+        vk::ImageCopy copy(subresource, offset, subresource, offset, vk::Extent3D(extent, 1));
 
-    vk::ImageSubresourceLayers subresource(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
-    vk::Offset3D offset(0, 0, 0);
-    vk::ImageCopy copy(subresource, offset, subresource, offset, vk::Extent3D(extent, 1));
+        commandBuffer.copyImage(
+            resources.StorageImage->GetHandle(), vk::ImageLayout::eTransferSrcOptimal, image,
+            vk::ImageLayout::eTransferDstOptimal, { copy }
+        );
 
-    commandBuffer.copyImage(
-        resources.StorageImage->GetHandle(), vk::ImageLayout::eTransferSrcOptimal, image,
-        vk::ImageLayout::eTransferDstOptimal, { copy }
-    );
+        Image::Transition(
+            commandBuffer, image, vk::ImageLayout::eTransferDstOptimal,
+            vk::ImageLayout::eColorAttachmentOptimal
+        );
 
-    Image::Transition(
-        commandBuffer, image, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eColorAttachmentOptimal
-    );
+        resources.StorageImage->Transition(
+            commandBuffer, vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eGeneral
+        );
+    }
 
-    resources.StorageImage->Transition(
-        commandBuffer, vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eGeneral
-    );
+    {
+        Utils::DebugLabel label(commandBuffer, "UI pass", { 0.24f, 0.34f, 0.93f, 1.0f });
 
-    std::vector<vk::RenderingAttachmentInfo> colorAttachments = {
-        vk::RenderingAttachmentInfo(imageView, vk::ImageLayout::eColorAttachmentOptimal)
-    };
-    commandBuffer.beginRendering(
-        vk::RenderingInfo(vk::RenderingFlags(), vk::Rect2D({}, extent), 1, 0, colorAttachments)
-    );
-    UserInterface::Render(commandBuffer);
-    commandBuffer.endRendering();
+        std::vector<vk::RenderingAttachmentInfo> colorAttachments = {
+            vk::RenderingAttachmentInfo(imageView, vk::ImageLayout::eColorAttachmentOptimal)
+        };
 
-    Image::Transition(
-        commandBuffer, image, vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::ePresentSrcKHR
-    );
+        commandBuffer.beginRendering(
+            vk::RenderingInfo(vk::RenderingFlags(), vk::Rect2D({}, extent), 1, 0, colorAttachments)
+        );
+        UserInterface::Render(commandBuffer);
+        commandBuffer.endRendering();
 
+        Image::Transition(
+            commandBuffer, image, vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::ePresentSrcKHR
+        );
+    }
     commandBuffer.end();
 }
 
@@ -570,10 +584,12 @@ void Renderer::OnUpdate(float timeStep)
         );
         res.CommandBuffer = DeviceContext::GetLogical().allocateCommandBuffers(allocateCommandBufferInfo)[0];
 
+        const uint32_t frameIndex = s_RenderingResources.size();
+
         vk::Extent2D extent = s_Swapchain->GetExtent();
         res.StorageImage = CreateStorageImage(extent);
+        res.StorageImage->SetDebugName(std::format("Storage image {}", frameIndex));
 
-        const uint32_t frameIndex = s_RenderingResources.size();
         s_DescriptorSet->UpdateAccelerationStructures(
             0, frameIndex, { s_StaticSceneData.TopLevelAccelerationStructure }
         );
@@ -602,6 +618,7 @@ void Renderer::OnResize(vk::Extent2D extent)
     {
         RenderingResources &res = s_RenderingResources[i];
         res.StorageImage = CreateStorageImage(extent);
+        res.StorageImage->SetDebugName(std::format("Storage Image {}", i));
         s_DescriptorSet->UpdateImage(1, i, *res.StorageImage, vk::Sampler(), vk::ImageLayout::eGeneral);
     }
 

@@ -1,8 +1,10 @@
 #include "Core/Core.h"
 
+#include "Application.h"
 #include "Buffer.h"
 #include "DeviceContext.h"
 #include "Renderer.h"
+#include "Utils.h"
 
 namespace PathTracing
 {
@@ -13,30 +15,16 @@ Buffer::Buffer(
 )
     : m_Size(size), m_IsDevice(memoryFlags & vk::MemoryPropertyFlagBits::eDeviceLocal)
 {
-    vk::BufferCreateInfo createInfo(createFlags, size, usageFlags);
-    m_Handle = DeviceContext::GetLogical().createBuffer(createInfo);
-    vk::MemoryRequirements requirements = DeviceContext::GetLogical().getBufferMemoryRequirements(m_Handle);
+    VkBufferCreateInfo createInfo = vk::BufferCreateInfo(createFlags, size, usageFlags);
+    VmaAllocationCreateInfo allocinfo = {};
+    allocinfo.usage = m_IsDevice ? VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE : VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+    if (!m_IsDevice)
+        allocinfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
 
-    uint32_t memoryTypeIndex = DeviceContext::FindMemoryTypeIndex(requirements, memoryFlags);
-
-    vk::MemoryAllocateFlagsInfo allocateFlagsInfo(allocateFlags);
-    vk::MemoryAllocateInfo allocateInfo(requirements.size, memoryTypeIndex, &allocateFlagsInfo);
-    m_Memory = DeviceContext::GetLogical().allocateMemory(allocateInfo);
-    DeviceContext::GetLogical().bindBufferMemory(m_Handle, m_Memory, 0);
-}
-
-Buffer &Buffer::operator=(Buffer &&buffer) noexcept
-{
-    if (m_Size != 0)
-        this->~Buffer();
-
-    m_Size = buffer.m_Size;
-    m_Handle = buffer.m_Handle;
-    m_Memory = buffer.m_Memory;
-
-    buffer.m_IsMoved = true;
-
-    return *this;
+    VkBuffer buffer = nullptr;
+    VkResult result = vmaCreateBuffer(DeviceContext::GetAllocator(), &createInfo, &allocinfo, &buffer, &m_Allocation, nullptr);
+    assert(result == VkResult::VK_SUCCESS);
+    m_Handle = buffer;
 }
 
 Buffer::~Buffer()
@@ -44,17 +32,38 @@ Buffer::~Buffer()
     if (m_IsMoved)
         return;
 
-    DeviceContext::GetLogical().destroyBuffer(m_Handle);
-    DeviceContext::GetLogical().freeMemory(m_Memory);
+    vmaDestroyBuffer(DeviceContext::GetAllocator(), m_Handle, m_Allocation);
+}
+
+Buffer::Buffer(Buffer &&buffer) noexcept
+{
+    m_Size = buffer.m_Size;
+    m_Handle = buffer.m_Handle;
+    m_Allocation = buffer.m_Allocation;
+
+    buffer.m_IsMoved = true;
+}
+
+Buffer &Buffer::operator=(Buffer &&buffer) noexcept
+{
+    if (m_Handle != nullptr)
+        this->~Buffer();
+    
+    static_assert(!std::is_polymorphic_v<Buffer>);
+    new (this) Buffer(std::move(buffer));
+
+    return *this;
 }
 
 void Buffer::Upload(const void *data) const
 {
     if (!m_IsDevice)
     {
-        void *dst = DeviceContext::GetLogical().mapMemory(m_Memory, 0, m_Size);
+        void *dst = nullptr;
+        VkResult result = vmaMapMemory(DeviceContext::GetAllocator(), m_Allocation, &dst);
+        assert(result == VkResult::VK_SUCCESS);
         memcpy(dst, data, m_Size);
-        DeviceContext::GetLogical().unmapMemory(m_Memory);
+        vmaUnmapMemory(DeviceContext::GetAllocator(), m_Allocation);
         return;
     }
 
@@ -85,6 +94,11 @@ vk::DeviceAddress Buffer::GetDeviceAddress() const
 vk::DeviceSize Buffer::GetSize() const
 {
     return m_Size;
+}
+
+void Buffer::SetDebugName(std::string_view name) const
+{
+    Utils::SetDebugName(m_Handle, vk::ObjectType::eBuffer, name);
 }
 
 BufferBuilder &BufferBuilder::SetCreateFlags(vk::BufferCreateFlags createFlags)
@@ -125,9 +139,23 @@ Buffer BufferBuilder::CreateBuffer(vk::DeviceSize size) const
     return Buffer(m_CreateFlags, size, m_UsageFlags, m_MemoryFlags, m_AllocateFlags);
 }
 
+Buffer BufferBuilder::CreateBuffer(vk::DeviceSize size, std::string_view name) const
+{
+    Buffer buffer = CreateBuffer(size);
+    buffer.SetDebugName(name);
+    return buffer;
+}
+
 std::unique_ptr<Buffer> BufferBuilder::CreateBufferUnique(vk::DeviceSize size) const
 {
     return std::make_unique<Buffer>(m_CreateFlags, size, m_UsageFlags, m_MemoryFlags, m_AllocateFlags);
+}
+
+std::unique_ptr<Buffer> BufferBuilder::CreateBufferUnique(vk::DeviceSize size, std::string_view name) const
+{
+    auto buffer = CreateBufferUnique(size);
+    buffer->SetDebugName(name);
+    return buffer;
 }
 
 }
