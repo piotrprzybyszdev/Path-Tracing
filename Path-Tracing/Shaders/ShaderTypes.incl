@@ -10,6 +10,15 @@ using namespace glm;
 
 using RenderModeFlags = uint;
 using EnabledTextureFlags = uint;
+
+using VertexBuffer = uint64_t;
+using IndexBuffer = uint64_t;
+
+#else
+
+layout(buffer_reference, buffer_reference_align=8) readonly buffer VertexBuffer { vec2[] v; };
+layout(buffer_reference, buffer_reference_align=8) readonly buffer IndexBuffer { uint[] i; };
+
 #endif
 
 struct Camera
@@ -57,8 +66,8 @@ struct Vertex
 
 struct Geometry
 {
-    uint VertexBufferOffset;
-    uint IndexBufferOffset;
+    VertexBuffer Vertices;
+    IndexBuffer Indices;
 };
 
 struct Material

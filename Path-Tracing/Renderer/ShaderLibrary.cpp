@@ -146,7 +146,7 @@ void ShaderLibrary::AddShader(
 
     m_Modules.push_back(module);
 
-    Utils::SetDebugName(module, vk::ObjectType::eShaderModule, path.filename().string());
+    Utils::SetDebugName(module, vk::ObjectType::eShaderModule, std::filesystem::absolute(path).string());
 }
 
 vk::ShaderModule ShaderLibrary::LoadShader(std::filesystem::path path)

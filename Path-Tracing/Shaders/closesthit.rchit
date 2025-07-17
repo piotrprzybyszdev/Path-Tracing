@@ -1,5 +1,6 @@
 #version 460
 #extension GL_EXT_ray_tracing : require
+#extension GL_EXT_buffer_reference : require
 #extension GL_EXT_nonuniform_qualifier : require
 
 #include "ShaderTypes.incl"
@@ -8,21 +9,13 @@ layout(binding = 3, set = 0) uniform MainBlock {
 	ClosestHitUniformData mainUniform;
 };
 
-layout(binding = 4, set = 0) readonly buffer VertexBuffer {
-	vec2[] vertices;
-};
+layout(binding = 4, set = 0) uniform sampler2D textures[];
 
-layout(binding = 5, set = 0) readonly buffer IndexBuffer {
-	uint[] indices;
-};
-
-layout(binding = 6, set = 0) uniform sampler2D textures[];
-
-layout(binding = 7, set = 0) readonly buffer GeometryBuffer {
+layout(binding = 5, set = 0) readonly buffer GeometryBuffer {
 	Geometry[] geometries;
 };
 
-layout(binding = 8, set = 0) readonly buffer MaterialBuffer {
+layout(binding = 6, set = 0) readonly buffer MaterialBuffer {
 	Material[] materials;
 };
 
@@ -33,15 +26,16 @@ layout(shaderRecordEXT, std430) buffer SBT {
 layout(location = 0) rayPayloadInEXT vec3 hitValue;
 hitAttributeEXT vec3 attribs;
 
-Vertex getVertex(uint index)
+Vertex getVertex(VertexBuffer vertices, IndexBuffer indices, uint offset)
 {
-	const vec2 p1 = vertices[index * 7];
-	const vec2 p2 = vertices[index * 7 + 1];
-	const vec2 p3 = vertices[index * 7 + 2];
-	const vec2 p4 = vertices[index * 7 + 3];
-	const vec2 p5 = vertices[index * 7 + 4];
-	const vec2 p6 = vertices[index * 7 + 5];
-	const vec2 p7 = vertices[index * 7 + 6];
+	const uint index = indices.i[offset];
+	const vec2 p1 = vertices.v[index * 7];
+	const vec2 p2 = vertices.v[index * 7 + 1];
+	const vec2 p3 = vertices.v[index * 7 + 2];
+	const vec2 p4 = vertices.v[index * 7 + 3];
+	const vec2 p5 = vertices.v[index * 7 + 4];
+	const vec2 p6 = vertices.v[index * 7 + 5];
+	const vec2 p7 = vertices.v[index * 7 + 6];
 
 	Vertex v;
 	v.Position = vec3(p1, p2.x);
@@ -101,20 +95,17 @@ vec4 sampleTexture(uint index, vec2 texCoords, uint enabledFlag, vec4 fallback)
 
 void main()
 {
-	const Geometry geometry = geometries[sbt.GeometryIndex];
-	const Material material = materials[sbt.MaterialIndex];
-	
 	const vec3 barycentricCoords = vec3(1.0f - attribs.x - attribs.y, attribs.x, attribs.y);
 
-	const uint index1 = indices[geometry.IndexBufferOffset + gl_PrimitiveID * 3];
-	const uint index2 = indices[geometry.IndexBufferOffset + gl_PrimitiveID * 3 + 1];
-	const uint index3 = indices[geometry.IndexBufferOffset + gl_PrimitiveID * 3 + 2];
+	VertexBuffer vertices = VertexBuffer(geometries[sbt.GeometryIndex].Vertices);
+	IndexBuffer indices = IndexBuffer(geometries[sbt.GeometryIndex].Indices);
 
 	const Vertex vertex = interpolate(
-		getVertex(geometry.VertexBufferOffset + index1), getVertex(geometry.VertexBufferOffset + index2),
-		getVertex(geometry.VertexBufferOffset + index3), barycentricCoords
+		getVertex(vertices, indices, gl_PrimitiveID * 3), getVertex(vertices, indices, gl_PrimitiveID * 3 + 1),
+		getVertex(vertices, indices, gl_PrimitiveID * 3 + 2), barycentricCoords
 	);
 	
+	const Material material = materials[sbt.MaterialIndex];
 	const vec3 albedo = sampleTexture(material.AlbedoIdx, vertex.TexCoords, TexturesEnableAlbedo, DefaultAlbedo);
 	const vec3 normal = sampleTexture(material.NormalIdx, vertex.TexCoords, TexturesEnableNormal, DefaultNormal);
 	const float metalness = sampleTexture(material.MetalicIdx, vertex.TexCoords, TexturesEnableMetalic, DefaultMetalness);

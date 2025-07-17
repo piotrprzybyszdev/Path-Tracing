@@ -81,8 +81,8 @@ void DeviceContext::Init(
     );
 
     vk::PhysicalDeviceFeatures2 features;
-    vk::PhysicalDeviceBufferDeviceAddressFeatures bufferFeatures;
 
+    vk::PhysicalDeviceBufferDeviceAddressFeatures bufferFeatures;
     bufferFeatures.setBufferDeviceAddress(vk::True);
     features.setPNext(&bufferFeatures);
 

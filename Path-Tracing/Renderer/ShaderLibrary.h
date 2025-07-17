@@ -43,7 +43,6 @@ private:
     Buffer m_ClosestHitShaderBindingTable;
 
     uint32_t m_AlignedHandleSize;
-    // TODO: Add support for ray types
     class SBTHitRecord
     {
     public:

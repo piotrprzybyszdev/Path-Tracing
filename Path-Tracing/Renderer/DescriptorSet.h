@@ -32,7 +32,7 @@ public:
         uint32_t binding, uint32_t frameIndex, const Image &image, vk::Sampler sampler, vk::ImageLayout layout
     );
     void UpdateImageArray(
-        uint32_t binding, uint32_t frameIndex, const std::vector<Image> &images, vk::Sampler sampler,
+        uint32_t binding, uint32_t frameIndex, std::span<const Image> images, vk::Sampler sampler,
         vk::ImageLayout layout, uint32_t firstIndex = 0
     );
 

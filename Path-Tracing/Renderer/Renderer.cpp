@@ -45,7 +45,6 @@ vk::Pipeline Renderer::s_Pipeline = nullptr;
 std::unique_ptr<BufferBuilder> Renderer::s_BufferBuilder = nullptr;
 std::unique_ptr<ImageBuilder> Renderer::s_ImageBuilder = nullptr;
 std::unique_ptr<ShaderLibrary> Renderer::s_ShaderLibrary = nullptr;
-std::unique_ptr<MaterialSystem> Renderer::s_MaterialSystem = nullptr;
 
 vk::Sampler Renderer::s_Sampler = nullptr;
 
@@ -67,13 +66,14 @@ void Renderer::Init(const Swapchain *swapchain)
     s_ImageBuilder = std::make_unique<ImageBuilder>();
 
     s_ShaderLibrary = std::make_unique<ShaderLibrary>();
-    s_MaterialSystem = std::make_unique<MaterialSystem>();
 
     {
         vk::SamplerCreateInfo createInfo(vk::SamplerCreateFlags(), vk::Filter::eLinear, vk::Filter::eLinear);
         s_Sampler = DeviceContext::GetLogical().createSampler(createInfo);
         Utils::SetDebugName(s_Sampler, vk::ObjectType::eSampler, "Texture Sampler");
     }
+
+    s_StaticSceneData.AcceleraionStructure = std::make_unique<AccelerationStructure>();
 }
 
 void Renderer::Shutdown()
@@ -88,30 +88,12 @@ void Renderer::Shutdown()
     DeviceContext::GetLogical().destroyPipelineLayout(s_PipelineLayout);
     s_DescriptorSet.reset();
 
-    DeviceContext::GetLogical().destroyAccelerationStructureKHR(
-        s_StaticSceneData.TopLevelAccelerationStructure, nullptr, Application::GetDispatchLoader()
-    );
-
-    s_StaticSceneData.TopLevelAccelerationStructureBuffer.reset();
-
-    DeviceContext::GetLogical().destroyAccelerationStructureKHR(
-        s_StaticSceneData.BottomLevelAccelerationStructure1, nullptr, Application::GetDispatchLoader()
-    );
-    DeviceContext::GetLogical().destroyAccelerationStructureKHR(
-        s_StaticSceneData.BottomLevelAccelerationStructure2, nullptr, Application::GetDispatchLoader()
-    );
-    s_StaticSceneData.BottomLevelAccelerationStructureBuffer1.reset();
-    s_StaticSceneData.BottomLevelAccelerationStructureBuffer2.reset();
+    s_StaticSceneData.AcceleraionStructure.reset();
 
     s_RaygenUniformBuffer.reset();
     s_ClosestHitUniformBuffer.reset();
-    s_StaticSceneData.TransformMatrixBuffer.reset();
-    s_StaticSceneData.GeometryBuffer.reset();
-    s_StaticSceneData.IndexBuffer.reset();
-    s_StaticSceneData.VertexBuffer.reset();
 
     DeviceContext::GetLogical().destroySampler(s_Sampler);
-    s_MaterialSystem.reset();
     s_ShaderLibrary.reset();
     s_ImageBuilder.reset();
     s_BufferBuilder.reset();
@@ -163,7 +145,6 @@ void Renderer::CreateScene()
 
     // TODO: Move to model loading
     std::vector<uint32_t> indices = {};
-    std::vector<Shaders::Geometry> geometries = {};
     for (int i = 0; i < 6; i++)
     {
         const uint32_t verticesPerGeometry = 4;
@@ -172,269 +153,61 @@ void Renderer::CreateScene()
         std::vector<uint32_t> temp = { 0, 1, 2, 2, 3, 0 };
         for (auto x : temp)
             indices.push_back(x);
-
-        geometries.push_back({ i * verticesPerGeometry, i * indicesPerGeometry });
     }
 
+    s_BufferBuilder->ResetFlags()
+        .SetUsageFlags(vk::BufferUsageFlagBits::eUniformBuffer)
+        .SetMemoryFlags(vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent)
+        .SetAllocateFlags(vk::MemoryAllocateFlagBits::eDeviceAddress);
+
+    s_RaygenUniformBuffer =
+        s_BufferBuilder->CreateBufferUnique(sizeof(Shaders::RaygenUniformData), "Raygen Uniform Buffer");
+    s_ClosestHitUniformBuffer = s_BufferBuilder->CreateBufferUnique(
+        sizeof(Shaders::ClosestHitUniformData), "Closest Hit Uniform Buffer"
+    );
+
+    auto vertexIterator = vertices.begin();
+    auto indexIterator = indices.begin();
+    for (uint32_t i = 0; i < 6; i++)
     {
-        s_BufferBuilder->ResetFlags()
-            .SetUsageFlags(
-                vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR |
-                vk::BufferUsageFlagBits::eShaderDeviceAddress
-            )
-            .SetMemoryFlags(
-                vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
-            )
-            .SetAllocateFlags(vk::MemoryAllocateFlagBits::eDeviceAddress);
-
-        // TODO: Use when implementing model loading
-        // s_StaticSceneData.TransformMatrixBuffer = s_BufferBuilder->CreateBufferUnique(sizeof(matrix), "Transform Buffer");
-        // s_StaticSceneData.TransformMatrixBuffer->Upload(matrix.matrix.data());
-
-        s_BufferBuilder->SetUsageFlags(
-            vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR |
-            vk::BufferUsageFlagBits::eShaderDeviceAddress | vk::BufferUsageFlagBits::eStorageBuffer
+        s_StaticSceneData.AcceleraionStructure->AddGeometry(
+            std::span(vertexIterator, 4), std::span(indexIterator, 6)
         );
-
-        s_StaticSceneData.VertexBuffer =
-            s_BufferBuilder->CreateBufferUnique(vertices.size() * sizeof(Shaders::Vertex), "Vertex Buffer");
-        s_StaticSceneData.VertexBuffer->Upload(vertices.data());
-
-        s_StaticSceneData.IndexBuffer =
-            s_BufferBuilder->CreateBufferUnique(indices.size() * sizeof(uint32_t), "Index Buffer");
-        s_StaticSceneData.IndexBuffer->Upload(indices.data());
-
-        s_BufferBuilder->SetUsageFlags(vk::BufferUsageFlagBits::eStorageBuffer);
-
-        s_StaticSceneData.GeometryBuffer =
-            s_BufferBuilder->CreateBufferUnique(geometries.size() * sizeof(Shaders::Geometry), "Geometry Buffer");
-        s_StaticSceneData.GeometryBuffer->Upload(geometries.data());
-
-        s_BufferBuilder->SetUsageFlags(vk::BufferUsageFlagBits::eUniformBuffer);
-        s_RaygenUniformBuffer = s_BufferBuilder->CreateBufferUnique(sizeof(Shaders::RaygenUniformData), "Raygen Uniform Buffer");
-        s_ClosestHitUniformBuffer =
-            s_BufferBuilder->CreateBufferUnique(sizeof(Shaders::ClosestHitUniformData), "Closest Hit Uniform Buffer");
+        std::advance(vertexIterator, 4);
+        std::advance(indexIterator, 6);
     }
 
-    {
-        std::vector<vk::AccelerationStructureGeometryKHR> geometries = {};
-        std::vector<uint32_t> primitiveCounts = {};
-        for (uint32_t i = 0; i < 6; i++)
-        {
-            vk::AccelerationStructureGeometryTrianglesDataKHR geometryData(
-                vk::Format::eR32G32B32Sfloat, s_StaticSceneData.VertexBuffer->GetDeviceAddress(),
-                sizeof(Shaders::Vertex), 3, vk::IndexType::eUint32,
-                s_StaticSceneData.IndexBuffer->GetDeviceAddress()  //,
-                // s_StaticSceneData.TransformMatrixBuffer->GetDeviceAddress()
-                // TODO: ^^^ Use when implementing model loading
-            );
+    const uint32_t cubeModelIndex =
+        s_StaticSceneData.AcceleraionStructure->AddModel({ 0, 1, 2, 3, 4, 5 }, "Cube");
 
-            geometries.emplace_back(vk::AccelerationStructureGeometryKHR(
-                vk::GeometryTypeKHR::eTriangles, geometryData, vk::GeometryFlagBitsKHR::eOpaque
-            ));
-            primitiveCounts.push_back(2);
+    // Cube ver1 (1st instance)
+    s_StaticSceneData.AcceleraionStructure->AddModelInstance(
+        cubeModelIndex, glm::transpose(glm::translate(glm::mat4(1.0f), glm::vec3(1.0f))),
+        s_ShaderLibrary->GetGeometryCount()
+    );
 
-            s_ShaderLibrary->AddGeometry({ i, i / 2 });
-        }
+    // Cube ver1 (2nd instance)
+    s_StaticSceneData.AcceleraionStructure->AddModelInstance(
+        cubeModelIndex, glm::transpose(glm::translate(glm::mat4(1.0f), glm::vec3(-1.0f))),
+        s_ShaderLibrary->GetGeometryCount()
+    );
 
-        for (uint32_t i = 0; i < 6; i++)
-            s_ShaderLibrary->AddGeometry({ i, 0 });
+    for (uint32_t i = 0; i < 6; i++)
+        s_ShaderLibrary->AddGeometry({ i, i / 2 });
 
-        vk::AccelerationStructureBuildGeometryInfoKHR bottomBuildInfo =
-            vk::AccelerationStructureBuildGeometryInfoKHR(
-                vk::AccelerationStructureTypeKHR::eBottomLevel,
-                vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace
-            )
-                .setGeometries(geometries);
-
-        vk::AccelerationStructureBuildSizesInfoKHR buildSizesInfo =
-            DeviceContext::GetLogical().getAccelerationStructureBuildSizesKHR(
-                vk::AccelerationStructureBuildTypeKHR::eDevice, bottomBuildInfo, primitiveCounts,
-                Application::GetDispatchLoader()
-            );
-
-        s_BufferBuilder->ResetFlags()
-            .SetUsageFlags(
-                vk::BufferUsageFlagBits::eStorageBuffer |
-                vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR |
-                vk::BufferUsageFlagBits::eShaderDeviceAddress
-            )
-            .SetMemoryFlags(vk::MemoryPropertyFlagBits::eDeviceLocal)
-            .SetAllocateFlags(vk::MemoryAllocateFlagBits::eDeviceAddress);
-        s_StaticSceneData.BottomLevelAccelerationStructureBuffer1 = s_BufferBuilder->CreateBufferUnique(
-            buildSizesInfo.accelerationStructureSize, "Bottom Level Acceleration Structure Buffer 1"
-        );
-        s_StaticSceneData.BottomLevelAccelerationStructureBuffer2 = s_BufferBuilder->CreateBufferUnique(
-            buildSizesInfo.accelerationStructureSize, "Bottom Level Acceleration Structure Buffer 2"
-        );
-
-        Buffer scratchBuffer1 =
-            s_BufferBuilder->CreateBuffer(buildSizesInfo.buildScratchSize, "Scratch Buffer (BLAS 1)");
-        Buffer scratchBuffer2 =
-            s_BufferBuilder->CreateBuffer(buildSizesInfo.buildScratchSize, "Scratch Buffer (BLAS 2)");
-
-        vk::AccelerationStructureCreateInfoKHR createInfo(
-            vk::AccelerationStructureCreateFlagsKHR(),
-            s_StaticSceneData.BottomLevelAccelerationStructureBuffer1->GetHandle(), 0,
-            buildSizesInfo.accelerationStructureSize, vk::AccelerationStructureTypeKHR::eBottomLevel
-        );
-
-        s_StaticSceneData.BottomLevelAccelerationStructure1 =
-            DeviceContext::GetLogical().createAccelerationStructureKHR(
-                createInfo, nullptr, Application::GetDispatchLoader()
-            );
-
-        createInfo.setBuffer(s_StaticSceneData.BottomLevelAccelerationStructureBuffer2->GetHandle());
-
-        s_StaticSceneData.BottomLevelAccelerationStructure2 =
-            DeviceContext::GetLogical().createAccelerationStructureKHR(
-                createInfo, nullptr, Application::GetDispatchLoader()
-            );
-
-        bottomBuildInfo.setDstAccelerationStructure(s_StaticSceneData.BottomLevelAccelerationStructure1)
-            .setScratchData(scratchBuffer1.GetDeviceAddress());
-
-        auto bottomBuildInfo2 = bottomBuildInfo;
-        bottomBuildInfo2.setDstAccelerationStructure(s_StaticSceneData.BottomLevelAccelerationStructure2)
-            .setScratchData(scratchBuffer2.GetDeviceAddress());
-
-        vk::AccelerationStructureBuildRangeInfoKHR rangeInfos[] = { { 2, 0, 0, 0 },
-                                                                    { 2, 6 * sizeof(uint32_t), 4, 0 },
-                                                                    { 2, 12 * sizeof(uint32_t), 8, 0 },
-                                                                    { 2, 18 * sizeof(uint32_t), 12, 0 },
-                                                                    { 2, 24 * sizeof(uint32_t), 16, 0 },
-                                                                    { 2, 30 * sizeof(uint32_t), 20, 0 } };
-
-        s_MainCommandBuffer.Begin();
-        s_MainCommandBuffer.CommandBuffer.buildAccelerationStructuresKHR(
-            { bottomBuildInfo, bottomBuildInfo2 }, { rangeInfos, rangeInfos },
-            Application::GetDispatchLoader()
-        );
-        s_MainCommandBuffer.Submit(DeviceContext::GetGraphicsQueue());
-
-        vk::AccelerationStructureDeviceAddressInfoKHR addressInfo(
-            s_StaticSceneData.BottomLevelAccelerationStructure1
-        );
-        s_StaticSceneData.BottomLevelAccelerationStructureAddress1 =
-            DeviceContext::GetLogical().getAccelerationStructureAddressKHR(
-                addressInfo, Application::GetDispatchLoader()
-            );
-
-        addressInfo.setAccelerationStructure(s_StaticSceneData.BottomLevelAccelerationStructure2);
-        s_StaticSceneData.BottomLevelAccelerationStructureAddress2 =
-            DeviceContext::GetLogical().getAccelerationStructureAddressKHR(
-                addressInfo, Application::GetDispatchLoader()
-            );
-    }
-
-    {
-        // TODO: Get rid of this abomination
-        glm::mat3x4 mat = glm::transpose(glm::translate(glm::mat4(1.0f), glm::vec3(-1.0f)));
-        vk::TransformMatrixKHR matrix = {};
-        memcpy(matrix.matrix.data(), &mat[0][0], 3 * 4 * sizeof(float));
-
-        vk::AccelerationStructureInstanceKHR instance(
-            matrix, 0, 0xff, 0, vk::GeometryInstanceFlagsKHR(),
-            s_StaticSceneData.BottomLevelAccelerationStructureAddress1
-        );
-
-        std::vector<vk::AccelerationStructureInstanceKHR> instances = {};
-        instances.push_back(instance);
-        mat = glm::transpose(glm::scale(
+    // Cube ver2 (1st instance)
+    s_StaticSceneData.AcceleraionStructure->AddModelInstance(
+        cubeModelIndex,
+        glm::transpose(glm::scale(
             glm::translate(glm::mat4(1.0f), glm::vec3(0.5f, -1.0f, -3.0f)), glm::vec3(2.0f, 1.0f, 0.3f)
-        ));
-        memcpy(matrix.matrix.data(), &mat[0][0], 3 * 4 * sizeof(float));
-        instance.setAccelerationStructureReference(s_StaticSceneData.BottomLevelAccelerationStructureAddress2
-        );
-        instance.setTransform(matrix);
-        instance.setInstanceShaderBindingTableRecordOffset(6);  // Because first instance has 6 geometries
-        instances.push_back(instance);
+        )),
+        s_ShaderLibrary->GetGeometryCount()
+    );
 
-        Buffer instanceBuffer =
-            s_BufferBuilder->ResetFlags()
-                .SetUsageFlags(
-                    vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR |
-                    vk::BufferUsageFlagBits::eShaderDeviceAddress
-                )
-                .SetMemoryFlags(
-                    vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
-                )
-                .SetAllocateFlags(vk::MemoryAllocateFlagBits::eDeviceAddress)
-                .CreateBuffer(sizeof(vk::AccelerationStructureInstanceKHR) * instances.size(), "Instance Buffer");
+    for (uint32_t i = 0; i < 6; i++)
+        s_ShaderLibrary->AddGeometry({ i, 0 });
 
-        instanceBuffer.Upload(instances.data());
-
-        vk::AccelerationStructureGeometryInstancesDataKHR instancesData(
-            vk::False, instanceBuffer.GetDeviceAddress()
-        );
-
-        vk::AccelerationStructureGeometryKHR geometry(
-            vk::GeometryTypeKHR::eInstances, instancesData, vk::GeometryFlagBitsKHR::eOpaque
-        );
-
-        vk::AccelerationStructureBuildGeometryInfoKHR buildInfo =
-            vk::AccelerationStructureBuildGeometryInfoKHR(
-                vk::AccelerationStructureTypeKHR::eTopLevel,
-                vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace
-            )
-                .setGeometries({ geometry });
-
-        const uint32_t primitiveCount[] = { static_cast<uint32_t>(instances.size()) };
-        vk::AccelerationStructureBuildSizesInfoKHR buildSizesInfo =
-            DeviceContext::GetLogical().getAccelerationStructureBuildSizesKHR(
-                vk::AccelerationStructureBuildTypeKHR::eDevice, buildInfo, primitiveCount,
-                Application::GetDispatchLoader()
-            );
-
-        s_StaticSceneData.TopLevelAccelerationStructureBuffer =
-            s_BufferBuilder->ResetFlags()
-                .SetUsageFlags(
-                    vk::BufferUsageFlagBits::eStorageBuffer |
-                    vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR |
-                    vk::BufferUsageFlagBits::eShaderDeviceAddress
-                )
-                .SetMemoryFlags(vk::MemoryPropertyFlagBits::eDeviceLocal)
-                .SetAllocateFlags(vk::MemoryAllocateFlagBits::eDeviceAddress)
-                .CreateBufferUnique(buildSizesInfo.accelerationStructureSize, "Top Level Acceleration Structure Buffer");
-
-        vk::AccelerationStructureCreateInfoKHR createInfo(
-            vk::AccelerationStructureCreateFlagsKHR(),
-            s_StaticSceneData.TopLevelAccelerationStructureBuffer->GetHandle(), 0,
-            buildSizesInfo.accelerationStructureSize
-        );
-
-        s_StaticSceneData.TopLevelAccelerationStructure =
-            DeviceContext::GetLogical().createAccelerationStructureKHR(
-                createInfo, nullptr, Application::GetDispatchLoader()
-            );
-
-        Buffer scratchBuffer = s_BufferBuilder->CreateBuffer(buildSizesInfo.buildScratchSize, "Scratch Buffer (TLAS)");
-
-        vk::AccelerationStructureBuildGeometryInfoKHR geometryInfo =
-            vk::AccelerationStructureBuildGeometryInfoKHR(
-                vk::AccelerationStructureTypeKHR::eTopLevel,
-                vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace
-            )
-                .setGeometries({ geometry })
-                .setDstAccelerationStructure(s_StaticSceneData.TopLevelAccelerationStructure)
-                .setScratchData(scratchBuffer.GetDeviceAddress());
-
-        vk::AccelerationStructureBuildRangeInfoKHR rangeInfo(2, 0, 0, 0);
-
-        s_MainCommandBuffer.Begin();
-        s_MainCommandBuffer.CommandBuffer.buildAccelerationStructuresKHR(
-            { geometryInfo }, { &rangeInfo }, Application::GetDispatchLoader()
-        );
-        s_MainCommandBuffer.Submit(DeviceContext::GetGraphicsQueue());
-
-        vk::AccelerationStructureDeviceAddressInfoKHR addressInfo(
-            s_StaticSceneData.TopLevelAccelerationStructure
-        );
-        s_StaticSceneData.TopLevelAccelerationStructureAddress =
-            DeviceContext::GetLogical().getAccelerationStructureAddressKHR(
-                addressInfo, Application::GetDispatchLoader()
-            );
-    }
+    s_StaticSceneData.AcceleraionStructure->Build();
 }
 
 std::unique_ptr<Image> Renderer::CreateStorageImage(vk::Extent2D extent)
@@ -471,8 +244,6 @@ void Renderer::SetupPipeline()
             .AddDescriptor(vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eRaygenKHR, true)
             .AddDescriptor(vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eRaygenKHR)
             .AddDescriptor(vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eClosestHitKHR)
-            .AddDescriptor(vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eClosestHitKHR)
-            .AddDescriptor(vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eClosestHitKHR)
             .AddDescriptor(
                 vk::DescriptorType::eCombinedImageSampler, MaterialSystem::GetTextures().size(),
                 vk::ShaderStageFlagBits::eClosestHitKHR
@@ -591,20 +362,20 @@ void Renderer::OnUpdate(float timeStep)
         res.StorageImage->SetDebugName(std::format("Storage image {}", frameIndex));
 
         s_DescriptorSet->UpdateAccelerationStructures(
-            0, frameIndex, { s_StaticSceneData.TopLevelAccelerationStructure }
+            0, frameIndex, { s_StaticSceneData.AcceleraionStructure->GetTlas() }
         );
         s_DescriptorSet->UpdateImage(
             1, frameIndex, *res.StorageImage, vk::Sampler(), vk::ImageLayout::eGeneral
         );
         s_DescriptorSet->UpdateBuffer(2, frameIndex, *s_RaygenUniformBuffer);
         s_DescriptorSet->UpdateBuffer(3, frameIndex, *s_ClosestHitUniformBuffer);
-        s_DescriptorSet->UpdateBuffer(4, frameIndex, *s_StaticSceneData.VertexBuffer);
-        s_DescriptorSet->UpdateBuffer(5, frameIndex, *s_StaticSceneData.IndexBuffer);
         s_DescriptorSet->UpdateImageArray(
-            6, frameIndex, MaterialSystem::GetTextures(), s_Sampler, vk::ImageLayout::eShaderReadOnlyOptimal
+            4, frameIndex, MaterialSystem::GetTextures(), s_Sampler, vk::ImageLayout::eShaderReadOnlyOptimal
         );
-        s_DescriptorSet->UpdateBuffer(7, frameIndex, *s_StaticSceneData.GeometryBuffer);
-        s_DescriptorSet->UpdateBuffer(8, frameIndex, MaterialSystem::GetBuffer());
+        s_DescriptorSet->UpdateBuffer(
+            5, frameIndex, s_StaticSceneData.AcceleraionStructure->GetGeometryBuffer()
+        );
+        s_DescriptorSet->UpdateBuffer(6, frameIndex, MaterialSystem::GetBuffer());
 
         s_RenderingResources.emplace_back(std::move(res));
     }

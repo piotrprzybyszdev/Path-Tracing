@@ -7,6 +7,7 @@
 #include "Core/Camera.h"
 #include "Core/Core.h"
 
+#include "AccelerationStructure.h"
 #include "Buffer.h"
 #include "DescriptorSet.h"
 #include "Image.h"
@@ -63,22 +64,7 @@ private:
 
     static struct SceneData
     {
-        std::unique_ptr<Buffer> VertexBuffer = nullptr;
-        std::unique_ptr<Buffer> IndexBuffer = nullptr;
-        std::unique_ptr<Buffer> GeometryBuffer = nullptr;
-        std::unique_ptr<Buffer> TransformMatrixBuffer = nullptr;
-
-        std::unique_ptr<Buffer> BottomLevelAccelerationStructureBuffer1 = nullptr;
-        vk::AccelerationStructureKHR BottomLevelAccelerationStructure1 { nullptr };
-        vk::DeviceAddress BottomLevelAccelerationStructureAddress1 { 0 };
-
-        std::unique_ptr<Buffer> BottomLevelAccelerationStructureBuffer2 = nullptr;
-        vk::AccelerationStructureKHR BottomLevelAccelerationStructure2 { nullptr };
-        vk::DeviceAddress BottomLevelAccelerationStructureAddress2 { 0 };
-
-        std::unique_ptr<Buffer> TopLevelAccelerationStructureBuffer = nullptr;
-        vk::AccelerationStructureKHR TopLevelAccelerationStructure { nullptr };
-        vk::DeviceAddress TopLevelAccelerationStructureAddress { 0 };
+        std::unique_ptr<AccelerationStructure> AcceleraionStructure = nullptr;
     } s_StaticSceneData;
 
     static std::unique_ptr<Buffer> s_RaygenUniformBuffer;
@@ -102,7 +88,6 @@ private:
     static std::unique_ptr<ImageBuilder> s_ImageBuilder;
 
     static std::unique_ptr<ShaderLibrary> s_ShaderLibrary;
-    static std::unique_ptr<MaterialSystem> s_MaterialSystem;
 
     static vk::Sampler s_Sampler;
 };
