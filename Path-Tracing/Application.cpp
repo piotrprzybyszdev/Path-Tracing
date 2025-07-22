@@ -13,7 +13,7 @@
 #include "Renderer/Swapchain.h"
 
 #include "Application.h"
-#include "MaterialSystem.h"
+#include "ExampleScenes.h"
 #include "UserInterface.h"
 #include "Window.h"
 
@@ -145,43 +145,18 @@ void Application::Init()
     s_State = State::HasSwapchain;
 
     UserInterface::Init(s_Instance, s_Swapchain->GetSurfaceFormat().format, s_Swapchain->GetImageCount());
+    ExampleScenes::CreateScenes();
+
     s_State = State::HasUserInterface;
 
     Renderer::Init(s_Swapchain.get());
     s_State = State::Initialized;
-
-    MaterialSystem::Init();
-
-    // TODO: Move to Scene class when implementing model loading
-    const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets";
-    const std::array<std::string, 3> assetNames = { "Metal", "PavingStones", "Logs" };
-    const std::array<std::string, 3> materials = {
-        "Metal062C_1K-JPG",
-        "PavingStones142_1K-JPG",
-        "Logs001_1K-JPG",
-    };
-
-    for (int i = 0; i < 3; i++)
-    {
-        const std::filesystem::path materialPath = base / assetNames[i];
-        const std::string &material = materials[i];
-        MaterialSystem::AddMaterial(
-            assetNames[i], materialPath / (material + "_Color.jpg"),
-            materialPath / (material + "_NormalGL.jpg"),
-            materialPath / (material + "_Roughness.jpg"), materialPath / (material + "_Roughness.jpg")
-        );
-    }
-
-    MaterialSystem::UploadBuffer();
-    Renderer::SetScene();
 }
 
 void Application::Shutdown()
 {
     if (DeviceContext::GetLogical())
         DeviceContext::GetLogical().waitIdle();
-
-    MaterialSystem::Shutdown();
 
     switch (s_State)
     {
@@ -220,6 +195,8 @@ void Application::Run()
 
     float lastFrameTime = 0.0f;
     vk::Extent2D previousSize = {};
+
+    Renderer::SetScene(ExampleScenes::g_SponzaScene);
 
     while (!Window::ShouldClose())
     {

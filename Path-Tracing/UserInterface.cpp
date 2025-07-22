@@ -138,16 +138,16 @@ void UserInterface::DefineUI()
     }
 
     static constexpr Shaders::EnabledTextureFlags textureFlags[] = {
-        Shaders::TexturesEnableAlbedo,
+        Shaders::TexturesEnableColor,
         Shaders::TexturesEnableNormal,
         Shaders::TexturesEnableMetalic,
         Shaders::TexturesEnableRoughness,
     };
     static constexpr const char *textureNames[] = {
-        "Albedo",
-        "Normal",
-        "Metalic",
-        "Roughness",
+        "Color Texture",
+        "Normal Texture",
+        "Metalic Texture",
+        "Roughness Texture",
     };
 
     // FIX: If you change the starting flags this will be out of sync

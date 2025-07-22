@@ -16,3 +16,6 @@
 [submodule "vendor/vma/VulkanMemoryAllocator"]
 	path = vendor/vma/VulkanMemoryAllocator
 	url = https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
+[submodule "vendor/assimp"]
+	path = vendor/assimp
+	url = https://github.com/assimp/assimp.git

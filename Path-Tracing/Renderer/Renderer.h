@@ -2,7 +2,8 @@
 
 #include <vulkan/vulkan.hpp>
 
-#include <filesystem>
+#include <memory>
+#include <vector>
 
 #include "Core/Camera.h"
 #include "Core/Core.h"
@@ -11,10 +12,10 @@
 #include "Buffer.h"
 #include "DescriptorSet.h"
 #include "Image.h"
-#include "MaterialSystem.h"
+#include "Scene.h"
+#include "ShaderBindingTable.h"
 #include "ShaderLibrary.h"
 #include "Swapchain.h"
-#include "Window.h"
 
 namespace PathTracing
 {
@@ -25,10 +26,10 @@ public:
     static void Init(const Swapchain *swapchain);
     static void Shutdown();
 
-    static void SetScene();
+    static void SetScene(const Scene &scene);
 
-    static void OnUpdate(float timeStep);
     static void OnResize(vk::Extent2D extent);
+    static void OnUpdate(float timeStep);
     static void Render(const Camera &camera);
 
     static Shaders::RenderModeFlags s_RenderMode;
@@ -64,30 +65,44 @@ private:
 
     static struct SceneData
     {
-        std::unique_ptr<AccelerationStructure> AcceleraionStructure = nullptr;
+        std::unique_ptr<Buffer> VertexBuffer = nullptr;
+        std::unique_ptr<Buffer> IndexBuffer = nullptr;
+        std::unique_ptr<Buffer> TransformBuffer = nullptr;
+
+        std::unique_ptr<Buffer> GeometryBuffer = nullptr;
+        std::unique_ptr<Buffer> MaterialBuffer = nullptr;
+
+        std::vector<Image> Textures;
+
+        std::unique_ptr<ShaderBindingTable> SceneShaderBindingTable = nullptr;
+        std::unique_ptr<AccelerationStructure> SceneAccelerationStructure = nullptr;
     } s_StaticSceneData;
 
     static std::unique_ptr<Buffer> s_RaygenUniformBuffer;
     static std::unique_ptr<Buffer> s_ClosestHitUniformBuffer;
 
+    static std::unique_ptr<DescriptorSetBuilder> s_DescriptorSetBuilder;
     static std::unique_ptr<DescriptorSet> s_DescriptorSet;
 
     static vk::PipelineLayout s_PipelineLayout;
     static vk::Pipeline s_Pipeline;
 
+    static std::unique_ptr<ShaderLibrary> s_ShaderLibrary;
+
 private:
-    static std::unique_ptr<Image> CreateStorageImage(vk::Extent2D extent);
-
-    static void CreateScene();
-    static void SetupPipeline();
-
+    static void AddTexture(vk::Extent2D extent, const uint8_t *data);
+    static void AddTexture(vk::Extent2D extent, const uint8_t *data, const std::string &name);
+    static bool SetupPipeline();
+    
     static void RecordCommandBuffer(const RenderingResources &resources);
+
+    static std::unique_ptr<Image> CreateStorageImage(vk::Extent2D extent);
+    static void OnInFlightCountChange();
+    static void RecreateDescriptorSet();
 
 private:
     static std::unique_ptr<BufferBuilder> s_BufferBuilder;
     static std::unique_ptr<ImageBuilder> s_ImageBuilder;
-
-    static std::unique_ptr<ShaderLibrary> s_ShaderLibrary;
 
     static vk::Sampler s_Sampler;
 };

@@ -3,7 +3,7 @@
 #extension GL_EXT_buffer_reference : require
 #extension GL_EXT_nonuniform_qualifier : require
 
-#include "ShaderTypes.incl"
+#include "ShaderRendererTypes.incl"
 
 layout(binding = 3, set = 0) uniform MainBlock {
 	ClosestHitUniformData mainUniform;
@@ -11,11 +11,15 @@ layout(binding = 3, set = 0) uniform MainBlock {
 
 layout(binding = 4, set = 0) uniform sampler2D textures[];
 
-layout(binding = 5, set = 0) readonly buffer GeometryBuffer {
+layout(binding = 5, set = 0) readonly buffer TransformBuffer {
+	mat3x4[] transforms;
+};
+
+layout(binding = 6, set = 0) readonly buffer GeometryBuffer {
 	Geometry[] geometries;
 };
 
-layout(binding = 6, set = 0) readonly buffer MaterialBuffer {
+layout(binding = 7, set = 0) readonly buffer MaterialBuffer {
 	Material[] materials;
 };
 
@@ -60,7 +64,7 @@ vec3 interpolate(vec3 v1, vec3 v2, vec3 v3, vec3 barycentricCoords)
 Vertex interpolate(Vertex v1, Vertex v2, Vertex v3, vec3 barycentricCoords)
 {
 	Vertex v;
-	v.Position = interpolate(v1.Position, v2.Position, v3.Position, barycentricCoords);
+	v.Position = interpolate(v1.Position, v2.Position, v3.Position, barycentricCoords).xyz;
 	v.TexCoords = interpolate(v1.TexCoords, v2.TexCoords, v3.TexCoords, barycentricCoords);
 	v.Normal = interpolate(v1.Normal, v2.Normal, v3.Normal, barycentricCoords);
 	v.Tangent = interpolate(v1.Tangent, v2.Tangent, v3.Tangent, barycentricCoords);
@@ -69,28 +73,21 @@ Vertex interpolate(Vertex v1, Vertex v2, Vertex v3, vec3 barycentricCoords)
 	return v;
 }
 
-float sampleTexture(uint index, vec2 texCoords, uint enabledFlag, float fallback)
+uint GetTextureIndex(uint index, uint enabledFlag, uint fallback)
 {
-	const bool isEnabled = (mainUniform.u_EnabledTextures & enabledFlag) != 0;
-	return isEnabled ? texture(textures[index], texCoords).x : fallback;
+	return (mainUniform.u_EnabledTextures & enabledFlag) != 0 ? index : fallback;
 }
 
-vec2 sampleTexture(uint index, vec2 texCoords, uint enabledFlag, vec2 fallback)
+Vertex transform(Vertex vertex, uint transformIndex)
 {
-	const bool isEnabled = (mainUniform.u_EnabledTextures & enabledFlag) != 0;
-	return isEnabled ? texture(textures[index], texCoords).xy : fallback;
-}
+	const mat3x4 transform = mat3x4(transforms[transformIndex] * gl_ObjectToWorldEXT);
 
-vec3 sampleTexture(uint index, vec2 texCoords, uint enabledFlag, vec3 fallback)
-{
-	const bool isEnabled = (mainUniform.u_EnabledTextures & enabledFlag) != 0;
-	return isEnabled ? texture(textures[index], texCoords).xyz : fallback;
-}
+	vertex.Position = (transform * vertex.Position).xyz;
+	vertex.Tangent = normalize((transform * vertex.Tangent).xyz);
+	vertex.Bitangent = normalize((transform * vertex.Bitangent).xyz);
+	vertex.Normal = normalize((transpose(inverse(mat4(transform))) * vec4(vertex.Normal, 1.0f)).xyz);  // TODO: Calculate inverse on CPU
 
-vec4 sampleTexture(uint index, vec2 texCoords, uint enabledFlag, vec4 fallback)
-{
-	const bool isEnabled = (mainUniform.u_EnabledTextures & enabledFlag) != 0;
-	return isEnabled ? texture(textures[index], texCoords) : fallback;
+	return vertex;
 }
 
 void main()
@@ -100,25 +97,27 @@ void main()
 	VertexBuffer vertices = VertexBuffer(geometries[sbt.GeometryIndex].Vertices);
 	IndexBuffer indices = IndexBuffer(geometries[sbt.GeometryIndex].Indices);
 
-	const Vertex vertex = interpolate(
+	const Vertex originalVertex = interpolate(
 		getVertex(vertices, indices, gl_PrimitiveID * 3), getVertex(vertices, indices, gl_PrimitiveID * 3 + 1),
 		getVertex(vertices, indices, gl_PrimitiveID * 3 + 2), barycentricCoords
 	);
-	
+
+	const Vertex vertex = transform(originalVertex, sbt.TransformIndex);
+
 	const Material material = materials[sbt.MaterialIndex];
-	const vec3 albedo = sampleTexture(material.AlbedoIdx, vertex.TexCoords, TexturesEnableAlbedo, DefaultAlbedo);
-	const vec3 normal = sampleTexture(material.NormalIdx, vertex.TexCoords, TexturesEnableNormal, DefaultNormal);
-	const float metalness = sampleTexture(material.MetalicIdx, vertex.TexCoords, TexturesEnableMetalic, DefaultMetalness);
-	const float roughness = sampleTexture(material.RoughnessIdx, vertex.TexCoords, TexturesEnableRoughness, DefaultRoughness);
+	const vec3 color = texture(textures[GetTextureIndex(material.ColorIdx, TexturesEnableColor, DefaultColorTextureIndex)], vertex.TexCoords).xyz;
+	const vec3 normal = texture(textures[GetTextureIndex(material.NormalIdx, TexturesEnableNormal, DefaultNormalTextureIndex)], vertex.TexCoords).xyz;
+	const vec3 roughness = texture(textures[GetTextureIndex(material.RoughnessIdx, TexturesEnableRoughness, DefaultRoughnessTextureIndex)], vertex.TexCoords).xyz;
+	const vec3 metalness = texture(textures[GetTextureIndex(material.MetalicIdx, TexturesEnableMetalic, DefaultMetalicTextureIndex)], vertex.TexCoords).xyz;
 
 	const vec3 lightColor = vec3(1.0f);
 	const vec3 viewDir = gl_WorldRayDirectionEXT;
-	const vec3 lightPos = vec3(-100.0f, -100.0f, 100.0f);
+	const vec3 lightPos = vec3(3.0f, 15.0f, 7.0f);
 	const vec3 lightDir = vertex.Position - lightPos;
 
 	const mat3 TBN = mat3(vertex.Tangent, vertex.Bitangent, vertex.Normal);
 	const vec3 N = normalize(vertex.Normal + TBN * (2.0f * normal - 1.0f));
-	
+
 	const vec3 L = -normalize(lightDir);
 	const vec3 V = -normalize(viewDir);
 
@@ -131,13 +130,13 @@ void main()
 	switch (mainUniform.u_RenderMode)
 	{
 	case RenderModeColor:
-		hitValue = ambient * albedo + (diffuse + specular) * lightColor * albedo;
+		hitValue = ambient * color + (diffuse + specular) * lightColor * color;
 		break;
 	case RenderModeWorldPosition:
-		hitValue = (gl_ObjectToWorldEXT * vec4(vertex.Position, 1.0f)).xyz;
+		hitValue = vertex.Position.xyz;
 		break;
 	case RenderModeNormal:
-		hitValue = (N + 1.0f) / 2.0f;
+		hitValue = N;
 		break;
 	case RenderModeTextureCoords:
 		hitValue = vec3(vertex.TexCoords, 0.0f);

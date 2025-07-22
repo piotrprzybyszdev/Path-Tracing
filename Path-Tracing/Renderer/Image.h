@@ -1,6 +1,6 @@
 #pragma once
 
-#include <string_view>
+#include <string>
 
 #include <vulkan/vulkan.hpp>
 #include <vk_mem_alloc.h>
@@ -24,12 +24,12 @@ public:
     Image &operator=(Image &&image) noexcept;
     Image &operator=(const Image &image) = delete;
 
-    vk::Image GetHandle() const;
-    vk::ImageView GetView() const;
+    [[nodiscard]] vk::Image GetHandle() const;
+    [[nodiscard]] vk::ImageView GetView() const;
 
     void UploadStaging(const uint8_t *data) const;
 
-    void SetDebugName(std::string_view name) const;
+    void SetDebugName(const std::string &name) const;
 
     void Transition(vk::CommandBuffer buffer, vk::ImageLayout layoutFrom, vk::ImageLayout layoutTo) const;
     
@@ -61,10 +61,10 @@ public:
 
     ImageBuilder &ResetFlags();
 
-    Image CreateImage(vk::Extent2D extent) const;
-    Image CreateImage(vk::Extent2D extent, std::string_view name) const;
-    std::unique_ptr<Image> CreateImageUnique(vk::Extent2D extent) const;
-    std::unique_ptr<Image> CreateImageUnique(vk::Extent2D extent, std::string_view name) const;
+    [[nodiscard]] Image CreateImage(vk::Extent2D extent) const;
+    [[nodiscard]] Image CreateImage(vk::Extent2D extent, const std::string &name) const;
+    [[nodiscard]] std::unique_ptr<Image> CreateImageUnique(vk::Extent2D extent) const;
+    [[nodiscard]] std::unique_ptr<Image> CreateImageUnique(vk::Extent2D extent, const std::string &name) const;
 
 private:
     vk::Format m_Format = vk::Format::eUndefined;

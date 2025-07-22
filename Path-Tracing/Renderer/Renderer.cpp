@@ -1,53 +1,49 @@
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan.hpp>
 
-// TODO: Remove
-#define GLM_ENABLE_EXPERIMENTAL
-#include <glm/gtx/transform.hpp>
-
 #include <algorithm>
-#include <fstream>
 #include <memory>
+#include <ranges>
 #include <set>
 #include <string_view>
 
 #include "Core/Core.h"
 
-#include "Shaders/ShaderTypes.incl"
-
-#include "DeviceContext.h"
-#include "Renderer.h"
-#include "Utils.h"
+#include "Shaders/ShaderRendererTypes.incl"
 
 #include "Application.h"
 #include "UserInterface.h"
 
+#include "AssetManager.h"
+#include "DeviceContext.h"
+#include "Renderer.h"
+#include "Utils.h"
+
 namespace PathTracing
 {
-
-static inline constexpr uint32_t s_MaxFramesInFlight = 10;
 
 Shaders::RenderModeFlags Renderer::s_RenderMode = Shaders::RenderModeColor;
 Shaders::EnabledTextureFlags Renderer::s_EnabledTextures = Shaders::TexturesEnableAll;
 
 const Swapchain *Renderer::s_Swapchain = nullptr;
 
-Renderer::CommandBuffer Renderer::s_MainCommandBuffer = { nullptr, nullptr };
+Renderer::CommandBuffer Renderer::s_MainCommandBuffer = {};
 vk::CommandPool Renderer::s_MainCommandPool = nullptr;
 
 std::vector<Renderer::RenderingResources> Renderer::s_RenderingResources = {};
 std::unique_ptr<Buffer> Renderer::s_RaygenUniformBuffer = nullptr;
 std::unique_ptr<Buffer> Renderer::s_ClosestHitUniformBuffer = nullptr;
+std::unique_ptr<DescriptorSetBuilder> Renderer::s_DescriptorSetBuilder = nullptr;
 std::unique_ptr<DescriptorSet> Renderer::s_DescriptorSet = nullptr;
 vk::PipelineLayout Renderer::s_PipelineLayout = nullptr;
 vk::Pipeline Renderer::s_Pipeline = nullptr;
 
 std::unique_ptr<BufferBuilder> Renderer::s_BufferBuilder = nullptr;
 std::unique_ptr<ImageBuilder> Renderer::s_ImageBuilder = nullptr;
-std::unique_ptr<ShaderLibrary> Renderer::s_ShaderLibrary = nullptr;
 
 vk::Sampler Renderer::s_Sampler = nullptr;
 
+std::unique_ptr<ShaderLibrary> Renderer::s_ShaderLibrary = nullptr;
 Renderer::SceneData Renderer::s_StaticSceneData = {};
 
 void Renderer::Init(const Swapchain *swapchain)
@@ -65,15 +61,19 @@ void Renderer::Init(const Swapchain *swapchain)
     s_BufferBuilder = std::make_unique<BufferBuilder>();
     s_ImageBuilder = std::make_unique<ImageBuilder>();
 
-    s_ShaderLibrary = std::make_unique<ShaderLibrary>();
-
     {
         vk::SamplerCreateInfo createInfo(vk::SamplerCreateFlags(), vk::Filter::eLinear, vk::Filter::eLinear);
         s_Sampler = DeviceContext::GetLogical().createSampler(createInfo);
-        Utils::SetDebugName(s_Sampler, vk::ObjectType::eSampler, "Texture Sampler");
+        Utils::SetDebugName(s_Sampler, "Texture Sampler");
     }
 
-    s_StaticSceneData.AcceleraionStructure = std::make_unique<AccelerationStructure>();
+    s_BufferBuilder->ResetFlags().SetUsageFlags(vk::BufferUsageFlagBits::eUniformBuffer);
+
+    s_RaygenUniformBuffer =
+        s_BufferBuilder->CreateHostBufferUnique(sizeof(Shaders::RaygenUniformData), "Raygen Uniform Buffer");
+    s_ClosestHitUniformBuffer = s_BufferBuilder->CreateHostBufferUnique(
+        sizeof(Shaders::ClosestHitUniformData), "Closest Hit Uniform Buffer"
+    );
 }
 
 void Renderer::Shutdown()
@@ -84,17 +84,26 @@ void Renderer::Shutdown()
     }
     s_RenderingResources.clear();
 
+    s_ShaderLibrary.reset();
+
     DeviceContext::GetLogical().destroyPipeline(s_Pipeline);
     DeviceContext::GetLogical().destroyPipelineLayout(s_PipelineLayout);
     s_DescriptorSet.reset();
-
-    s_StaticSceneData.AcceleraionStructure.reset();
+    s_DescriptorSetBuilder.reset();
 
     s_RaygenUniformBuffer.reset();
     s_ClosestHitUniformBuffer.reset();
 
+    s_StaticSceneData.SceneShaderBindingTable.reset();
+    s_StaticSceneData.SceneAccelerationStructure.reset();
+    s_StaticSceneData.Textures.clear();
+    s_StaticSceneData.MaterialBuffer.reset();
+    s_StaticSceneData.GeometryBuffer.reset();
+    s_StaticSceneData.TransformBuffer.reset();
+    s_StaticSceneData.IndexBuffer.reset();
+    s_StaticSceneData.VertexBuffer.reset();
+
     DeviceContext::GetLogical().destroySampler(s_Sampler);
-    s_ShaderLibrary.reset();
     s_ImageBuilder.reset();
     s_BufferBuilder.reset();
 
@@ -103,167 +112,159 @@ void Renderer::Shutdown()
     DeviceContext::GetLogical().destroyCommandPool(s_MainCommandPool);
 }
 
-void Renderer::SetScene()
+void Renderer::SetScene(const Scene &scene)
 {
-    CreateScene();
-    SetupPipeline();
-}
+    DeviceContext::GetLogical().waitIdle();
 
-void Renderer::CreateScene()
-{
-    std::vector<Shaders::Vertex> vertices = {
-        { { -1, -1, 1 }, { 0, 0 }, { 0, 0, 1 }, { 1, 0, 0 }, { 0, 1, 0 } },
-        { { 1, -1, 1 }, { 1, 0 }, { 0, 0, 1 }, { 1, 0, 0 }, { 0, 1, 0 } },
-        { { 1, 1, 1 }, { 1, 1 }, { 0, 0, 1 }, { 1, 0, 0 }, { 0, 1, 0 } },
-        { { -1, 1, 1 }, { 0, 1 }, { 0, 0, 1 }, { 1, 0, 0 }, { 0, 1, 0 } },
-
-        { { 1, -1, -1 }, { 0, 0 }, { 0, 0, -1 }, { -1, 0, 0 }, { 0, 1, 0 } },
-        { { -1, -1, -1 }, { 1, 0 }, { 0, 0, -1 }, { -1, 0, 0 }, { 0, 1, 0 } },
-        { { -1, 1, -1 }, { 1, 1 }, { 0, 0, -1 }, { -1, 0, 0 }, { 0, 1, 0 } },
-        { { 1, 1, -1 }, { 0, 1 }, { 0, 0, -1 }, { -1, 0, 0 }, { 0, 1, 0 } },
-
-        { { -1, -1, -1 }, { 0, 0 }, { -1, 0, 0 }, { 0, 0, 1 }, { 0, 1, 0 } },
-        { { -1, -1, 1 }, { 1, 0 }, { -1, 0, 0 }, { 0, 0, 1 }, { 0, 1, 0 } },
-        { { -1, 1, 1 }, { 1, 1 }, { -1, 0, 0 }, { 0, 0, 1 }, { 0, 1, 0 } },
-        { { -1, 1, -1 }, { 0, 1 }, { -1, 0, 0 }, { 0, 0, 1 }, { 0, 1, 0 } },
-
-        { { 1, -1, 1 }, { 0, 0 }, { 1, 0, 0 }, { 0, 0, -1 }, { 0, 1, 0 } },
-        { { 1, -1, -1 }, { 1, 0 }, { 1, 0, 0 }, { 0, 0, -1 }, { 0, 1, 0 } },
-        { { 1, 1, -1 }, { 1, 1 }, { 1, 0, 0 }, { 0, 0, -1 }, { 0, 1, 0 } },
-        { { 1, 1, 1 }, { 0, 1 }, { 1, 0, 0 }, { 0, 0, -1 }, { 0, 1, 0 } },
-
-        { { -1, 1, 1 }, { 0, 0 }, { 0, 1, 0 }, { 1, 0, 0 }, { 0, 0, -1 } },
-        { { 1, 1, 1 }, { 1, 0 }, { 0, 1, 0 }, { 1, 0, 0 }, { 0, 0, -1 } },
-        { { 1, 1, -1 }, { 1, 1 }, { 0, 1, 0 }, { 1, 0, 0 }, { 0, 0, -1 } },
-        { { -1, 1, -1 }, { 0, 1 }, { 0, 1, 0 }, { 1, 0, 0 }, { 0, 0, -1 } },
-
-        { { -1, -1, -1 }, { 0, 0 }, { 0, -1, 0 }, { 1, 0, 0 }, { 0, 0, 1 } },
-        { { 1, -1, -1 }, { 1, 0 }, { 0, -1, 0 }, { 1, 0, 0 }, { 0, 0, 1 } },
-        { { 1, -1, 1 }, { 1, 1 }, { 0, -1, 0 }, { 1, 0, 0 }, { 0, 0, 1 } },
-        { { -1, -1, 1 }, { 0, 1 }, { 0, -1, 0 }, { 1, 0, 0 }, { 0, 0, 1 } },
-    };
-
-    // TODO: Move to model loading
-    std::vector<uint32_t> indices = {};
-    for (int i = 0; i < 6; i++)
-    {
-        const uint32_t verticesPerGeometry = 4;
-        const uint32_t indicesPerGeometry = 6;
-
-        std::vector<uint32_t> temp = { 0, 1, 2, 2, 3, 0 };
-        for (auto x : temp)
-            indices.push_back(x);
-    }
-
-    s_BufferBuilder->ResetFlags()
-        .SetUsageFlags(vk::BufferUsageFlagBits::eUniformBuffer)
-        .SetMemoryFlags(vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent)
-        .SetAllocateFlags(vk::MemoryAllocateFlagBits::eDeviceAddress);
-
-    s_RaygenUniformBuffer =
-        s_BufferBuilder->CreateBufferUnique(sizeof(Shaders::RaygenUniformData), "Raygen Uniform Buffer");
-    s_ClosestHitUniformBuffer = s_BufferBuilder->CreateBufferUnique(
-        sizeof(Shaders::ClosestHitUniformData), "Closest Hit Uniform Buffer"
+    // Upload the scene data to buffers
+    s_BufferBuilder->ResetFlags().SetUsageFlags(
+        vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR |
+        vk::BufferUsageFlagBits::eShaderDeviceAddress | vk::BufferUsageFlagBits::eTransferDst
     );
 
-    auto vertexIterator = vertices.begin();
-    auto indexIterator = indices.begin();
-    for (uint32_t i = 0; i < 6; i++)
-    {
-        s_StaticSceneData.AcceleraionStructure->AddGeometry(
-            std::span(vertexIterator, 4), std::span(indexIterator, 6)
+    const auto &vertices = scene.GetVertices();
+    s_StaticSceneData.VertexBuffer = s_BufferBuilder->CreateDeviceBufferUnique(vertices, "Vertex Buffer");
+
+    const auto &indices = scene.GetIndices();
+    s_StaticSceneData.IndexBuffer = s_BufferBuilder->CreateDeviceBufferUnique(indices, "Index Buffer");
+
+    s_BufferBuilder->ResetFlags().SetUsageFlags(
+        vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR |
+        vk::BufferUsageFlagBits::eShaderDeviceAddress | vk::BufferUsageFlagBits::eStorageBuffer |
+        vk::BufferUsageFlagBits::eTransferDst
+    );
+
+    const auto &transforms = scene.GetTransforms();
+    std::vector<vk::TransformMatrixKHR> transforms2;
+    transforms2.reserve(transforms.size());
+    for (const auto &transform : transforms)
+        transforms2.push_back(TrivialCopy<glm::mat3x4, vk::TransformMatrixKHR>(transform));
+    s_StaticSceneData.TransformBuffer =
+        s_BufferBuilder->CreateDeviceBufferUnique(std::span(transforms2), "Transform Buffer");
+
+    s_BufferBuilder->ResetFlags().SetUsageFlags(
+        vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst
+    );
+
+    const auto &geometries = scene.GetGeometries();
+    std::vector<Shaders::Geometry> geometries2 = {};
+    for (const auto &geometry : geometries)
+        geometries2.emplace_back(
+            s_StaticSceneData.VertexBuffer->GetDeviceAddress() +
+                geometry.VertexOffset * sizeof(Shaders::Vertex),
+            s_StaticSceneData.IndexBuffer->GetDeviceAddress() + geometry.IndexOffset * sizeof(uint32_t)
         );
-        std::advance(vertexIterator, 4);
-        std::advance(indexIterator, 6);
+    s_StaticSceneData.GeometryBuffer =
+        s_BufferBuilder->CreateDeviceBufferUnique(std::span(geometries2), "Geometry Buffer");
+
+    const auto &materials = scene.GetMaterials();
+    s_StaticSceneData.MaterialBuffer =
+        s_BufferBuilder->CreateDeviceBufferUnique(materials, "Material Buffer");
+
+    // TODO: Don't recreate default textures
+    s_StaticSceneData.Textures.clear();
+    glm::vec4 defaultColor(1.0f);
+    glm::vec4 defaultNormal(0.0f, 0.0f, 1.0f, 1.0f);
+    glm::vec4 defaultRoughness(0.0f);
+    glm::vec4 defaultMetalness(0.0f);
+
+    const vk::Extent2D extent(1, 1);
+    AddTexture(extent, reinterpret_cast<const uint8_t *>(&defaultColor), "Default Color Texture");
+    AddTexture(extent, reinterpret_cast<const uint8_t *>(&defaultNormal), "Default Normal Texture");
+    AddTexture(extent, reinterpret_cast<const uint8_t *>(&defaultRoughness), "Default Roughness Texture");
+    AddTexture(extent, reinterpret_cast<const uint8_t *>(&defaultMetalness), "Default Metalness Texture");
+
+    assert(Shaders::DefaultColorTextureIndex == 0);
+    assert(Shaders::DefaultNormalTextureIndex == 1);
+    assert(Shaders::DefaultRoughnessTextureIndex == 2);
+    assert(Shaders::DefaultMetalicTextureIndex == 3);
+
+    const auto &textures = scene.GetTextures();
+    for (const auto &texture : textures)
+    {
+        TextureData textureData = AssetManager::LoadTextureData(texture);
+        std::string textureName = texture.Path.string();
+        AddTexture(vk::Extent2D(textureData.Width, textureData.Height), textureData.Data, textureName);
+        AssetManager::ReleaseTextureData(textureData);
     }
 
-    const uint32_t cubeModelIndex =
-        s_StaticSceneData.AcceleraionStructure->AddModel({ 0, 1, 2, 3, 4, 5 }, "Cube");
-
-    // Cube ver1 (1st instance)
-    s_StaticSceneData.AcceleraionStructure->AddModelInstance(
-        cubeModelIndex, glm::transpose(glm::translate(glm::mat4(1.0f), glm::vec3(1.0f))),
-        s_ShaderLibrary->GetGeometryCount()
+    // Setup AC and SBT
+    auto models = scene.GetModels();
+    auto instances = scene.GetModelInstances();
+    s_StaticSceneData.SceneAccelerationStructure = std::make_unique<AccelerationStructure>(
+        *s_StaticSceneData.VertexBuffer, *s_StaticSceneData.IndexBuffer, *s_StaticSceneData.TransformBuffer,
+        scene
     );
 
-    // Cube ver1 (2nd instance)
-    s_StaticSceneData.AcceleraionStructure->AddModelInstance(
-        cubeModelIndex, glm::transpose(glm::translate(glm::mat4(1.0f), glm::vec3(-1.0f))),
-        s_ShaderLibrary->GetGeometryCount()
-    );
+    s_StaticSceneData.SceneAccelerationStructure->Build();
 
-    for (uint32_t i = 0; i < 6; i++)
-        s_ShaderLibrary->AddGeometry({ i, i / 2 });
+    s_StaticSceneData.SceneShaderBindingTable = std::make_unique<ShaderBindingTable>();
+    for (const auto &model : models)
+        for (const auto &mesh : model.Meshes)
+            s_StaticSceneData.SceneShaderBindingTable->AddRecord({ mesh.GeometryIndex, mesh.MaterialIndex,
+                                                                   mesh.TransformBufferOffset });
 
-    // Cube ver2 (1st instance)
-    s_StaticSceneData.AcceleraionStructure->AddModelInstance(
-        cubeModelIndex,
-        glm::transpose(glm::scale(
-            glm::translate(glm::mat4(1.0f), glm::vec3(0.5f, -1.0f, -3.0f)), glm::vec3(2.0f, 1.0f, 0.3f)
-        )),
-        s_ShaderLibrary->GetGeometryCount()
-    );
+    bool isRecreated = SetupPipeline();
+    s_StaticSceneData.SceneShaderBindingTable->Upload(s_Pipeline);
 
-    for (uint32_t i = 0; i < 6; i++)
-        s_ShaderLibrary->AddGeometry({ i, 0 });
-
-    s_StaticSceneData.AcceleraionStructure->Build();
+    if (isRecreated)
+        RecreateDescriptorSet();
 }
 
-std::unique_ptr<Image> Renderer::CreateStorageImage(vk::Extent2D extent)
+void Renderer::AddTexture(vk::Extent2D extent, const uint8_t *data)
 {
-    s_ImageBuilder->ResetFlags()
-        .SetFormat(vk::Format::eR8G8B8A8Unorm)
-        .SetUsageFlags(vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eStorage)
+    // TODO: Add support for other texture formats
+    ImageBuilder builder;
+    builder.SetFormat(vk::Format::eR8G8B8A8Unorm)
+        .SetUsageFlags(vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst)
         .SetMemoryFlags(vk::MemoryPropertyFlagBits::eDeviceLocal);
 
-    auto image = s_ImageBuilder->CreateImageUnique(extent);
+    Image image = builder.CreateImage(extent);
+    image.UploadStaging(data);
 
-    vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
-    vk::ImageMemoryBarrier barrier;
-    barrier.setNewLayout(vk::ImageLayout::eGeneral).setImage(image->GetHandle()).setSubresourceRange(range);
-
-    s_MainCommandBuffer.Begin();
-    s_MainCommandBuffer.CommandBuffer.pipelineBarrier(
-        vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands,
-        vk::DependencyFlags(), {}, {}, { barrier }
-    );
-    s_MainCommandBuffer.Submit(DeviceContext::GetGraphicsQueue());
-
-    return image;
+    s_StaticSceneData.Textures.push_back(std::move(image));
 }
 
-void Renderer::SetupPipeline()
+void Renderer::AddTexture(vk::Extent2D extent, const uint8_t *data, const std::string &name)
 {
-    {
-        DescriptorSetBuilder builder(s_MaxFramesInFlight);
-        builder
-            .AddDescriptor(
-                vk::DescriptorType::eAccelerationStructureKHR, 1, vk::ShaderStageFlagBits::eRaygenKHR
-            )
-            .AddDescriptor(vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eRaygenKHR, true)
-            .AddDescriptor(vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eRaygenKHR)
-            .AddDescriptor(vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eClosestHitKHR)
-            .AddDescriptor(
-                vk::DescriptorType::eCombinedImageSampler, MaterialSystem::GetTextures().size(),
-                vk::ShaderStageFlagBits::eClosestHitKHR
-            )
-            .AddDescriptor(vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eClosestHitKHR)
-            .AddDescriptor(vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eClosestHitKHR);
+    AddTexture(extent, data);
+    Utils::SetDebugName(s_StaticSceneData.Textures.back().GetHandle(), name);
+}
 
-        s_DescriptorSet = builder.CreateSetUnique();
+bool Renderer::SetupPipeline()
+{
+    s_DescriptorSetBuilder = std::make_unique<DescriptorSetBuilder>();
+    s_DescriptorSetBuilder
+        ->SetDescriptor({ 0, vk::DescriptorType::eAccelerationStructureKHR, 1,
+                          vk::ShaderStageFlagBits::eRaygenKHR })
+        .SetDescriptor({ 1, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eRaygenKHR })
+        .SetDescriptor({ 2, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eRaygenKHR })
+        .SetDescriptor({ 3, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eClosestHitKHR })
+        .SetDescriptor({ 4, vk::DescriptorType::eCombinedImageSampler,
+                         static_cast<uint32_t>(s_StaticSceneData.Textures.size()),
+                         vk::ShaderStageFlagBits::eClosestHitKHR })
+        .SetDescriptor({ 5, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eClosestHitKHR })
+        .SetDescriptor({ 6, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eClosestHitKHR })
+        .SetDescriptor({ 7, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eClosestHitKHR });
+
+    bool isRecreated = s_Pipeline != nullptr;
+    if (isRecreated)
+    {
+        DeviceContext::GetLogical().destroyPipelineLayout(s_PipelineLayout);
+        DeviceContext::GetLogical().destroyPipeline(s_Pipeline);
     }
 
-    {
-        std::vector<vk::DescriptorSetLayout> layouts = { s_DescriptorSet->GetLayout() };
-        vk::PipelineLayoutCreateInfo createInfo(vk::PipelineLayoutCreateFlags(), layouts);
-        s_PipelineLayout = DeviceContext::GetLogical().createPipelineLayout(createInfo);
+    std::vector<vk::DescriptorSetLayout> layouts = { s_DescriptorSetBuilder->CreateLayout() };
+    vk::PipelineLayoutCreateInfo createInfo(vk::PipelineLayoutCreateFlags(), layouts);
+    s_PipelineLayout = DeviceContext::GetLogical().createPipelineLayout(createInfo);
 
-        s_ShaderLibrary->AddRaygenShader("Shaders/raygen.spv", "main");
-        s_ShaderLibrary->AddMissShader("Shaders/miss.spv", "main");
-        s_ShaderLibrary->AddClosestHitShader("Shaders/closesthit.spv", "main");
-        s_Pipeline = s_ShaderLibrary->CreatePipeline(s_PipelineLayout, Application::GetDispatchLoader());
-    }
+    s_ShaderLibrary = std::make_unique<ShaderLibrary>();
+    s_ShaderLibrary->AddRaygenShader("Shaders/raygen.spv", "main");
+    s_ShaderLibrary->AddMissShader("Shaders/miss.spv", "main");
+    s_ShaderLibrary->AddClosestHitShader("Shaders/closesthit.spv", "main");
+    s_Pipeline = s_ShaderLibrary->CreatePipeline(s_PipelineLayout);
+
+    return isRecreated;
 }
 
 void Renderer::RecordCommandBuffer(const RenderingResources &resources)
@@ -286,9 +287,11 @@ void Renderer::RecordCommandBuffer(const RenderingResources &resources)
         );
 
         commandBuffer.traceRaysKHR(
-            s_ShaderLibrary->GetRaygenTableEntry(), s_ShaderLibrary->GetMissTableEntry(),
-            s_ShaderLibrary->GetClosestHitTableEntry(), vk::StridedDeviceAddressRegionKHR(), extent.width,
-            extent.height, 1, Application::GetDispatchLoader()
+            s_StaticSceneData.SceneShaderBindingTable->GetRaygenTableEntry(),
+            s_StaticSceneData.SceneShaderBindingTable->GetMissTableEntry(),
+            s_StaticSceneData.SceneShaderBindingTable->GetClosestHitTableEntry(),
+            vk::StridedDeviceAddressRegionKHR(), extent.width, extent.height, 1,
+            Application::GetDispatchLoader()
         );
 
         Image::Transition(
@@ -338,9 +341,42 @@ void Renderer::RecordCommandBuffer(const RenderingResources &resources)
     commandBuffer.end();
 }
 
-void Renderer::OnUpdate(float timeStep)
+std::unique_ptr<Image> Renderer::CreateStorageImage(vk::Extent2D extent)
 {
-    assert(s_Swapchain->GetInFlightCount() < s_MaxFramesInFlight);
+    s_ImageBuilder->ResetFlags()
+        .SetFormat(vk::Format::eR8G8B8A8Unorm)
+        .SetUsageFlags(vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eStorage)
+        .SetMemoryFlags(vk::MemoryPropertyFlagBits::eDeviceLocal);
+
+    auto image = s_ImageBuilder->CreateImageUnique(extent);
+
+    vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
+    vk::ImageMemoryBarrier barrier;
+    barrier.setNewLayout(vk::ImageLayout::eGeneral).setImage(image->GetHandle()).setSubresourceRange(range);
+
+    s_MainCommandBuffer.Begin();
+    s_MainCommandBuffer.CommandBuffer.pipelineBarrier(
+        vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands,
+        vk::DependencyFlags(), {}, {}, { barrier }
+    );
+    s_MainCommandBuffer.Submit(DeviceContext::GetGraphicsQueue());
+
+    return image;
+}
+
+void Renderer::OnResize(vk::Extent2D extent)
+{
+    for (int i = 0; i < s_RenderingResources.size(); i++)
+    {
+        RenderingResources &res = s_RenderingResources[i];
+        res.StorageImage = CreateStorageImage(extent);
+        res.StorageImage->SetDebugName(std::format("Storage Image {}", i));
+        s_DescriptorSet->UpdateImage(1, i, *res.StorageImage, vk::Sampler(), vk::ImageLayout::eGeneral);
+    }
+}
+
+void Renderer::OnInFlightCountChange()
+{
     while (s_RenderingResources.size() < s_Swapchain->GetInFlightCount())
     {
         RenderingResources res;
@@ -361,8 +397,23 @@ void Renderer::OnUpdate(float timeStep)
         res.StorageImage = CreateStorageImage(extent);
         res.StorageImage->SetDebugName(std::format("Storage image {}", frameIndex));
 
+        s_RenderingResources.push_back(std::move(res));
+    }
+
+    RecreateDescriptorSet();
+}
+
+void Renderer::RecreateDescriptorSet()
+{
+    DeviceContext::GetLogical().waitIdle();
+    s_DescriptorSet = s_DescriptorSetBuilder->CreateSetUnique(s_RenderingResources.size());
+
+    for (uint32_t frameIndex = 0; frameIndex < s_RenderingResources.size(); frameIndex++)
+    {
+        const RenderingResources &res = s_RenderingResources[frameIndex];
+
         s_DescriptorSet->UpdateAccelerationStructures(
-            0, frameIndex, { s_StaticSceneData.AcceleraionStructure->GetTlas() }
+            0, frameIndex, { s_StaticSceneData.SceneAccelerationStructure->GetTlas() }
         );
         s_DescriptorSet->UpdateImage(
             1, frameIndex, *res.StorageImage, vk::Sampler(), vk::ImageLayout::eGeneral
@@ -370,28 +421,18 @@ void Renderer::OnUpdate(float timeStep)
         s_DescriptorSet->UpdateBuffer(2, frameIndex, *s_RaygenUniformBuffer);
         s_DescriptorSet->UpdateBuffer(3, frameIndex, *s_ClosestHitUniformBuffer);
         s_DescriptorSet->UpdateImageArray(
-            4, frameIndex, MaterialSystem::GetTextures(), s_Sampler, vk::ImageLayout::eShaderReadOnlyOptimal
+            4, frameIndex, s_StaticSceneData.Textures, s_Sampler, vk::ImageLayout::eShaderReadOnlyOptimal
         );
-        s_DescriptorSet->UpdateBuffer(
-            5, frameIndex, s_StaticSceneData.AcceleraionStructure->GetGeometryBuffer()
-        );
-        s_DescriptorSet->UpdateBuffer(6, frameIndex, MaterialSystem::GetBuffer());
-
-        s_RenderingResources.emplace_back(std::move(res));
+        s_DescriptorSet->UpdateBuffer(5, frameIndex, *s_StaticSceneData.TransformBuffer);
+        s_DescriptorSet->UpdateBuffer(6, frameIndex, *s_StaticSceneData.GeometryBuffer);
+        s_DescriptorSet->UpdateBuffer(7, frameIndex, *s_StaticSceneData.MaterialBuffer);
     }
-
-    s_DescriptorSet->FlushUpdate();
 }
 
-void Renderer::OnResize(vk::Extent2D extent)
+void Renderer::OnUpdate(float /* timeStep */)
 {
-    for (int i = 0; i < s_RenderingResources.size(); i++)
-    {
-        RenderingResources &res = s_RenderingResources[i];
-        res.StorageImage = CreateStorageImage(extent);
-        res.StorageImage->SetDebugName(std::format("Storage Image {}", i));
-        s_DescriptorSet->UpdateImage(1, i, *res.StorageImage, vk::Sampler(), vk::ImageLayout::eGeneral);
-    }
+    if (s_RenderingResources.size() < s_Swapchain->GetInFlightCount())
+        OnInFlightCountChange();
 
     s_DescriptorSet->FlushUpdate();
 }
@@ -422,14 +463,14 @@ void Renderer::Render(const Camera &camera)
 void Renderer::CommandBuffer::Init()
 {
     vk::CommandBufferAllocateInfo allocateInfo(s_MainCommandPool, vk::CommandBufferLevel::ePrimary, 1);
-    s_MainCommandBuffer.CommandBuffer = DeviceContext::GetLogical().allocateCommandBuffers(allocateInfo)[0];
-    s_MainCommandBuffer.Fence = DeviceContext::GetLogical().createFence(vk::FenceCreateInfo());
+    CommandBuffer = DeviceContext::GetLogical().allocateCommandBuffers(allocateInfo)[0];
+    Fence = DeviceContext::GetLogical().createFence(vk::FenceCreateInfo());
 }
 
 void Renderer::CommandBuffer::Destroy()
 {
-    DeviceContext::GetLogical().freeCommandBuffers(s_MainCommandPool, { s_MainCommandBuffer.CommandBuffer });
-    DeviceContext::GetLogical().destroyFence(s_MainCommandBuffer.Fence);
+    DeviceContext::GetLogical().freeCommandBuffers(s_MainCommandPool, { CommandBuffer });
+    DeviceContext::GetLogical().destroyFence(Fence);
 }
 
 void Renderer::CommandBuffer::Begin() const
@@ -453,7 +494,7 @@ void Renderer::CommandBuffer::Submit(vk::Queue queue) const
         );
         assert(result == vk::Result::eSuccess);
     }
-    catch (vk::SystemError err)
+    catch (const vk::SystemError &err)
     {
         throw PathTracing::error(err.what());
     }

@@ -84,11 +84,11 @@ vk::ImageView Image::GetView() const
 
 void Image::UploadStaging(const uint8_t *data) const
 {
-    BufferBuilder builder;
-    builder.SetUsageFlags(vk::BufferUsageFlagBits::eTransferSrc)
-        .SetMemoryFlags(vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-
-    Buffer buffer = builder.CreateBuffer(m_Extent.width * m_Extent.height * vk::blockSize(m_Format), "Image Staging Buffer");
+    Buffer buffer = BufferBuilder()
+                        .SetUsageFlags(vk::BufferUsageFlagBits::eTransferSrc)
+                        .CreateHostBuffer(
+                            m_Extent.width * m_Extent.height * vk::blockSize(m_Format), "Image Staging Buffer"
+                        );
 
     buffer.Upload(data);
 
@@ -115,10 +115,10 @@ void Image::UploadStaging(const uint8_t *data) const
     Renderer::s_MainCommandBuffer.Submit(DeviceContext::GetGraphicsQueue());
 }
 
-void Image::SetDebugName(std::string_view name) const
+void Image::SetDebugName(const std::string &name) const
 {
-    Utils::SetDebugName(m_Handle, vk::ObjectType::eImage, name);
-    Utils::SetDebugName(m_View, vk::ObjectType::eImageView, std::format("ImageView: {}", name));
+    Utils::SetDebugName(m_Handle, name);
+    Utils::SetDebugName(m_View, std::format("ImageView: {}", name));
 }
 
 vk::AccessFlags Image::GetAccessFlags(vk::ImageLayout layout)
@@ -218,7 +218,7 @@ Image ImageBuilder::CreateImage(vk::Extent2D extent) const
     return Image(m_Format, extent, m_UsageFlags, m_MemoryFlags);
 }
 
-Image ImageBuilder::CreateImage(vk::Extent2D extent, std::string_view name) const
+Image ImageBuilder::CreateImage(vk::Extent2D extent, const std::string &name) const
 {
     Image image = CreateImage(extent);
     image.SetDebugName(name);
@@ -230,7 +230,7 @@ std::unique_ptr<Image> ImageBuilder::CreateImageUnique(vk::Extent2D extent) cons
     return std::make_unique<Image>(m_Format, extent, m_UsageFlags, m_MemoryFlags);
 }
 
-std::unique_ptr<Image> ImageBuilder::CreateImageUnique(vk::Extent2D extent, std::string_view name) const
+std::unique_ptr<Image> ImageBuilder::CreateImageUnique(vk::Extent2D extent, const std::string &name) const
 {
     auto image = CreateImageUnique(extent);
     image->SetDebugName(name);

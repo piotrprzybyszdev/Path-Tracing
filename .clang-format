@@ -3,7 +3,6 @@ BasedOnStyle: Microsoft
 AccessModifierOffset: -4
 AlignAfterOpenBracket: BlockIndent
 AllowShortBlocksOnASingleLine: Empty
-AlwaysBreakTemplateDeclarations: true
 BraceWrapping:
   AfterCaseLabel: false
   AfterClass: true
@@ -30,3 +29,5 @@ SpacesBeforeTrailingComments: 2
 IndentPPDirectives: None
 Cpp11BracedListStyle: false
 SpaceBeforeCpp11BracedList: true
+BreakTemplateDeclarations: MultiLine
+RequiresClausePosition: WithPreceding

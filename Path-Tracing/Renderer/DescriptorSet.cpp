@@ -5,15 +5,14 @@
 
 namespace PathTracing
 {
+
 DescriptorSet::DescriptorSet(
     uint32_t framesInFlight, vk::DescriptorSetLayout layout, vk::DescriptorPool pool,
     std::vector<vk::DescriptorType> &&types
 )
-    : m_FramesInFlight(framesInFlight), m_Layout(layout), m_Pool(pool), m_Types(types)
+    : m_FramesInFlight(framesInFlight), m_Pool(pool), m_Types(types)
 {
-    std::vector<vk::DescriptorSetLayout> layouts = {};
-    for (int i = 0; i < m_FramesInFlight; i++)
-        layouts.push_back(layout);
+    std::vector<vk::DescriptorSetLayout> layouts(m_FramesInFlight, layout);
 
     vk::DescriptorSetAllocateInfo allocateInfo(m_Pool, layouts);
     m_Sets = DeviceContext::GetLogical().allocateDescriptorSets(allocateInfo);
@@ -22,12 +21,6 @@ DescriptorSet::DescriptorSet(
 DescriptorSet::~DescriptorSet()
 {
     DeviceContext::GetLogical().destroyDescriptorPool(m_Pool);
-    DeviceContext::GetLogical().destroyDescriptorSetLayout(m_Layout);
-}
-
-vk::DescriptorSetLayout DescriptorSet::GetLayout() const
-{
-    return m_Layout;
 }
 
 vk::DescriptorSet DescriptorSet::GetSet(uint32_t frameIndex) const
@@ -68,7 +61,8 @@ void DescriptorSet::UpdateImage(
 }
 
 void DescriptorSet::UpdateImageArray(
-    uint32_t binding, uint32_t frameIndex, std::span<const Image> images, vk::Sampler sampler, vk::ImageLayout layout, uint32_t firstIndex
+    uint32_t binding, uint32_t frameIndex, std::span<const Image> images, vk::Sampler sampler,
+    vk::ImageLayout layout, uint32_t firstIndex
 )
 {
     assert(frameIndex < m_FramesInFlight);
@@ -78,52 +72,14 @@ void DescriptorSet::UpdateImageArray(
     for (const Image &image : images)
         imageInfos.emplace_back(sampler, image.GetView(), layout);
 
-    AddWrite(binding, frameIndex, images.size());
+    AddWrite(binding, frameIndex, images.size(), firstIndex);
     m_ImageInfos.push_back(std::move(imageInfos));
     m_Writes.back().setImageInfo(m_ImageInfos.back());
 }
 
-void DescriptorSet::AddWrite(uint32_t binding, uint32_t frameIndex, uint32_t count)
+void DescriptorSet::AddWrite(uint32_t binding, uint32_t frameIndex, uint32_t count, uint32_t arrayIndex)
 {
-    m_Writes.emplace_back(m_Sets[frameIndex], binding, 0, count, m_Types[binding]);
-}
-
-DescriptorSetBuilder::DescriptorSetBuilder(uint32_t framesInFlight) : m_FramesInFlight(framesInFlight)
-{
-}
-
-DescriptorSetBuilder &DescriptorSetBuilder::AddDescriptor(
-    vk::DescriptorType type, uint32_t count, vk::ShaderStageFlagBits stage, bool isPerFrame
-)
-{
-    m_Bindings.emplace_back(m_BindingIndex, type, count, stage);
-    m_Counts[type] += isPerFrame ? count * m_FramesInFlight : count;
-    m_Types.push_back(type);
-    m_Flags.push_back(
-        count == 1 ? vk::DescriptorBindingFlags() : vk::DescriptorBindingFlagBits::ePartiallyBound
-    );
-
-    m_BindingIndex++;
-
-    return *this;
-}
-
-std::unique_ptr<DescriptorSet> DescriptorSetBuilder::CreateSetUnique()
-{
-    vk::DescriptorSetLayoutBindingFlagsCreateInfo flagsCreateInfo(m_Flags);
-    vk::DescriptorSetLayoutCreateInfo layoutCreateInfo(vk::DescriptorSetLayoutCreateFlags(), m_Bindings);
-    layoutCreateInfo.setPNext(&flagsCreateInfo);
-
-    auto layout = DeviceContext::GetLogical().createDescriptorSetLayout(layoutCreateInfo);
-
-    std::vector<vk::DescriptorPoolSize> poolSizes = {};
-    for (auto &[type, count] : m_Counts)
-        poolSizes.emplace_back(type, count);
-
-    vk::DescriptorPoolCreateInfo poolCreateInfo(vk::DescriptorPoolCreateFlags(), m_FramesInFlight, poolSizes);
-    auto pool = DeviceContext::GetLogical().createDescriptorPool(poolCreateInfo);
-
-    return std::make_unique<DescriptorSet>(m_FramesInFlight, layout, pool, std::move(m_Types));
+    m_Writes.emplace_back(m_Sets[frameIndex], binding, arrayIndex, count, m_Types[binding]);
 }
 
 void DescriptorSet::FlushUpdate()
@@ -134,6 +90,55 @@ void DescriptorSet::FlushUpdate()
     m_BufferInfos.clear();
     m_ImageInfos.clear();
     m_Writes.clear();
+}
+
+DescriptorSetBuilder::~DescriptorSetBuilder()
+{
+    DeviceContext::GetLogical().destroyDescriptorSetLayout(m_Layout);
+}
+
+DescriptorSetBuilder &DescriptorSetBuilder::SetDescriptor(vk::DescriptorSetLayoutBinding binding)
+{
+    const uint32_t bindingIndex = binding.binding;
+
+    if (bindingIndex + 1 > m_Bindings.size())
+    {
+        m_Types.resize(bindingIndex + 1);
+        m_Flags.resize(bindingIndex + 1);
+        m_Bindings.resize(bindingIndex + 1);
+    }
+
+    m_Types[bindingIndex] = binding.descriptorType;
+    m_Flags[bindingIndex] = binding.descriptorCount == 1 ? vk::DescriptorBindingFlags()
+                                                         : vk::DescriptorBindingFlagBits::ePartiallyBound;
+    m_Bindings[bindingIndex] = binding;
+    return *this;
+}
+
+vk::DescriptorSetLayout DescriptorSetBuilder::CreateLayout()
+{
+    vk::DescriptorSetLayoutBindingFlagsCreateInfo flagsCreateInfo(m_Flags);
+    vk::DescriptorSetLayoutCreateInfo layoutCreateInfo(vk::DescriptorSetLayoutCreateFlags(), m_Bindings);
+    layoutCreateInfo.setPNext(&flagsCreateInfo);
+
+    m_Layout = DeviceContext::GetLogical().createDescriptorSetLayout(layoutCreateInfo);
+    return m_Layout;
+}
+
+std::unique_ptr<DescriptorSet> DescriptorSetBuilder::CreateSetUnique(uint32_t framesInFlight)
+{
+    std::vector<vk::DescriptorPoolSize> poolSizes = {};
+    poolSizes.reserve(m_Types.size());
+    for (int i = 0; i < m_Bindings.size(); i++)
+    {
+        const auto &binding = m_Bindings[i];
+        poolSizes.emplace_back(binding.descriptorType, binding.descriptorCount * framesInFlight);
+    }
+
+    vk::DescriptorPoolCreateInfo poolCreateInfo(vk::DescriptorPoolCreateFlags(), framesInFlight, poolSizes);
+    auto pool = DeviceContext::GetLogical().createDescriptorPool(poolCreateInfo);
+
+    return std::make_unique<DescriptorSet>(framesInFlight, m_Layout, pool, std::move(m_Types));
 }
 
 }

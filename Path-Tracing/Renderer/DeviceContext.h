@@ -28,6 +28,9 @@ public:
 
     static VmaAllocator GetAllocator();
 
+    static const vk::PhysicalDeviceRayTracingPipelinePropertiesKHR &GetRayTracingPipelineProperties();
+    static const vk::PhysicalDeviceAccelerationStructurePropertiesKHR &GetAccelerationStructureProperties();
+
 private:
     static struct PhysicalDevice
     {
@@ -36,6 +39,8 @@ private:
         vk::PhysicalDeviceProperties Properties;
         std::vector<vk::QueueFamilyProperties> QueueFamilyProperties;
         vk::PhysicalDeviceMemoryProperties MemoryProperties;
+        vk::PhysicalDeviceRayTracingPipelinePropertiesKHR RayTracingPipelineProperties;
+        vk::PhysicalDeviceAccelerationStructurePropertiesKHR AccelerationStructureProperties;
     } s_PhysicalDevice;
 
     static struct LogicalDevice

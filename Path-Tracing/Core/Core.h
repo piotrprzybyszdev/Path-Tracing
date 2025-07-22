@@ -10,6 +10,7 @@
 #include <source_location>
 #include <string>
 #include <string_view>
+#include <type_traits>
 
 namespace PathTracing
 {
@@ -91,5 +92,14 @@ struct Assert
 #endif
     }
 };
+
+template<typename T1, typename T2>
+T2 TrivialCopy(const T1 &in)
+    requires std::is_trivially_copyable_v<T1> && std::is_trivially_copyable_v<T2>
+{
+    T2 out;
+    memcpy(reinterpret_cast<void *>(&out), reinterpret_cast<const void *>(&in), sizeof(T2));
+    return out;
+}
 
 }

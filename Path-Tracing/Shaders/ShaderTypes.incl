@@ -11,31 +11,14 @@ using namespace glm;
 using RenderModeFlags = uint;
 using EnabledTextureFlags = uint;
 
-using VertexBuffer = uint64_t;
-using IndexBuffer = uint64_t;
-
-#else
-
-layout(buffer_reference, buffer_reference_align=8) readonly buffer VertexBuffer { vec2[] v; };
-layout(buffer_reference, buffer_reference_align=8) readonly buffer IndexBuffer { uint[] i; };
-
 #endif
 
-struct Camera
-{
-    mat4 ViewInverse;
-    mat4 ProjInverse;
-};
 
-struct RaygenUniformData
-{
-    Camera u_Camera;
-};
-
-const vec3 DefaultAlbedo = vec3(1.0f);
-const vec3 DefaultNormal = vec3(0.0f, 0.0f, 1.0f);
-const float DefaultMetalness = 0.0f;
-const float DefaultRoughness = 0.0f;
+const uint DefaultColorTextureIndex     = 0;
+const uint DefaultNormalTextureIndex    = 1;
+const uint DefaultRoughnessTextureIndex = 2;
+const uint DefaultMetalicTextureIndex   = 3;
+const uint SceneTextureOffset           = 4;
 
 const uint RenderModeColor         = 0x1u;
 const uint RenderModeWorldPosition = 0x2u;
@@ -43,16 +26,16 @@ const uint RenderModeNormal	       = 0x3u;
 const uint RenderModeTextureCoords = 0x4u;
 
 const uint TexturesEnableNone      = 0x0u;
-const uint TexturesEnableAlbedo    = 0x1u;
+const uint TexturesEnableColor     = 0x1u;
 const uint TexturesEnableNormal    = 0x2u;
 const uint TexturesEnableMetalic   = 0x4u;
 const uint TexturesEnableRoughness = 0x8u;
 const uint TexturesEnableAll       = 0xfu;
 
-struct ClosestHitUniformData
+struct Camera
 {
-    uint u_RenderMode;       // enum
-    uint u_EnabledTextures;  // enum
+    mat4 ViewInverse;
+    mat4 ProjInverse;
 };
 
 struct Vertex
@@ -64,24 +47,12 @@ struct Vertex
     vec3 Bitangent;
 };
 
-struct Geometry
-{
-    VertexBuffer Vertices;
-    IndexBuffer Indices;
-};
-
 struct Material
 {
-	uint AlbedoIdx;
+	uint ColorIdx;
     uint NormalIdx;
     uint RoughnessIdx;
     uint MetalicIdx;
-};
-
-struct SBTBuffer
-{
-    uint GeometryIndex;
-    uint MaterialIndex;
 };
 
 

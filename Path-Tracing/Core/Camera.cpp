@@ -8,7 +8,7 @@
 namespace PathTracing
 {
 
-static inline constexpr glm::vec3 UpDirection { 0, 1, 0 };
+static inline constexpr glm::vec3 UpDirection { 0, -1, 0 };
 
 Camera::Camera(float verticalFOV, float nearClip, float farClip)
     : m_VerticalFOV(verticalFOV), m_NearClip(nearClip), m_FarClip(farClip), m_Position(0.0f, 0.0f, 3.0f),
@@ -60,8 +60,8 @@ void Camera::OnUpdate(float timeStep)
 
         if (delta.x != 0.0f || delta.y != 0.0f)
         {
-            m_Yaw += delta.x;
-            m_Pitch += delta.y;
+            m_Yaw -= delta.x;
+            m_Pitch -= delta.y;
 
             m_Direction = glm::normalize(glm::vec3(
                 glm::cos(glm::radians(m_Yaw)) * glm::cos(glm::radians(m_Pitch)),

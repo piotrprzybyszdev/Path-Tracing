@@ -1,0 +1,238 @@
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/transform.hpp>
+
+#include <algorithm>
+#include <array>
+#include <string>
+
+#include "AssetManager.h"
+#include "ExampleScenes.h"
+
+namespace PathTracing::ExampleScenes
+{
+
+static void CreateTextureCubesScene();
+static void CreateReuseMeshCubesScene();
+static void CreateSponzaScene();
+static void CreateChessGameScene();
+
+void CreateScenes()
+{
+    // TODO: Only load them on demand
+    // CreateTextureCubesScene();
+    // CreateReuseMeshCubesScene();
+    CreateSponzaScene();
+    // CreateGameScene();
+}
+
+static void CreateTextureCubesScene()
+{
+    const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets" / "textures";
+    const std::array<std::string, 3> assetNames = { "Metal", "PavingStones", "Logs" };
+    const std::array<std::string, 3> materials = {
+        "Metal062C_1K-JPG",
+        "PavingStones142_1K-JPG",
+        "Logs001_1K-JPG",
+    };
+
+    for (int i = 0; i < 3; i++)
+    {
+        const std::filesystem::path materialPath = base / assetNames[i];
+        const std::string &material = materials[i];
+        g_TexturedCubesScene.AddMaterial(
+            assetNames[i],
+            Material {
+                Texture { materialPath / (material + "_Color.jpg") },
+                Texture { materialPath / (material + "_NormalGL.jpg") },
+                Texture { materialPath / (material + "_Roughness.jpg") },
+                Texture { materialPath / (material + "_Roughness.jpg") },
+            }
+        );
+    }
+
+    std::vector<Shaders::Vertex> vv = {
+        { { -1, -1, 1 }, { 1, 1 }, { 0, 0, 1 }, { 1, 0, 0 }, { 0, 1, 0 } },
+        { { 1, -1, 1 }, { 0, 1 }, { 0, 0, 1 }, { 1, 0, 0 }, { 0, 1, 0 } },
+        { { 1, 1, 1 }, { 0, 0 }, { 0, 0, 1 }, { 1, 0, 0 }, { 0, 1, 0 } },
+        { { -1, 1, 1 }, { 1, 0 }, { 0, 0, 1 }, { 1, 0, 0 }, { 0, 1, 0 } },
+
+        { { 1, -1, -1 }, { 1, 1 }, { 0, 0, -1 }, { -1, 0, 0 }, { 0, 1, 0 } },
+        { { -1, -1, -1 }, { 0, 1 }, { 0, 0, -1 }, { -1, 0, 0 }, { 0, 1, 0 } },
+        { { -1, 1, -1 }, { 0, 0 }, { 0, 0, -1 }, { -1, 0, 0 }, { 0, 1, 0 } },
+        { { 1, 1, -1 }, { 1, 0 }, { 0, 0, -1 }, { -1, 0, 0 }, { 0, 1, 0 } },
+
+        { { -1, -1, -1 }, { 1, 1 }, { -1, 0, 0 }, { 0, 0, 1 }, { 0, 1, 0 } },
+        { { -1, -1, 1 }, { 0, 1 }, { -1, 0, 0 }, { 0, 0, 1 }, { 0, 1, 0 } },
+        { { -1, 1, 1 }, { 0, 0 }, { -1, 0, 0 }, { 0, 0, 1 }, { 0, 1, 0 } },
+        { { -1, 1, -1 }, { 1, 0 }, { -1, 0, 0 }, { 0, 0, 1 }, { 0, 1, 0 } },
+
+        { { 1, -1, 1 }, { 1, 1 }, { 1, 0, 0 }, { 0, 0, -1 }, { 0, 1, 0 } },
+        { { 1, -1, -1 }, { 0, 1 }, { 1, 0, 0 }, { 0, 0, -1 }, { 0, 1, 0 } },
+        { { 1, 1, -1 }, { 0, 0 }, { 1, 0, 0 }, { 0, 0, -1 }, { 0, 1, 0 } },
+        { { 1, 1, 1 }, { 1, 0 }, { 1, 0, 0 }, { 0, 0, -1 }, { 0, 1, 0 } },
+
+        { { -1, 1, 1 }, { 1, 1 }, { 0, 1, 0 }, { 1, 0, 0 }, { 0, 0, -1 } },
+        { { 1, 1, 1 }, { 0, 1 }, { 0, 1, 0 }, { 1, 0, 0 }, { 0, 0, -1 } },
+        { { 1, 1, -1 }, { 0, 0 }, { 0, 1, 0 }, { 1, 0, 0 }, { 0, 0, -1 } },
+        { { -1, 1, -1 }, { 1, 0 }, { 0, 1, 0 }, { 1, 0, 0 }, { 0, 0, -1 } },
+
+        { { -1, -1, -1 }, { 1, 1 }, { 0, -1, 0 }, { 1, 0, 0 }, { 0, 0, 1 } },
+        { { 1, -1, -1 }, { 0, 1 }, { 0, -1, 0 }, { 1, 0, 0 }, { 0, 0, 1 } },
+        { { 1, -1, 1 }, { 0, 0 }, { 0, -1, 0 }, { 1, 0, 0 }, { 0, 0, 1 } },
+        { { -1, -1, 1 }, { 1, 0 }, { 0, -1, 0 }, { 1, 0, 0 }, { 0, 0, 1 } },
+    };
+
+    std::vector<uint32_t> ii = {};
+    for (int i = 0; i < 6; i++)
+        std::ranges::copy(std::vector<uint32_t> { 0, 1, 2, 2, 3, 0 }, std::back_inserter(ii));
+
+    auto vertexIterator = vv.begin();
+    auto indexIterator = ii.begin();
+    for (uint32_t i = 0; i < 6; i++)
+    {
+        g_TexturedCubesScene.AddGeometry(std::span(vertexIterator, 4), std::span(indexIterator, 6));
+        std::advance(vertexIterator, 4);
+        std::advance(indexIterator, 6);
+    }
+
+    std::array<MeshInfo, 6> m1 = { {
+        { 0, 0, glm::mat4(1.0f) },
+        { 1, 0, glm::mat4(1.0f) },
+        { 2, 1, glm::mat4(1.0f) },
+        { 3, 1, glm::mat4(1.0f) },
+        { 4, 2, glm::mat4(1.0f) },
+        { 5, 2, glm::mat4(1.0f) },
+    } };
+
+    std::array<MeshInfo, 6> m2 = { {
+        { 0, 0, glm::mat4(1.0f) },
+        { 1, 0, glm::mat4(1.0f) },
+        { 2, 0, glm::mat4(1.0f) },
+        { 3, 0, glm::mat4(1.0f) },
+        { 4, 0, glm::mat4(1.0f) },
+        { 5, 0, glm::mat4(1.0f) },
+    } };
+
+    const uint32_t cube1 = g_TexturedCubesScene.AddModel(m1);
+    g_TexturedCubesScene.ModelNames.Set(cube1, "Cube different materials (ver 1)");
+    g_TexturedCubesScene.MeshNames.Set({ cube1, 5 }, "Bottom Square");
+    g_TexturedCubesScene.MeshNames.Set({ cube1, 6 }, "Top Square");
+
+    const uint32_t cube2 = g_TexturedCubesScene.AddModel(m2);
+    g_TexturedCubesScene.ModelNames.Set(cube2, "Cube one material (ver 2)");
+
+    const uint32_t cube1inst1 = g_TexturedCubesScene.AddModelInstance(
+        cube1, glm::transpose(glm::translate(glm::mat4(1.0f), glm::vec3(1.0f)))
+    );
+    g_TexturedCubesScene.ModelInstanceNames.Set(cube1inst1, "Cube Instance (ver 1) (inst 1)");
+    const uint32_t cube1inst2 = g_TexturedCubesScene.AddModelInstance(
+        cube1, glm::transpose(glm::translate(glm::mat4(1.0f), glm::vec3(-1.0f)))
+    );
+    g_TexturedCubesScene.ModelInstanceNames.Set(cube1inst2, "Cube Instance (ver 1) (inst 2)");
+    g_TexturedCubesScene.AddModelInstance(
+        cube2, glm::transpose(glm::scale(
+                   glm::translate(glm::mat4(1.0f), glm::vec3(0.5f, -1.0f, -3.0f)), glm::vec3(2.0f, 1.0f, 0.3f)
+               ))
+    );
+}
+
+void CreateReuseMeshCubesScene()
+{
+    const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets" / "textures";
+    const std::array<std::string, 3> assetNames = { "Metal", "PavingStones", "Logs" };
+    const std::array<std::string, 3> materials = {
+        "Metal062C_1K-JPG",
+        "PavingStones142_1K-JPG",
+        "Logs001_1K-JPG",
+    };
+
+    for (int i = 0; i < 3; i++)
+    {
+        const std::filesystem::path materialPath = base / assetNames[i];
+        const std::string &material = materials[i];
+        g_ReuseMeshCubesScene.AddMaterial(
+            assetNames[i],
+            Material {
+                Texture { materialPath / (material + "_Color.jpg") },
+                Texture { materialPath / (material + "_NormalGL.jpg") },
+                Texture { materialPath / (material + "_Roughness.jpg") },
+                Texture { materialPath / (material + "_Roughness.jpg") },
+            }
+        );
+    }
+
+    std::vector<Shaders::Vertex> vv = {
+        { { -1, -1, 1 }, { 1, 1 }, { 0, 0, 1 }, { 1, 0, 0 }, { 0, 1, 0 } },
+        { { 1, -1, 1 }, { 0, 1 }, { 0, 0, 1 }, { 1, 0, 0 }, { 0, 1, 0 } },
+        { { 1, 1, 1 }, { 0, 0 }, { 0, 0, 1 }, { 1, 0, 0 }, { 0, 1, 0 } },
+        { { -1, 1, 1 }, { 1, 0 }, { 0, 0, 1 }, { 1, 0, 0 }, { 0, 1, 0 } },
+
+        { { -1, -1, -1 }, { 1, 1 }, { -1, 0, 0 }, { 0, 0, 1 }, { 0, 1, 0 } },
+        { { -1, -1, 1 }, { 0, 1 }, { -1, 0, 0 }, { 0, 0, 1 }, { 0, 1, 0 } },
+        { { -1, 1, 1 }, { 0, 0 }, { -1, 0, 0 }, { 0, 0, 1 }, { 0, 1, 0 } },
+        { { -1, 1, -1 }, { 1, 0 }, { -1, 0, 0 }, { 0, 0, 1 }, { 0, 1, 0 } },
+
+        { { -1, 1, 1 }, { 1, 1 }, { 0, 1, 0 }, { 1, 0, 0 }, { 0, 0, -1 } },
+        { { 1, 1, 1 }, { 0, 1 }, { 0, 1, 0 }, { 1, 0, 0 }, { 0, 0, -1 } },
+        { { 1, 1, -1 }, { 0, 0 }, { 0, 1, 0 }, { 1, 0, 0 }, { 0, 0, -1 } },
+        { { -1, 1, -1 }, { 1, 0 }, { 0, 1, 0 }, { 1, 0, 0 }, { 0, 0, -1 } },
+    };
+
+    std::vector<uint32_t> ii = {};
+    for (int i = 0; i < 3; i++)
+        std::ranges::copy(std::vector<uint32_t> { 0, 1, 2, 2, 3, 0 }, std::back_inserter(ii));
+
+    auto vertexIterator = vv.begin();
+    auto indexIterator = ii.begin();
+    for (uint32_t i = 0; i < 3; i++)
+    {
+        g_ReuseMeshCubesScene.AddGeometry(std::span(vertexIterator, 4), std::span(indexIterator, 6));
+        std::advance(vertexIterator, 4);
+        std::advance(indexIterator, 6);
+    }
+
+    std::array<MeshInfo, 6> m = { {
+        { 0, 1, glm::mat4(1.0f) },
+        { 0, 1,
+          glm::transpose(glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f))) },
+        { 1, 1, glm::mat4(1.0f) },
+        { 1, 2,
+          glm::transpose(glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(0.0f, 1.0f, 0.0f))) },
+        { 2, 2, glm::mat4(1.0f) },
+        { 2, 2,
+          glm::transpose(glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(0.0f, 0.0f, 1.0f))) },
+    } };
+
+    const uint32_t cube = g_ReuseMeshCubesScene.AddModel(m);
+    g_ReuseMeshCubesScene.ModelNames.Set(cube, "Cube Model");
+    g_ReuseMeshCubesScene.MeshNames.Set({ cube, 0 }, "z-axis plane (+) (mat 1)");
+    g_ReuseMeshCubesScene.MeshNames.Set({ cube, 1 }, "z-axis plane (-) (mat 1)");
+    g_ReuseMeshCubesScene.MeshNames.Set({ cube, 2 }, "x-axis plane (-) (mat 1)");
+    g_ReuseMeshCubesScene.MeshNames.Set({ cube, 3 }, "x-axis plane (+) (mat 2)");
+    g_ReuseMeshCubesScene.MeshNames.Set({ cube, 4 }, "y-axis plane (+) (mat 2)");
+    g_ReuseMeshCubesScene.MeshNames.Set({ cube, 5 }, "y-axis plane (-) (mat 2)");
+
+    const uint32_t cube1inst1 = g_ReuseMeshCubesScene.AddModelInstance(cube, glm::mat4(1.0f));
+    g_ReuseMeshCubesScene.ModelInstanceNames.Set(cube1inst1, "Cube Instance");
+}
+
+static void CreateSponzaScene()
+{
+    const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets" / "scenes";
+
+    g_SponzaScene = AssetManager::LoadScene(
+        base / "KhronosScenes" / "glTF-Sample-Models-main" / "2.0" / "Sponza" / "glTF" / "Sponza.gltf"
+    );
+}
+
+void CreateChessGameScene()
+{
+    const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets" / "scenes";
+
+    g_ChessGameScene = AssetManager::LoadScene(
+        base / "KhronosScenes" / "glTF-Sample-Models-main" / "2.0" / "ABeautifulGame" / "glTF" /
+        "ABeautifulGame.gltf"
+    );
+}
+
+}

@@ -1,10 +1,13 @@
 #pragma once
 
-#include <vulkan/vulkan.hpp>
 #include <vk_mem_alloc.h>
+#include <vulkan/vulkan.hpp>
 
 #include <memory>
-#include <string_view>
+#include <span>
+#include <string>
+
+#include "Utils.h"
 
 namespace PathTracing
 {
@@ -14,8 +17,8 @@ class Buffer
 public:
     Buffer() = default;
     Buffer(
-        vk::BufferCreateFlags createFlags, vk::DeviceSize size, vk::BufferUsageFlags usageFlags,
-        vk::MemoryPropertyFlags memoryFlags, vk::MemoryAllocateFlags allocateFlags
+        vk::BufferCreateFlags createFlags, vk::DeviceSize size, bool isDevice,
+        vk::BufferUsageFlags usageFlags, vk::DeviceSize alignment
     );
     ~Buffer();
 
@@ -27,11 +30,11 @@ public:
 
     void Upload(const void *data) const;
 
-    vk::Buffer GetHandle() const;
-    vk::DeviceAddress GetDeviceAddress() const;
-    vk::DeviceSize GetSize() const;
+    [[nodiscard]] vk::Buffer GetHandle() const;
+    [[nodiscard]] vk::DeviceAddress GetDeviceAddress() const;
+    [[nodiscard]] vk::DeviceSize GetSize() const;
 
-    void SetDebugName(std::string_view name) const;
+    void SetDebugName(const std::string &name) const;
 
 private:
     vk::DeviceSize m_Size = 0;
@@ -48,21 +51,50 @@ class BufferBuilder
 public:
     BufferBuilder &SetCreateFlags(vk::BufferCreateFlags createFlags);
     BufferBuilder &SetUsageFlags(vk::BufferUsageFlags usageFlags);
-    BufferBuilder &SetMemoryFlags(vk::MemoryPropertyFlags memoryFlags);
-    BufferBuilder &SetAllocateFlags(vk::MemoryAllocateFlags allocateFlags);
+    BufferBuilder &SetAlignment(vk::DeviceSize alignment);
 
     BufferBuilder &ResetFlags();
 
-    Buffer CreateBuffer(vk::DeviceSize size) const;
-    Buffer CreateBuffer(vk::DeviceSize size, std::string_view name) const;
-    std::unique_ptr<Buffer> CreateBufferUnique(vk::DeviceSize size) const;
-    std::unique_ptr<Buffer> CreateBufferUnique(vk::DeviceSize size, std::string_view name) const;
+    [[nodiscard]] Buffer CreateHostBuffer(vk::DeviceSize size) const;
+    [[nodiscard]] Buffer CreateDeviceBuffer(vk::DeviceSize size) const;
+    [[nodiscard]] Buffer CreateHostBuffer(vk::DeviceSize size, const std::string &name) const;
+    [[nodiscard]] Buffer CreateDeviceBuffer(vk::DeviceSize size, const std::string &name) const;
+    [[nodiscard]] std::unique_ptr<Buffer> CreateHostBufferUnique(vk::DeviceSize size) const;
+    [[nodiscard]] std::unique_ptr<Buffer> CreateDeviceBufferUnique(vk::DeviceSize size) const;
+    [[nodiscard]] std::unique_ptr<Buffer> CreateHostBufferUnique(vk::DeviceSize size, const std::string &name)
+        const;
+    [[nodiscard]] std::unique_ptr<Buffer> CreateDeviceBufferUnique(
+        vk::DeviceSize size, const std::string &name
+    ) const;
+    
+    struct BufferContent
+    {
+        template<Utils::uploadable T>
+        BufferContent(std::span<T> content) : Size(content.size() * sizeof(T)), Data(content.data())
+        {
+        }
+
+        vk::DeviceSize Size;
+        const void *Data;
+    };
+
+    [[nodiscard]] Buffer CreateHostBuffer(BufferContent content) const;
+    [[nodiscard]] Buffer CreateDeviceBuffer(BufferContent content) const;
+    [[nodiscard]] Buffer CreateHostBuffer(BufferContent content, const std::string &name) const;
+    [[nodiscard]] Buffer CreateDeviceBuffer(BufferContent content, const std::string &name) const;
+    [[nodiscard]] std::unique_ptr<Buffer> CreateHostBufferUnique(BufferContent content) const;
+    [[nodiscard]] std::unique_ptr<Buffer> CreateDeviceBufferUnique(BufferContent content) const;
+    [[nodiscard]] std::unique_ptr<Buffer> CreateHostBufferUnique(
+        BufferContent content, const std::string &name
+    ) const;
+    [[nodiscard]] std::unique_ptr<Buffer> CreateDeviceBufferUnique(
+        BufferContent content, const std::string &name
+    ) const;
 
 private:
-    vk::BufferCreateFlags m_CreateFlags = {};
-    vk::BufferUsageFlags m_UsageFlags = {};
-    vk::MemoryPropertyFlags m_MemoryFlags = {};
-    vk::MemoryAllocateFlags m_AllocateFlags = {};
+    vk::BufferCreateFlags m_CreateFlags;
+    vk::BufferUsageFlags m_UsageFlags;
+    vk::DeviceSize m_Alignment = 0;
 };
 
 }

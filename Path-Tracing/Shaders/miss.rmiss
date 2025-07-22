@@ -1,7 +1,8 @@
 #version 460
 #extension GL_EXT_ray_tracing : require
+#extension GL_EXT_buffer_reference : require
 
-#include "ShaderTypes.incl"
+#include "ShaderRendererTypes.incl"
 
 layout(location = 0) rayPayloadInEXT vec3 hitValue;
 

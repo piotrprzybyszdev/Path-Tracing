@@ -58,6 +58,14 @@ void DeviceContext::Init(
     s_PhysicalDevice.Properties = s_PhysicalDevice.Handle.getProperties();
     s_PhysicalDevice.MemoryProperties = s_PhysicalDevice.Handle.getMemoryProperties();
     s_PhysicalDevice.QueueFamilyProperties = s_PhysicalDevice.Handle.getQueueFamilyProperties();
+    std::tie(s_PhysicalDevice.RayTracingPipelineProperties, s_PhysicalDevice.AccelerationStructureProperties) =
+        s_PhysicalDevice.Handle
+            .getProperties2<
+                vk::PhysicalDeviceProperties2, vk::PhysicalDeviceRayTracingPipelinePropertiesKHR,
+                vk::PhysicalDeviceAccelerationStructurePropertiesKHR>()
+            .get<
+                vk::PhysicalDeviceRayTracingPipelinePropertiesKHR,
+                vk::PhysicalDeviceAccelerationStructurePropertiesKHR>();
 
     logger::info("Selected physical device: {}", s_PhysicalDevice.Properties.deviceName.data());
 
@@ -159,6 +167,17 @@ vk::Queue DeviceContext::GetGraphicsQueue()
 VmaAllocator DeviceContext::GetAllocator()
 {
     return s_Allocator;
+}
+
+const vk::PhysicalDeviceRayTracingPipelinePropertiesKHR &DeviceContext::GetRayTracingPipelineProperties()
+{
+    return s_PhysicalDevice.RayTracingPipelineProperties;
+}
+
+const vk::PhysicalDeviceAccelerationStructurePropertiesKHR &DeviceContext::GetAccelerationStructureProperties(
+)
+{
+    return s_PhysicalDevice.AccelerationStructureProperties;
 }
 
 bool DeviceContext::CheckSuitable(
