@@ -11,7 +11,7 @@
 namespace PathTracing::ExampleScenes
 {
 
-static void CreateTextureCubesScene();
+static void CreateTexturedCubesScene();
 static void CreateReuseMeshCubesScene();
 static void CreateSponzaScene();
 static void CreateChessGameScene();
@@ -19,13 +19,13 @@ static void CreateChessGameScene();
 void CreateScenes()
 {
     // TODO: Only load them on demand
-    // CreateTextureCubesScene();
+    // CreateTexturedCubesScene();
     // CreateReuseMeshCubesScene();
     CreateSponzaScene();
-    // CreateGameScene();
+    // CreateChessGameScene();
 }
 
-static void CreateTextureCubesScene()
+static void CreateTexturedCubesScene()
 {
     const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets" / "textures";
     const std::array<std::string, 3> assetNames = { "Metal", "PavingStones", "Logs" };
@@ -90,7 +90,7 @@ static void CreateTextureCubesScene()
     auto indexIterator = ii.begin();
     for (uint32_t i = 0; i < 6; i++)
     {
-        g_TexturedCubesScene.AddGeometry(std::span(vertexIterator, 4), std::span(indexIterator, 6));
+        g_TexturedCubesScene.AddGeometry(std::span(vertexIterator, 4), std::span(indexIterator, 6), true);
         std::advance(vertexIterator, 4);
         std::advance(indexIterator, 6);
     }
@@ -186,7 +186,7 @@ void CreateReuseMeshCubesScene()
     auto indexIterator = ii.begin();
     for (uint32_t i = 0; i < 3; i++)
     {
-        g_ReuseMeshCubesScene.AddGeometry(std::span(vertexIterator, 4), std::span(indexIterator, 6));
+        g_ReuseMeshCubesScene.AddGeometry(std::span(vertexIterator, 4), std::span(indexIterator, 6), true);
         std::advance(vertexIterator, 4);
         std::advance(indexIterator, 6);
     }

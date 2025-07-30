@@ -19,7 +19,7 @@ INSTALL.*
 *.sln
 
 # Shader binaries
-*.spv
+*.spv*
 
 # Assets
 assets

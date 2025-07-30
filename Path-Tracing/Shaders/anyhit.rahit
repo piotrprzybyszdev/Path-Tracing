@@ -1,0 +1,52 @@
+#version 460
+#extension GL_EXT_ray_tracing : require
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_nonuniform_qualifier : require
+
+#include "ShaderRendererTypes.incl"
+#include "common.glsl"
+
+layout(binding = 3, set = 0) uniform MainBlock {
+	ClosestHitUniformData mainUniform;
+};
+
+layout(binding = 4, set = 0) uniform sampler2D textures[];
+
+layout(binding = 6, set = 0) readonly buffer GeometryBuffer {
+	Geometry[] geometries;
+};
+
+layout(binding = 7, set = 0) readonly buffer MaterialBuffer {
+	Material[] materials;
+};
+
+layout(shaderRecordEXT, std430) buffer SBT {
+	SBTBuffer sbt;
+};
+
+hitAttributeEXT vec3 attribs;
+
+vec2 getTexCoords(VertexBuffer vertices, IndexBuffer indices, uint offset)
+{
+	const uint index = indices.i[offset];
+	const float p2 = vertices.v[index * 7 + 1].y;
+	const float p3 = vertices.v[index * 7 + 2].x;
+
+	return vec2(p2, p3);
+}
+
+void main()
+{
+	const vec3 barycentricCoords = computeBarycentricCoords(attribs);
+
+	VertexBuffer vertices = VertexBuffer(geometries[sbt.GeometryIndex].Vertices);
+	IndexBuffer indices = IndexBuffer(geometries[sbt.GeometryIndex].Indices);
+
+	const Vertex vertex = getInterpolatedVertex(vertices, indices, gl_PrimitiveID * 3, barycentricCoords);
+
+	const Material material = materials[sbt.MaterialIndex];
+	const float alpha = texture(textures[GetColorTextureIndex(mainUniform.u_EnabledTextures, material)], vertex.TexCoords).a;
+
+	if (mainUniform.u_RenderMode != RenderModeAlpha && alpha == 0.0f)
+		ignoreIntersectionEXT;
+}

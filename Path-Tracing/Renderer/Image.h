@@ -2,8 +2,8 @@
 
 #include <string>
 
-#include <vulkan/vulkan.hpp>
 #include <vk_mem_alloc.h>
+#include <vulkan/vulkan.hpp>
 
 namespace PathTracing
 {
@@ -11,6 +11,7 @@ namespace PathTracing
 class Image
 {
 public:
+    Image() = default;
     Image(
         vk::Format format, vk::Extent2D extent, vk::ImageUsageFlags usageFlags,
         vk::MemoryPropertyFlags memoryFlags
@@ -32,7 +33,7 @@ public:
     void SetDebugName(const std::string &name) const;
 
     void Transition(vk::CommandBuffer buffer, vk::ImageLayout layoutFrom, vk::ImageLayout layoutTo) const;
-    
+
 public:
     static void Transition(
         vk::CommandBuffer buffer, vk::Image image, vk::ImageLayout layoutFrom, vk::ImageLayout layoutTo
@@ -42,8 +43,8 @@ private:
     vk::Image m_Handle { nullptr };
     VmaAllocation m_Allocation { nullptr };
     vk::ImageView m_View { nullptr };
-    vk::Format m_Format;
-    vk::Extent2D m_Extent;
+    vk::Format m_Format = vk::Format::eUndefined;
+    vk::Extent2D m_Extent = { 0, 0 };
 
     bool m_IsMoved = false;
 
@@ -64,7 +65,8 @@ public:
     [[nodiscard]] Image CreateImage(vk::Extent2D extent) const;
     [[nodiscard]] Image CreateImage(vk::Extent2D extent, const std::string &name) const;
     [[nodiscard]] std::unique_ptr<Image> CreateImageUnique(vk::Extent2D extent) const;
-    [[nodiscard]] std::unique_ptr<Image> CreateImageUnique(vk::Extent2D extent, const std::string &name) const;
+    [[nodiscard]] std::unique_ptr<Image> CreateImageUnique(vk::Extent2D extent, const std::string &name)
+        const;
 
 private:
     vk::Format m_Format = vk::Format::eUndefined;

@@ -15,11 +15,13 @@ Scene::Scene()
     m_Transforms.push_back(glm::mat4(1.0f));
 }
 
-uint32_t Scene::AddGeometry(std::span<const Shaders::Vertex> vertices, std::span<const uint32_t> indices)
+uint32_t Scene::AddGeometry(
+    std::span<const Shaders::Vertex> vertices, std::span<const uint32_t> indices, bool IsOpaque
+)
 {
     m_Geometries.emplace_back(
         static_cast<uint32_t>(m_Vertices.size()), static_cast<uint32_t>(vertices.size()),
-        static_cast<uint32_t>(m_Indices.size()), static_cast<uint32_t>(indices.size())
+        static_cast<uint32_t>(m_Indices.size()), static_cast<uint32_t>(indices.size()), IsOpaque
     );
 
     std::ranges::copy(vertices, std::back_inserter(m_Vertices));

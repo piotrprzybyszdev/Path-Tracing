@@ -151,9 +151,20 @@ Scene AssetManager::LoadScene(const std::filesystem::path &path)
             std::ranges::copy(std::span(face.mIndices, 3), indices.begin() + j * 3);
         }
 
+        bool isOpaque;
+        {
+            const aiMaterial *material = scene->mMaterials[mesh->mMaterialIndex];
+            aiString colorTexturePath;
+            material->GetTexture(aiTextureType_BASE_COLOR, 0, &colorTexturePath);
+            int channels;
+            int result = stbi_info(colorTexturePath.C_Str(), nullptr, nullptr, &channels);
+            assert(result == 0);
+            isOpaque = channels == 3;
+        }
+
         logger::debug("Adding geometry with {} vertices and {} indices", vertexCount, indexCount);
         meshToGeometry[i] = outScene.AddGeometry(
-            std::span(vertices.data(), vertexCount), std::span(indices.data(), indexCount)
+            std::span(vertices.data(), vertexCount), std::span(indices.data(), indexCount), isOpaque
         );
     }
 

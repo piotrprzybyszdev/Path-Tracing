@@ -4,6 +4,8 @@
 #include <imgui.h>
 #include <vulkan/vulkan.hpp>
 
+#include "Core/Input.h"
+
 #include "Shaders/ShaderTypes.incl"
 
 namespace PathTracing
@@ -18,7 +20,8 @@ public:
 
     static void Render(vk::CommandBuffer commandBuffer);
 
-    static void ToggleVisible();
+    static void OnKeyRelease(Key key);
+
     static bool GetIsFocused();
 
     static vk::PresentModeKHR GetPresentMode();

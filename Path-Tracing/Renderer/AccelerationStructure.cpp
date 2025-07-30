@@ -82,7 +82,9 @@ void AccelerationStructure::BuildBlases()
             );
 
             blasInfo.Geometries.emplace_back(
-                vk::GeometryTypeKHR::eTriangles, geometryData, vk::GeometryFlagBitsKHR::eOpaque
+                vk::GeometryTypeKHR::eTriangles, geometryData,
+                geometry.IsOpaque ? vk::GeometryFlagBitsKHR::eOpaque
+                                  : vk::GeometryFlagBitsKHR::eNoDuplicateAnyHitInvocation
             );
 
             primitiveCounts.push_back(geometry.IndexLength / 3);
@@ -90,9 +92,9 @@ void AccelerationStructure::BuildBlases()
             blasInfo.Ranges.emplace_back(
                 geometry.IndexLength / 3, geometry.IndexOffset * static_cast<uint32_t>(sizeof(uint32_t)),
                 geometry.VertexOffset,
-                hasTransform
-                    ? mesh.TransformBufferOffset * static_cast<uint32_t>(sizeof(vk::TransformMatrixKHR))
-                    : 0
+                static_cast<uint32_t>(
+                    hasTransform ? mesh.TransformBufferOffset * sizeof(vk::TransformMatrixKHR) : 0
+                )
             );
         }
 
@@ -194,7 +196,7 @@ void AccelerationStructure::BuildTlas()
     );
 
     vk::AccelerationStructureGeometryKHR geometry(
-        vk::GeometryTypeKHR::eInstances, instancesData, vk::GeometryFlagBitsKHR::eOpaque
+        vk::GeometryTypeKHR::eInstances, instancesData, vk::GeometryFlagBitsKHR::eNoDuplicateAnyHitInvocation
     );
 
     vk::AccelerationStructureBuildGeometryInfoKHR buildInfo =

@@ -37,6 +37,7 @@ struct Geometry
     uint32_t VertexLength;
     uint32_t IndexOffset;
     uint32_t IndexLength;
+    bool IsOpaque;
 };
 
 struct MeshInfo
@@ -70,7 +71,9 @@ class Scene
 public:
     Scene();
 
-    uint32_t AddGeometry(std::span<const Shaders::Vertex> vertices, std::span<const uint32_t> indices);
+    uint32_t AddGeometry(
+        std::span<const Shaders::Vertex> vertices, std::span<const uint32_t> indices, bool IsOpaque
+    );
     uint32_t AddModel(std::span<const MeshInfo> meshInfos);
     uint32_t AddModelInstance(uint32_t modelIndex, glm::mat4 transform);
 

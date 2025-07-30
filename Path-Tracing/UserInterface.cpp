@@ -6,6 +6,7 @@
 
 #include "Core/Core.h"
 
+#include "Renderer/Renderer.h"
 #include "Renderer/DeviceContext.h"
 #include "UserInterface.h"
 #include "Window.h"
@@ -73,9 +74,17 @@ void UserInterface::Render(vk::CommandBuffer commandBuffer)
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
 }
 
-void UserInterface::ToggleVisible()
+void UserInterface::OnKeyRelease(Key key)
 {
-    s_IsVisible = !s_IsVisible;
+    switch (key)
+    {
+    case Key::Space:
+        s_IsVisible = !s_IsVisible;
+        break;
+    case Key::H:
+        Renderer::ReloadShaders();
+        break;
+    }
 }
 
 bool UserInterface::GetIsFocused()
@@ -168,16 +177,14 @@ void UserInterface::DefineUI()
         Shaders::RenderModeWorldPosition,
         Shaders::RenderModeNormal,
         Shaders::RenderModeTextureCoords,
+        Shaders::RenderModeAlpha,
     };
 
     static constexpr const char *renderModeNames[] = {
-        "Color",
-        "World Position",
-        "Normal",
-        "TextureCoords",
+        "Color", "World Position", "Normal", "TextureCoords", "Alpha",
     };
 
-    for (int i = 0; i < 4; i++)
+    for (int i = 0; i < 5; i++)
     {
         ImGui::PushID(i);
         if (ImGui::RadioButton(renderModeNames[i], s_RenderMode == renderModes[i]))

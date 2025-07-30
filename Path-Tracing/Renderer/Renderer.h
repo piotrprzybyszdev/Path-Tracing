@@ -32,6 +32,8 @@ public:
     static void OnUpdate(float timeStep);
     static void Render(const Camera &camera);
 
+    static void ReloadShaders();
+
     static Shaders::RenderModeFlags s_RenderMode;
     static Shaders::EnabledTextureFlags s_EnabledTextures;
 

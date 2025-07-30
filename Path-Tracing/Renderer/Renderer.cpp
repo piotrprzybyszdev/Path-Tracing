@@ -64,6 +64,41 @@ void Renderer::Init(const Swapchain *swapchain)
         s_Sampler = DeviceContext::GetLogical().createSampler(createInfo);
         Utils::SetDebugName(s_Sampler, "Texture Sampler");
     }
+
+    {
+        s_ShaderLibrary = std::make_unique<ShaderLibrary>();
+
+        const ShaderId raygenId =
+            s_ShaderLibrary->AddShader("Shaders/raygen.rgen", vk::ShaderStageFlagBits::eRaygenKHR);
+        const ShaderId missId =
+            s_ShaderLibrary->AddShader("Shaders/miss.rmiss", vk::ShaderStageFlagBits::eMissKHR);
+        const ShaderId closestHitId =
+            s_ShaderLibrary->AddShader("Shaders/closesthit.rchit", vk::ShaderStageFlagBits::eClosestHitKHR);
+        const ShaderId anyHitId =
+            s_ShaderLibrary->AddShader("Shaders/anyhit.rahit", vk::ShaderStageFlagBits::eAnyHitKHR);
+
+        s_ShaderLibrary->AddGeneralGroup(ShaderBindingTable::RaygenGroupIndex, raygenId);
+        s_ShaderLibrary->AddGeneralGroup(ShaderBindingTable::MissGroupIndex, missId);
+        s_ShaderLibrary->AddHitGroup(ShaderBindingTable::HitGroupIndex, closestHitId, anyHitId);
+    }
+
+    {
+        glm::u8vec4 defaultColor(255);
+        glm::u8vec4 defaultNormal(128, 128, 255, 255);
+        glm::u8vec4 defaultRoughness(0);
+        glm::u8vec4 defaultMetalness(0);
+
+        const vk::Extent2D extent(1, 1);
+        AddTexture(extent, reinterpret_cast<const uint8_t *>(&defaultColor), "Default Color Texture");
+        AddTexture(extent, reinterpret_cast<const uint8_t *>(&defaultNormal), "Default Normal Texture");
+        AddTexture(extent, reinterpret_cast<const uint8_t *>(&defaultRoughness), "Default Roughness Texture");
+        AddTexture(extent, reinterpret_cast<const uint8_t *>(&defaultMetalness), "Default Metalness Texture");
+
+        static_assert(Shaders::DefaultColorTextureIndex == 0);
+        static_assert(Shaders::DefaultNormalTextureIndex == 1);
+        static_assert(Shaders::DefaultRoughnessTextureIndex == 2);
+        static_assert(Shaders::DefaultMetalicTextureIndex == 3);
+    }
 }
 
 void Renderer::Shutdown()
@@ -148,30 +183,14 @@ void Renderer::SetScene(const Scene &scene)
     s_StaticSceneData.MaterialBuffer =
         s_BufferBuilder->CreateDeviceBufferUnique(materials, "Material Buffer");
 
-    // TODO: Don't recreate default textures
-    s_StaticSceneData.Textures.clear();
-    glm::vec4 defaultColor(1.0f);
-    glm::vec4 defaultNormal(0.0f, 0.0f, 1.0f, 1.0f);
-    glm::vec4 defaultRoughness(0.0f);
-    glm::vec4 defaultMetalness(0.0f);
-
-    const vk::Extent2D extent(1, 1);
-    AddTexture(extent, reinterpret_cast<const uint8_t *>(&defaultColor), "Default Color Texture");
-    AddTexture(extent, reinterpret_cast<const uint8_t *>(&defaultNormal), "Default Normal Texture");
-    AddTexture(extent, reinterpret_cast<const uint8_t *>(&defaultRoughness), "Default Roughness Texture");
-    AddTexture(extent, reinterpret_cast<const uint8_t *>(&defaultMetalness), "Default Metalness Texture");
-
-    assert(Shaders::DefaultColorTextureIndex == 0);
-    assert(Shaders::DefaultNormalTextureIndex == 1);
-    assert(Shaders::DefaultRoughnessTextureIndex == 2);
-    assert(Shaders::DefaultMetalicTextureIndex == 3);
-
+    s_StaticSceneData.Textures.resize(Shaders::SceneTextureOffset);
     const auto &textures = scene.GetTextures();
     for (const auto &texture : textures)
     {
         TextureData textureData = AssetManager::LoadTextureData(texture);
-        std::string textureName = texture.Path.string();
-        AddTexture(vk::Extent2D(textureData.Width, textureData.Height), textureData.Data, textureName);
+        AddTexture(
+            vk::Extent2D(textureData.Width, textureData.Height), textureData.Data, texture.Path.string()
+        );
         AssetManager::ReleaseTextureData(textureData);
     }
 
@@ -226,32 +245,38 @@ bool Renderer::SetupPipeline()
                           vk::ShaderStageFlagBits::eRaygenKHR })
         .SetDescriptor({ 1, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eRaygenKHR })
         .SetDescriptor({ 2, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eRaygenKHR })
-        .SetDescriptor({ 3, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eClosestHitKHR })
+        .SetDescriptor({ 3, vk::DescriptorType::eUniformBuffer, 1,
+                         vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eAnyHitKHR })
         .SetDescriptor({ 4, vk::DescriptorType::eCombinedImageSampler,
                          static_cast<uint32_t>(s_StaticSceneData.Textures.size()),
-                         vk::ShaderStageFlagBits::eClosestHitKHR })
+                         vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eAnyHitKHR })
         .SetDescriptor({ 5, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eClosestHitKHR })
-        .SetDescriptor({ 6, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eClosestHitKHR })
-        .SetDescriptor({ 7, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eClosestHitKHR });
+        .SetDescriptor({ 6, vk::DescriptorType::eStorageBuffer, 1,
+                         vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eAnyHitKHR })
+        .SetDescriptor({ 7, vk::DescriptorType::eStorageBuffer, 1,
+                         vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eAnyHitKHR });
 
-    bool isRecreated = s_Pipeline != nullptr;
+    bool isRecreated = s_PipelineLayout != nullptr;
     if (isRecreated)
-    {
         DeviceContext::GetLogical().destroyPipelineLayout(s_PipelineLayout);
-        DeviceContext::GetLogical().destroyPipeline(s_Pipeline);
-    }
 
     std::vector<vk::DescriptorSetLayout> layouts = { s_DescriptorSetBuilder->CreateLayout() };
     vk::PipelineLayoutCreateInfo createInfo(vk::PipelineLayoutCreateFlags(), layouts);
     s_PipelineLayout = DeviceContext::GetLogical().createPipelineLayout(createInfo);
 
-    s_ShaderLibrary = std::make_unique<ShaderLibrary>();
-    s_ShaderLibrary->AddRaygenShader("Shaders/raygen.spv", "main");
-    s_ShaderLibrary->AddMissShader("Shaders/miss.spv", "main");
-    s_ShaderLibrary->AddClosestHitShader("Shaders/closesthit.spv", "main");
     s_Pipeline = s_ShaderLibrary->CreatePipeline(s_PipelineLayout);
+    if (s_Pipeline == nullptr)
+        throw error("Failed to create pipeline.");
 
     return isRecreated;
+}
+
+void Renderer::ReloadShaders()
+{
+    DeviceContext::GetLogical().waitIdle();
+    DeviceContext::GetLogical().destroyPipeline(s_Pipeline);
+    s_Pipeline = s_ShaderLibrary->CreatePipeline(s_PipelineLayout);
+    s_StaticSceneData.SceneShaderBindingTable->Upload(s_Pipeline);
 }
 
 void Renderer::RecordCommandBuffer(const RenderingResources &resources)

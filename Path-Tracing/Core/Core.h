@@ -8,6 +8,7 @@
 #include <format>
 #include <map>
 #include <source_location>
+#include <span>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -100,6 +101,11 @@ T2 TrivialCopy(const T1 &in)
     T2 out;
     memcpy(reinterpret_cast<void *>(&out), reinterpret_cast<const void *>(&in), sizeof(T2));
     return out;
+}
+
+template<typename T1, typename T2> std::span<T2> SpanCast(std::span<T1> span)
+{
+    return std::span(reinterpret_cast<T2 *>(span.data()), span.size() * sizeof(T1) / sizeof(T2));
 }
 
 }

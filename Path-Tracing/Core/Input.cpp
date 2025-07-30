@@ -8,8 +8,8 @@ GLFWwindow *Input::s_Window = nullptr;
 
 static void glfwKeyCallback(GLFWwindow *window, int key, int scancode, int action, int mods)
 {
-    if (key == GLFW_KEY_SPACE && action == GLFW_RELEASE)
-        UserInterface::ToggleVisible();
+    if (action == GLFW_RELEASE)
+        UserInterface::OnKeyRelease(static_cast<Key>(key));
 }
 
 void Input::SetWindow(GLFWwindow *window)

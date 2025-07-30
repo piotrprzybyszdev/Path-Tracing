@@ -30,6 +30,10 @@ public:
     [[nodiscard]] vk::StridedDeviceAddressRegionKHR GetMissTableEntry() const;
     [[nodiscard]] vk::StridedDeviceAddressRegionKHR GetClosestHitTableEntry() const;
 
+    static inline uint32_t RaygenGroupIndex = 0;
+    static inline uint32_t MissGroupIndex = 1;
+    static inline uint32_t HitGroupIndex = 2;
+
 private:
     const uint32_t m_HandleSize;
     const uint32_t m_HitGroupSize;

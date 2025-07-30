@@ -69,23 +69,25 @@ void ShaderBindingTable::Upload(vk::Pipeline pipeline)
         Application::GetDispatchLoader()
     );
 
-    auto closestHitHandle = std::span(m_ShaderHandles.begin() + 2 * m_AlignedHandleSize, m_HandleSize);
+    auto raygenHandle =
+        std::span(m_ShaderHandles.begin() + RaygenGroupIndex * m_AlignedHandleSize, m_HandleSize);
+    auto missHandle = std::span(m_ShaderHandles.begin() + MissGroupIndex * m_AlignedHandleSize, m_HandleSize);
+    auto closestHitHandle =
+        std::span(m_ShaderHandles.begin() + HitGroupIndex * m_AlignedHandleSize, m_HandleSize);
+
     for (int i = 0; i < m_ClosestHitGroupCount; i++)
         std::ranges::copy(closestHitHandle, m_ClosestHitGroups.begin() + i * m_AlignedHitGroupSize);
 
     BufferBuilder builder;
-    builder.SetUsageFlags(
-        vk::BufferUsageFlagBits::eShaderBindingTableKHR | vk::BufferUsageFlagBits::eTransferSrc |
-        vk::BufferUsageFlagBits::eShaderDeviceAddress
-    ).SetAlignment(m_GroupBaseAlignment);
+    builder
+        .SetUsageFlags(
+            vk::BufferUsageFlagBits::eShaderBindingTableKHR | vk::BufferUsageFlagBits::eTransferSrc |
+            vk::BufferUsageFlagBits::eShaderDeviceAddress
+        )
+        .SetAlignment(m_GroupBaseAlignment);
 
-    m_RaygenTable = builder.CreateHostBuffer(
-        std::span(m_ShaderHandles.begin(), m_HandleSize), "Raygen Shader Binding Table Buffer"
-    );
-    m_MissTable = builder.CreateHostBuffer(
-        std::span(m_ShaderHandles.begin() + m_AlignedHandleSize, m_HandleSize),
-        "Miss Shader Binding Table Buffer"
-    );
+    m_RaygenTable = builder.CreateHostBuffer(raygenHandle, "Raygen Shader Binding Table Buffer");
+    m_MissTable = builder.CreateHostBuffer(missHandle, "Miss Shader Binding Table Buffer");
     m_ClosestHitTable =
         builder.CreateHostBuffer(std::span(m_ClosestHitGroups), "Closest Hit Shader Binding Table Buffer");
 }

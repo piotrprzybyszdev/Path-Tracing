@@ -4,7 +4,7 @@ AccessModifierOffset: -4
 AlignAfterOpenBracket: BlockIndent
 AllowShortBlocksOnASingleLine: Empty
 BraceWrapping:
-  AfterCaseLabel: false
+  AfterCaseLabel: true
   AfterClass: true
   AfterControlStatement: Always
   AfterEnum: true
