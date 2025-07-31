@@ -31,8 +31,6 @@ Renderer::CommandBuffer Renderer::s_MainCommandBuffer = {};
 vk::CommandPool Renderer::s_MainCommandPool = nullptr;
 
 std::vector<Renderer::RenderingResources> Renderer::s_RenderingResources = {};
-std::unique_ptr<Buffer> Renderer::s_RaygenUniformBuffer = nullptr;
-std::unique_ptr<Buffer> Renderer::s_ClosestHitUniformBuffer = nullptr;
 std::unique_ptr<DescriptorSetBuilder> Renderer::s_DescriptorSetBuilder = nullptr;
 std::unique_ptr<DescriptorSet> Renderer::s_DescriptorSet = nullptr;
 vk::PipelineLayout Renderer::s_PipelineLayout = nullptr;
@@ -66,14 +64,6 @@ void Renderer::Init(const Swapchain *swapchain)
         s_Sampler = DeviceContext::GetLogical().createSampler(createInfo);
         Utils::SetDebugName(s_Sampler, "Texture Sampler");
     }
-
-    s_BufferBuilder->ResetFlags().SetUsageFlags(vk::BufferUsageFlagBits::eUniformBuffer);
-
-    s_RaygenUniformBuffer =
-        s_BufferBuilder->CreateHostBufferUnique(sizeof(Shaders::RaygenUniformData), "Raygen Uniform Buffer");
-    s_ClosestHitUniformBuffer = s_BufferBuilder->CreateHostBufferUnique(
-        sizeof(Shaders::ClosestHitUniformData), "Closest Hit Uniform Buffer"
-    );
 }
 
 void Renderer::Shutdown()
@@ -90,9 +80,6 @@ void Renderer::Shutdown()
     DeviceContext::GetLogical().destroyPipelineLayout(s_PipelineLayout);
     s_DescriptorSet.reset();
     s_DescriptorSetBuilder.reset();
-
-    s_RaygenUniformBuffer.reset();
-    s_ClosestHitUniformBuffer.reset();
 
     s_StaticSceneData.SceneShaderBindingTable.reset();
     s_StaticSceneData.SceneAccelerationStructure.reset();
@@ -397,6 +384,14 @@ void Renderer::OnInFlightCountChange()
         res.StorageImage = CreateStorageImage(extent);
         res.StorageImage->SetDebugName(std::format("Storage image {}", frameIndex));
 
+        s_BufferBuilder->SetUsageFlags(vk::BufferUsageFlagBits::eUniformBuffer);
+        res.RaygenUniformBuffer = s_BufferBuilder->CreateHostBufferUnique(
+            sizeof(Shaders::RaygenUniformData), std::format("Raygen Uniform Buffer {}", frameIndex)
+        );
+        res.ClosestHitUniformBuffer = s_BufferBuilder->CreateHostBufferUnique(
+            sizeof(Shaders::ClosestHitUniformData), std::format("Closest Hit Uniform Buffer {}", frameIndex)
+        );
+
         s_RenderingResources.push_back(std::move(res));
     }
 
@@ -418,8 +413,8 @@ void Renderer::RecreateDescriptorSet()
         s_DescriptorSet->UpdateImage(
             1, frameIndex, *res.StorageImage, vk::Sampler(), vk::ImageLayout::eGeneral
         );
-        s_DescriptorSet->UpdateBuffer(2, frameIndex, *s_RaygenUniformBuffer);
-        s_DescriptorSet->UpdateBuffer(3, frameIndex, *s_ClosestHitUniformBuffer);
+        s_DescriptorSet->UpdateBuffer(2, frameIndex, *res.RaygenUniformBuffer);
+        s_DescriptorSet->UpdateBuffer(3, frameIndex, *res.ClosestHitUniformBuffer);
         s_DescriptorSet->UpdateImageArray(
             4, frameIndex, s_StaticSceneData.Textures, s_Sampler, vk::ImageLayout::eShaderReadOnlyOptimal
         );
@@ -439,14 +434,15 @@ void Renderer::OnUpdate(float /* timeStep */)
 
 void Renderer::Render(const Camera &camera)
 {
-    Shaders::RaygenUniformData rgenData = { camera.GetInvViewMatrix(), camera.GetInvProjectionMatrix() };
-    s_RaygenUniformBuffer->Upload(&rgenData);
-
-    Shaders::ClosestHitUniformData rchitData = { s_RenderMode, s_EnabledTextures };
-    s_ClosestHitUniformBuffer->Upload(&rchitData);
-
     const Swapchain::SynchronizationObjects &sync = s_Swapchain->GetCurrentSyncObjects();
     const RenderingResources &res = s_RenderingResources[s_Swapchain->GetCurrentFrameInFlightIndex()];
+
+    Shaders::RaygenUniformData rgenData = { camera.GetInvViewMatrix(), camera.GetInvProjectionMatrix() };
+    res.RaygenUniformBuffer->Upload(&rgenData);
+
+    Shaders::ClosestHitUniformData rchitData = { s_RenderMode, s_EnabledTextures };
+    res.ClosestHitUniformBuffer->Upload(&rchitData);
+
 
     RecordCommandBuffer(res);
 

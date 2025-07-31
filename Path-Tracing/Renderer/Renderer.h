@@ -59,6 +59,9 @@ private:
         vk::CommandBuffer CommandBuffer;
 
         std::unique_ptr<Image> StorageImage;
+
+        std::unique_ptr<Buffer> RaygenUniformBuffer;
+        std::unique_ptr<Buffer> ClosestHitUniformBuffer;
     };
 
     static std::vector<RenderingResources> s_RenderingResources;
@@ -77,9 +80,6 @@ private:
         std::unique_ptr<ShaderBindingTable> SceneShaderBindingTable = nullptr;
         std::unique_ptr<AccelerationStructure> SceneAccelerationStructure = nullptr;
     } s_StaticSceneData;
-
-    static std::unique_ptr<Buffer> s_RaygenUniformBuffer;
-    static std::unique_ptr<Buffer> s_ClosestHitUniformBuffer;
 
     static std::unique_ptr<DescriptorSetBuilder> s_DescriptorSetBuilder;
     static std::unique_ptr<DescriptorSet> s_DescriptorSet;
