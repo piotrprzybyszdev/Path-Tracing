@@ -159,6 +159,7 @@ vk::ShaderModule Shader::GetModule(
     if (preprocessResult.GetCompilationStatus() != shaderc_compilation_status_success)
     {
         logger::error("Failed to preprocess shader {}", m_Path.string());
+        logger::error(preprocessResult.GetErrorMessage());
         if (m_Module != nullptr)
             logger::warn("Using old version of the shader: {}", m_Path.string());
         return m_Module;
@@ -189,6 +190,7 @@ vk::ShaderModule Shader::GetModule(
     if (compileResult.GetCompilationStatus() != shaderc_compilation_status_success)
     {
         logger::error("Failed to compile shader {}", m_Path.string());
+        logger::error(compileResult.GetErrorMessage());
         if (m_Module != nullptr)
             logger::warn("Using old version of the shader: {}", m_Path.string());
         return m_Module;

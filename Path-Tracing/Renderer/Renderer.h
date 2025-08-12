@@ -34,8 +34,12 @@ public:
 
     static void ReloadShaders();
 
+    static inline constexpr vk::Extent2D s_MaxTextureSize = {1024u, 1024u };
+
     static Shaders::RenderModeFlags s_RenderMode;
     static Shaders::EnabledTextureFlags s_EnabledTextures;
+    static Shaders::RaygenFlags s_RaygenFlags;
+    static Shaders::ClosestHitFlags s_ClosestHitFlags;
 
     // Blocking one time submission buffer
     static struct CommandBuffer
@@ -92,8 +96,9 @@ private:
     static std::unique_ptr<ShaderLibrary> s_ShaderLibrary;
 
 private:
-    static void AddTexture(vk::Extent2D extent, const uint8_t *data);
-    static void AddTexture(vk::Extent2D extent, const uint8_t *data, const std::string &name);
+    static void AddTexture(vk::Extent2D extent, vk::Format format, const std::byte *data);
+    static void AddTexture(Texture texture);
+    static void AddTexture(Texture texture, const std::string &name);
     static bool SetupPipeline();
     
     static void RecordCommandBuffer(const RenderingResources &resources);

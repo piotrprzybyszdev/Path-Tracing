@@ -103,7 +103,21 @@ T2 TrivialCopy(const T1 &in)
     return out;
 }
 
+template<typename T>
+std::span<std::byte> ToByteSpan(T &value)
+    requires std::is_trivially_copyable_v<T> && std::is_trivially_copyable_v<T>
+{
+    return std::span<std::byte>(reinterpret_cast<std::byte *>(&value), sizeof(T));
+}
+
+template<typename T> std::span<const std::byte> ToByteSpan(const T &value)
+    requires std::is_trivially_copyable_v<T> && std::is_trivially_copyable_v<T>
+{
+    return std::span<const std::byte>(reinterpret_cast<const std::byte *>(&value), sizeof(T));
+}
+
 template<typename T1, typename T2> std::span<T2> SpanCast(std::span<T1> span)
+    requires std::is_standard_layout_v<T1> && std::is_standard_layout_v<T2>
 {
     return std::span(reinterpret_cast<T2 *>(span.data()), span.size() * sizeof(T1) / sizeof(T2));
 }

@@ -27,6 +27,8 @@ public:
     static vk::PresentModeKHR GetPresentMode();
     static Shaders::EnabledTextureFlags GetEnabledTextures();
     static Shaders::RenderModeFlags GetRenderMode();
+    static Shaders::RaygenFlags GetRaygenFlags();
+    static Shaders::ClosestHitFlags GetClosestHitFlags();
 
 private:
     static bool s_IsVisible;

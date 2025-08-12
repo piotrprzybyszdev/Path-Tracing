@@ -24,12 +24,14 @@ layout(buffer_reference, buffer_reference_align=8) readonly buffer IndexBuffer {
 struct RaygenUniformData
 {
     Camera u_Camera;
+    uint u_Flags;               // enum
 };
 
 struct ClosestHitUniformData
 {
-    uint u_RenderMode;       // enum
-    uint u_EnabledTextures;  // enum
+    uint u_RenderMode;          // enum
+    uint u_EnabledTextures;     // enum
+    uint u_Flags;               // enum
 };
 
 struct Geometry

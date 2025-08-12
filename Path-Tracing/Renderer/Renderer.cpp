@@ -24,6 +24,8 @@ namespace PathTracing
 
 Shaders::RenderModeFlags Renderer::s_RenderMode = Shaders::RenderModeColor;
 Shaders::EnabledTextureFlags Renderer::s_EnabledTextures = Shaders::TexturesEnableAll;
+Shaders::RaygenFlags Renderer::s_RaygenFlags = Shaders::RaygenFlagsNone;
+Shaders::ClosestHitFlags Renderer::s_ClosestHitFlags = Shaders::ClosestHitFlagsNone;
 
 const Swapchain *Renderer::s_Swapchain = nullptr;
 
@@ -61,6 +63,8 @@ void Renderer::Init(const Swapchain *swapchain)
 
     {
         vk::SamplerCreateInfo createInfo(vk::SamplerCreateFlags(), vk::Filter::eLinear, vk::Filter::eLinear);
+        createInfo.setMipmapMode(vk::SamplerMipmapMode::eLinear);
+        createInfo.setMaxLod(vk::LodClampNone);
         s_Sampler = DeviceContext::GetLogical().createSampler(createInfo);
         Utils::SetDebugName(s_Sampler, "Texture Sampler");
     }
@@ -89,10 +93,15 @@ void Renderer::Init(const Swapchain *swapchain)
         glm::u8vec4 defaultMetalness(0);
 
         const vk::Extent2D extent(1, 1);
-        AddTexture(extent, reinterpret_cast<const uint8_t *>(&defaultColor), "Default Color Texture");
-        AddTexture(extent, reinterpret_cast<const uint8_t *>(&defaultNormal), "Default Normal Texture");
-        AddTexture(extent, reinterpret_cast<const uint8_t *>(&defaultRoughness), "Default Roughness Texture");
-        AddTexture(extent, reinterpret_cast<const uint8_t *>(&defaultMetalness), "Default Metalness Texture");
+        const vk::Format format = vk::Format::eR8G8B8A8Unorm;      
+        AddTexture(extent, format, reinterpret_cast<const std::byte *>(&defaultColor));
+        AddTexture(extent, format, reinterpret_cast<const std::byte *>(&defaultNormal));
+        AddTexture(extent, format, reinterpret_cast<const std::byte *>(&defaultRoughness));
+        AddTexture(extent, format, reinterpret_cast<const std::byte *>(&defaultMetalness));
+        Utils::SetDebugName(s_StaticSceneData.Textures[0].GetHandle(), "Default Color Texture");
+        Utils::SetDebugName(s_StaticSceneData.Textures[1].GetHandle(), "Default Color Texture");
+        Utils::SetDebugName(s_StaticSceneData.Textures[2].GetHandle(), "Default Color Texture");
+        Utils::SetDebugName(s_StaticSceneData.Textures[3].GetHandle(), "Default Color Texture");
 
         static_assert(Shaders::DefaultColorTextureIndex == 0);
         static_assert(Shaders::DefaultNormalTextureIndex == 1);
@@ -138,60 +147,59 @@ void Renderer::SetScene(const Scene &scene)
 {
     DeviceContext::GetLogical().waitIdle();
 
-    // Upload the scene data to buffers
-    s_BufferBuilder->ResetFlags().SetUsageFlags(
-        vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR |
-        vk::BufferUsageFlagBits::eShaderDeviceAddress | vk::BufferUsageFlagBits::eTransferDst
-    );
-
-    const auto &vertices = scene.GetVertices();
-    s_StaticSceneData.VertexBuffer = s_BufferBuilder->CreateDeviceBufferUnique(vertices, "Vertex Buffer");
-
-    const auto &indices = scene.GetIndices();
-    s_StaticSceneData.IndexBuffer = s_BufferBuilder->CreateDeviceBufferUnique(indices, "Index Buffer");
-
-    s_BufferBuilder->ResetFlags().SetUsageFlags(
-        vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR |
-        vk::BufferUsageFlagBits::eShaderDeviceAddress | vk::BufferUsageFlagBits::eStorageBuffer |
-        vk::BufferUsageFlagBits::eTransferDst
-    );
-
-    const auto &transforms = scene.GetTransforms();
-    std::vector<vk::TransformMatrixKHR> transforms2;
-    transforms2.reserve(transforms.size());
-    for (const auto &transform : transforms)
-        transforms2.push_back(TrivialCopy<glm::mat3x4, vk::TransformMatrixKHR>(transform));
-    s_StaticSceneData.TransformBuffer =
-        s_BufferBuilder->CreateDeviceBufferUnique(std::span(transforms2), "Transform Buffer");
-
-    s_BufferBuilder->ResetFlags().SetUsageFlags(
-        vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst
-    );
-
-    const auto &geometries = scene.GetGeometries();
-    std::vector<Shaders::Geometry> geometries2 = {};
-    for (const auto &geometry : geometries)
-        geometries2.emplace_back(
-            s_StaticSceneData.VertexBuffer->GetDeviceAddress() +
-                geometry.VertexOffset * sizeof(Shaders::Vertex),
-            s_StaticSceneData.IndexBuffer->GetDeviceAddress() + geometry.IndexOffset * sizeof(uint32_t)
-        );
-    s_StaticSceneData.GeometryBuffer =
-        s_BufferBuilder->CreateDeviceBufferUnique(std::span(geometries2), "Geometry Buffer");
-
-    const auto &materials = scene.GetMaterials();
-    s_StaticSceneData.MaterialBuffer =
-        s_BufferBuilder->CreateDeviceBufferUnique(materials, "Material Buffer");
-
-    s_StaticSceneData.Textures.resize(Shaders::SceneTextureOffset);
-    const auto &textures = scene.GetTextures();
-    for (const auto &texture : textures)
     {
-        TextureData textureData = AssetManager::LoadTextureData(texture);
-        AddTexture(
-            vk::Extent2D(textureData.Width, textureData.Height), textureData.Data, texture.Path.string()
+        Timer timer("Mesh Upload");
+        s_BufferBuilder->ResetFlags().SetUsageFlags(
+            vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR |
+            vk::BufferUsageFlagBits::eShaderDeviceAddress | vk::BufferUsageFlagBits::eTransferDst
         );
-        AssetManager::ReleaseTextureData(textureData);
+
+        const auto &vertices = scene.GetVertices();
+        s_StaticSceneData.VertexBuffer = s_BufferBuilder->CreateDeviceBufferUnique(vertices, "Vertex Buffer");
+
+        const auto &indices = scene.GetIndices();
+        s_StaticSceneData.IndexBuffer = s_BufferBuilder->CreateDeviceBufferUnique(indices, "Index Buffer");
+
+        s_BufferBuilder->ResetFlags().SetUsageFlags(
+            vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR |
+            vk::BufferUsageFlagBits::eShaderDeviceAddress | vk::BufferUsageFlagBits::eStorageBuffer |
+            vk::BufferUsageFlagBits::eTransferDst
+        );
+
+        const auto &transforms = scene.GetTransforms();
+        std::vector<vk::TransformMatrixKHR> transforms2;
+        transforms2.reserve(transforms.size());
+        for (const auto &transform : transforms)
+            transforms2.push_back(TrivialCopy<glm::mat3x4, vk::TransformMatrixKHR>(transform));
+        s_StaticSceneData.TransformBuffer =
+            s_BufferBuilder->CreateDeviceBufferUnique(std::span(transforms2), "Transform Buffer");
+
+        s_BufferBuilder->ResetFlags().SetUsageFlags(
+            vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst
+        );
+
+        const auto &geometries = scene.GetGeometries();
+        std::vector<Shaders::Geometry> geometries2 = {};
+        for (const auto &geometry : geometries)
+            geometries2.emplace_back(
+                s_StaticSceneData.VertexBuffer->GetDeviceAddress() +
+                    geometry.VertexOffset * sizeof(Shaders::Vertex),
+                s_StaticSceneData.IndexBuffer->GetDeviceAddress() + geometry.IndexOffset * sizeof(uint32_t)
+            );
+        s_StaticSceneData.GeometryBuffer =
+            s_BufferBuilder->CreateDeviceBufferUnique(std::span(geometries2), "Geometry Buffer");
+
+        const auto &materials = scene.GetMaterials();
+        s_StaticSceneData.MaterialBuffer =
+            s_BufferBuilder->CreateDeviceBufferUnique(materials, "Material Buffer");
+    }
+
+    {
+        Timer timer("Texture Upload");
+        s_StaticSceneData.Textures.resize(Shaders::SceneTextureOffset);
+        const auto &textures = scene.GetTextures();
+        for (const auto &texture : textures)
+            AddTexture(texture);
     }
 
     // Setup AC and SBT
@@ -217,23 +225,39 @@ void Renderer::SetScene(const Scene &scene)
         RecreateDescriptorSet();
 }
 
-void Renderer::AddTexture(vk::Extent2D extent, const uint8_t *data)
+void Renderer::AddTexture(vk::Extent2D extent, vk::Format format, const std::byte *data)
 {
-    // TODO: Add support for other texture formats
-    ImageBuilder builder;
-    builder.SetFormat(vk::Format::eR8G8B8A8Unorm)
-        .SetUsageFlags(vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst)
-        .SetMemoryFlags(vk::MemoryPropertyFlagBits::eDeviceLocal);
+    auto IsPowerOf2 = [](uint32_t num) { return (num & (num - 1)) == 0; };
+    assert(IsPowerOf2(extent.width) && IsPowerOf2(extent.height));
 
-    Image image = builder.CreateImage(extent);
-    image.UploadStaging(data);
+    ImageBuilder builder;
+    builder.SetFormat(format)
+        .SetUsageFlags(
+            vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst |
+            vk::ImageUsageFlagBits::eTransferSrc
+        )
+        .EnableMips();
+
+    Image image = builder.CreateImage(std::min(extent, s_MaxTextureSize));
+    image.UploadStaging(data, extent, vk::ImageLayout::eShaderReadOnlyOptimal);
 
     s_StaticSceneData.Textures.push_back(std::move(image));
 }
 
-void Renderer::AddTexture(vk::Extent2D extent, const uint8_t *data, const std::string &name)
+void Renderer::AddTexture(Texture texture)
 {
-    AddTexture(extent, data);
+    TextureData data = AssetManager::LoadTextureData(texture);
+
+    vk::Format format = vk::Format::eR8G8B8A8Unorm;
+    vk::Extent2D extent = { static_cast<uint32_t>(data.Width), static_cast<uint32_t>(data.Height) };
+    AddTexture(extent, format, data.Data.data());
+
+    AssetManager::ReleaseTextureData(data);
+}
+
+void Renderer::AddTexture(Texture texture, const std::string &name)
+{
+    AddTexture(texture);
     Utils::SetDebugName(s_StaticSceneData.Textures.back().GetHandle(), name);
 }
 
@@ -357,8 +381,7 @@ std::unique_ptr<Image> Renderer::CreateStorageImage(vk::Extent2D extent)
 {
     s_ImageBuilder->ResetFlags()
         .SetFormat(vk::Format::eR8G8B8A8Unorm)
-        .SetUsageFlags(vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eStorage)
-        .SetMemoryFlags(vk::MemoryPropertyFlagBits::eDeviceLocal);
+        .SetUsageFlags(vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eStorage);
 
     auto image = s_ImageBuilder->CreateImageUnique(extent);
 

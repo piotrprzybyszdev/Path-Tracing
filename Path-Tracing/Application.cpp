@@ -243,6 +243,8 @@ void Application::Run()
                 camera.OnUpdate(timeStep);
                 Renderer::s_EnabledTextures = UserInterface::GetEnabledTextures();
                 Renderer::s_RenderMode = UserInterface::GetRenderMode();
+                Renderer::s_RaygenFlags = UserInterface::GetRaygenFlags();
+                Renderer::s_ClosestHitFlags = UserInterface::GetClosestHitFlags();
                 Renderer::OnUpdate(timeStep);
             }
 

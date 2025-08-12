@@ -10,7 +10,7 @@ namespace PathTracing
 struct TextureData
 {
     int Width, Height, Channels;
-    uint8_t *Data;
+    std::span<std::byte> Data;
 };
 
 class AssetManager

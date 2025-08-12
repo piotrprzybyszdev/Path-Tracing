@@ -27,8 +27,14 @@ void main()
 	float tmin = 0.001;
 	float tmax = 10000.0;
 
-	// TODO: Read flags and SBT config from uniform buffer
-    traceRayEXT(u_TopLevelAS, gl_RayFlagsNoneEXT, 0xff, 0, 1, 0, origin.xyz, tmin, direction.xyz, tmax, 0);
+	// TODO: Read SBT config from uniform buffer
+	uint flags = gl_RayFlagsNoneEXT;
+	if ((mainUniform.u_Flags & RaygenFlagsForceOpaque) != RaygenFlagsNone)
+		flags |= gl_RayFlagsOpaqueEXT;
+	if ((mainUniform.u_Flags & RaygenFlagsCullBackFaces) != RaygenFlagsNone)
+		flags |= gl_RayFlagsCullBackFacingTrianglesEXT;
+
+    traceRayEXT(u_TopLevelAS, flags, 0xff, 0, 1, 0, origin.xyz, tmin, direction.xyz, tmax, 0);
 
 	imageStore(u_Image, ivec2(gl_LaunchIDEXT.xy), vec4(hitValue, 0.0));
 }

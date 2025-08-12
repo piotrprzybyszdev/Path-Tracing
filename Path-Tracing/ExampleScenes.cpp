@@ -42,10 +42,10 @@ static void CreateTexturedCubesScene()
         g_TexturedCubesScene.AddMaterial(
             assetNames[i],
             Material {
-                Texture { materialPath / (material + "_Color.jpg") },
-                Texture { materialPath / (material + "_NormalGL.jpg") },
-                Texture { materialPath / (material + "_Roughness.jpg") },
-                Texture { materialPath / (material + "_Roughness.jpg") },
+                materialPath / (material + "_Color.jpg"),
+                materialPath / (material + "_NormalGL.jpg"),
+                materialPath / (material + "_Roughness.jpg"),
+                materialPath / (material + "_Roughness.jpg"),
             }
         );
     }
@@ -153,10 +153,10 @@ void CreateReuseMeshCubesScene()
         g_ReuseMeshCubesScene.AddMaterial(
             assetNames[i],
             Material {
-                Texture { materialPath / (material + "_Color.jpg") },
-                Texture { materialPath / (material + "_NormalGL.jpg") },
-                Texture { materialPath / (material + "_Roughness.jpg") },
-                Texture { materialPath / (material + "_Roughness.jpg") },
+                materialPath / (material + "_Color.jpg"),
+                materialPath / (material + "_NormalGL.jpg"),
+                materialPath / (material + "_Roughness.jpg"),
+                materialPath / (material + "_Roughness.jpg"),
             }
         );
     }

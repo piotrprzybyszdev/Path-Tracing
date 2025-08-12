@@ -18,17 +18,23 @@
 namespace PathTracing
 {
 
+enum class TextureType
+{
+    Color, Normal, Roughness, Metalic
+};
+
 struct Texture
 {
+    TextureType Type;
     std::filesystem::path Path;
 };
 
 struct Material
 {
-    std::optional<Texture> Color;
-    std::optional<Texture> Normal;
-    std::optional<Texture> Roughness;
-    std::optional<Texture> Metalic;
+    std::optional<std::filesystem::path> Color;
+    std::optional<std::filesystem::path> Normal;
+    std::optional<std::filesystem::path> Roughness;
+    std::optional<std::filesystem::path> Metalic;
 };
 
 struct Geometry
@@ -124,7 +130,7 @@ public:
     Registry<uint32_t, std::string, g_DefaultModelInstanceName, g_EnableNameRegistries> ModelInstanceNames;
 
 private:
-    uint32_t AddTexture(Texture texture);
+    uint32_t AddTexture(TextureType type, std::filesystem::path path);
 };
 
 }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <span>
 #include <string>
 
 #include <vk_mem_alloc.h>
@@ -12,11 +13,9 @@ class Image
 {
 public:
     Image() = default;
-    Image(
-        vk::Format format, vk::Extent2D extent, vk::ImageUsageFlags usageFlags,
-        vk::MemoryPropertyFlags memoryFlags
-    );
-
+    Image(vk::Format format, vk::Extent2D extent, vk::ImageUsageFlags usageFlags, uint32_t mipLevels);
+    Image(vk::Format format, vk::Extent2D extent, vk::ImageUsageFlags usageFlags, bool mips);
+    
     ~Image();
 
     Image(Image &&image) noexcept;
@@ -28,15 +27,17 @@ public:
     [[nodiscard]] vk::Image GetHandle() const;
     [[nodiscard]] vk::ImageView GetView() const;
 
-    void UploadStaging(const uint8_t *data) const;
+    void UploadStaging(const std::byte *data, vk::Extent2D extent, vk::ImageLayout layout) const;
 
     void SetDebugName(const std::string &name) const;
 
     void Transition(vk::CommandBuffer buffer, vk::ImageLayout layoutFrom, vk::ImageLayout layoutTo) const;
+    void Transition(vk::CommandBuffer buffer, vk::ImageLayout layoutFrom, vk::ImageLayout layoutTo, uint32_t mipLevel) const;
 
 public:
     static void Transition(
-        vk::CommandBuffer buffer, vk::Image image, vk::ImageLayout layoutFrom, vk::ImageLayout layoutTo
+        vk::CommandBuffer buffer, vk::Image image, vk::ImageLayout layoutFrom, vk::ImageLayout layoutTo,
+        uint32_t baseMipLevel = 0, uint32_t mipLevels = 1
     );
 
 private:
@@ -45,10 +46,16 @@ private:
     vk::ImageView m_View { nullptr };
     vk::Format m_Format = vk::Format::eUndefined;
     vk::Extent2D m_Extent = { 0, 0 };
+    uint32_t m_MipLevels = 1;
 
     bool m_IsMoved = false;
 
 private:
+    [[nodiscard]] std::array<vk::Offset3D, 2> GetMipLevelArea(uint32_t level) const;
+    [[nodiscard]] vk::ImageSubresourceLayers GetMipLayer(uint32_t level) const;
+
+    void GenerateMips(vk::ImageLayout layout) const;
+
     static vk::AccessFlags GetAccessFlags(vk::ImageLayout layout);
     static vk::PipelineStageFlagBits GetPipelineStageFlags(vk::ImageLayout layout);
 };
@@ -58,7 +65,7 @@ class ImageBuilder
 public:
     ImageBuilder &SetFormat(vk::Format format);
     ImageBuilder &SetUsageFlags(vk::ImageUsageFlags usageFlags);
-    ImageBuilder &SetMemoryFlags(vk::MemoryPropertyFlags memoryFlags);
+    ImageBuilder &EnableMips();
 
     ImageBuilder &ResetFlags();
 
@@ -71,7 +78,7 @@ public:
 private:
     vk::Format m_Format = vk::Format::eUndefined;
     vk::ImageUsageFlags m_UsageFlags;
-    vk::MemoryPropertyFlags m_MemoryFlags;
+    bool m_Mips = false;
 };
 
 }

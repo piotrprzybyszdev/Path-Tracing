@@ -69,13 +69,13 @@ uint32_t Scene::AddMaterial(std::string name, Material material)
         return m_MaterialIndices[name];
 
     m_Materials.emplace_back(
-        material.Color.has_value() ? AddTexture(std::move(material.Color.value()))
-                                    : Shaders::DefaultColorTextureIndex,
-        material.Normal.has_value() ? AddTexture(std::move(material.Normal.value()))
+        material.Color.has_value() ? AddTexture(TextureType::Color, material.Color.value())
+                                   : Shaders::DefaultColorTextureIndex,
+        material.Normal.has_value() ? AddTexture(TextureType::Normal, material.Normal.value())
                                     : Shaders::DefaultNormalTextureIndex,
-        material.Roughness.has_value() ? AddTexture(std::move(material.Roughness.value()))
+        material.Roughness.has_value() ? AddTexture(TextureType::Roughness, material.Roughness.value())
                                        : Shaders::DefaultRoughnessTextureIndex,
-        material.Metalic.has_value() ? AddTexture(std::move(material.Metalic.value()))
+        material.Metalic.has_value() ? AddTexture(TextureType::Metalic, material.Metalic.value())
                                      : Shaders::DefaultMetalicTextureIndex
     );
 
@@ -86,14 +86,14 @@ uint32_t Scene::AddMaterial(std::string name, Material material)
     return m_Materials.size() - 1;
 }
 
-uint32_t Scene::AddTexture(Texture texture)
+uint32_t Scene::AddTexture(TextureType type, std::filesystem::path path)
 {
-    const std::string name = texture.Path.string();
+    const std::string name = path.string();
 
     if (m_TextureIndices.contains(name))
         return m_TextureIndices[name];
 
-    m_Textures.emplace_back(std::move(texture.Path));
+    m_Textures.emplace_back(type, path);
     const uint32_t textureIndex = Shaders::SceneTextureOffset + m_Textures.size() - 1;
 
     m_TextureIndices[name] = textureIndex;

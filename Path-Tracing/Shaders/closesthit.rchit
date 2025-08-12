@@ -53,9 +53,12 @@ void main()
 	const Vertex originalVertex = getInterpolatedVertex(vertices, indices, gl_PrimitiveID * 3, barycentricCoords);
 	const Vertex vertex = transform(originalVertex, sbt.TransformIndex);
 
+	// TODO: Calculate the LOD level properly
+	const float lod = (mainUniform.u_Flags & ClosestHitFlagsDisableMipMaps) != ClosestHitFlagsNone ? 1.0f : log2(gl_RayTmaxEXT);
+
 	const Material material = materials[sbt.MaterialIndex];
-	const vec3 color = texture(textures[GetColorTextureIndex(mainUniform.u_EnabledTextures, material)], vertex.TexCoords).xyz;
-	const vec3 normal = texture(textures[GetNormalTextureIndex(mainUniform.u_EnabledTextures, material)], vertex.TexCoords).xyz;
+	const vec3 color = textureLod(textures[GetColorTextureIndex(mainUniform.u_EnabledTextures, material)], vertex.TexCoords, lod).xyz;
+	const vec3 normal = textureLod(textures[GetNormalTextureIndex(mainUniform.u_EnabledTextures, material)], vertex.TexCoords, lod).xyz;
 	const vec3 roughness = texture(textures[GetRoughnessTextureIndex(mainUniform.u_EnabledTextures, material)], vertex.TexCoords).xyz;
 	const vec3 metalness = texture(textures[GetMetalicTextureIndex(mainUniform.u_EnabledTextures, material)], vertex.TexCoords).xyz;
 
@@ -90,8 +93,8 @@ void main()
 	case RenderModeTextureCoords:
 		hitValue = vec3(vertex.TexCoords, 0.0f);
 		break;
-	case RenderModeAlpha:
-		hitValue = vec3(texture(textures[GetColorTextureIndex(mainUniform.u_EnabledTextures, material)], vertex.TexCoords).a);
+	case RenderModeMips:
+		hitValue = vec3(floor(lod) / textureQueryLevels(textures[GetColorTextureIndex(mainUniform.u_EnabledTextures, material)]));
 		break;
 	}
 }

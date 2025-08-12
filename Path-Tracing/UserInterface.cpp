@@ -17,6 +17,8 @@ namespace PathTracing
 static vk::PresentModeKHR s_PresentMode = vk::PresentModeKHR::eFifo;
 static Shaders::EnabledTextureFlags s_EnabledTextures = Shaders::TexturesEnableAll;
 static Shaders::RenderModeFlags s_RenderMode = Shaders::RenderModeColor;
+static Shaders::RaygenFlags s_RaygenFlags = Shaders::RaygenFlagsNone;
+static Shaders::ClosestHitFlags s_ClosestHitFlags = Shaders::ClosestHitFlagsNone;
 bool UserInterface::s_IsVisible = false;
 bool UserInterface::s_IsFocused = false;
 ImGuiIO *UserInterface::s_Io = nullptr;
@@ -107,6 +109,16 @@ Shaders::RenderModeFlags UserInterface::GetRenderMode()
     return s_RenderMode;
 }
 
+Shaders::RaygenFlags UserInterface::GetRaygenFlags()
+{
+    return s_RaygenFlags;
+}
+
+Shaders::ClosestHitFlags UserInterface::GetClosestHitFlags()
+{
+    return s_ClosestHitFlags;
+}
+
 void UserInterface::DefineUI()
 {
     s_IsFocused = false;
@@ -166,9 +178,7 @@ void UserInterface::DefineUI()
     {
         ImGui::PushID(i);
         if (ImGui::Checkbox(textureNames[i], &isTextureEnabled[i]))
-        {
             s_EnabledTextures ^= textureFlags[i];
-        }
         ImGui::PopID();
     }
 
@@ -177,22 +187,32 @@ void UserInterface::DefineUI()
         Shaders::RenderModeWorldPosition,
         Shaders::RenderModeNormal,
         Shaders::RenderModeTextureCoords,
-        Shaders::RenderModeAlpha,
+        Shaders::RenderModeMips,
     };
 
     static constexpr const char *renderModeNames[] = {
-        "Color", "World Position", "Normal", "TextureCoords", "Alpha",
+        "Color", "World Position", "Normal", "TextureCoords", "Mips",
     };
 
     for (int i = 0; i < 5; i++)
     {
         ImGui::PushID(i);
         if (ImGui::RadioButton(renderModeNames[i], s_RenderMode == renderModes[i]))
-        {
             s_RenderMode = renderModes[i];
-        }
         ImGui::PopID();
     }
+
+    static bool forceOpaque;
+    if (ImGui::Checkbox("Force Opaque", &forceOpaque))
+        s_RaygenFlags ^= Shaders::RaygenFlagsForceOpaque;
+
+    static bool cullBackFaces;
+    if (ImGui::Checkbox("Cull Back Faces", &cullBackFaces))
+        s_RaygenFlags ^= Shaders::RaygenFlagsCullBackFaces;
+
+    static bool disableMipMaps;
+    if (ImGui::Checkbox("Disable Mip Maps", &disableMipMaps))
+        s_ClosestHitFlags ^= Shaders::ClosestHitFlagsDisableMipMaps;
 
     // TODO: Remove
     char textBuf[256] = {};

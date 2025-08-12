@@ -16,20 +16,22 @@ TextureData AssetManager::LoadTextureData(const Texture &texture)
 {
     TextureData data = {};
     const std::string pathString = texture.Path.string();
-    data.Data = stbi_load(pathString.c_str(), &data.Width, &data.Height, &data.Channels, STBI_rgb_alpha);
+    stbi_uc *content = stbi_load(pathString.c_str(), &data.Width, &data.Height, &data.Channels, STBI_rgb_alpha);
 
-    if (data.Data == nullptr)
+    if (content == nullptr)
         throw error(std::format("Could not load texture {}: {}", pathString, stbi_failure_reason()));
+
+    data.Data = std::span(reinterpret_cast<std::byte*>(content), data.Width * data.Height * 4);
 
     return data;
 }
 
 void AssetManager::ReleaseTextureData(const TextureData &textureData)
 {
-    stbi_image_free(textureData.Data);
+    stbi_image_free(textureData.Data.data());
 }
 
-static std::optional<Texture> ReadTexture(
+static std::optional<std::filesystem::path> ReadTexture(
     std::filesystem::path base, const aiMaterial *material, aiTextureType type
 )
 {
@@ -37,7 +39,7 @@ static std::optional<Texture> ReadTexture(
     if (cnt == 0)
     {
         logger::trace("Texture {} doesn't exist", aiTextureTypeToString(type));
-        return std::optional<Texture>();
+        return std::optional<std::filesystem::path>();
     }
 
     assert(cnt == 1);
@@ -45,7 +47,7 @@ static std::optional<Texture> ReadTexture(
     material->GetTexture(type, 0, &path);
 
     logger::trace("Adding texture {} at {}", aiTextureTypeToString(type), path.C_Str());
-    return Texture { base / std::filesystem::path(path.C_Str()) };
+    return base / std::filesystem::path(path.C_Str());
 }
 
 static Assimp::Importer s_Importer = Assimp::Importer();
