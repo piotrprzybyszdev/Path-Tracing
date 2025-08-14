@@ -22,3 +22,7 @@ target_link_libraries(Path-Tracing glfw imgui glm spdlog stb vma assimp Vulkan::
 if (CMAKE_GENERATOR MATCHES "^Visual Studio")
     target_link_options(Path-Tracing PRIVATE "/ignore:4099")
 endif()
+
+if(MSVC)
+    target_compile_options(Path-Tracing PRIVATE "/MP")
+endif()

@@ -1,24 +1,35 @@
 #pragma once
 
 #include <filesystem>
+#include <string>
+#include <unordered_map>
 
 #include "Scene.h"
 
 namespace PathTracing
 {
 
-struct TextureData
+struct Texture
 {
     int Width, Height, Channels;
-    std::span<std::byte> Data;
+    std::byte *Data;
 };
 
 class AssetManager
 {
 public:
-    static TextureData LoadTextureData(const Texture &texture);
-    static void ReleaseTextureData(const TextureData &textureData);
-    static Scene LoadScene(const std::filesystem::path &path);
+    static void LoadTexture(const std::filesystem::path &path);
+    static const Texture &GetTexture(const std::filesystem::path &path);
+    static void ReleaseTexture(const std::filesystem::path &path);
+
+    static void AddScene(const std::string &name, Scene &&scene);
+    static void LoadScene(const std::string &name, const std::filesystem::path &path);
+    static const Scene &GetScene(const std::string &name);
+    static void ReleaseScene(const std::string &name);
+
+private:
+    static std::unordered_map<std::filesystem::path, Texture> s_Textures;
+    static std::unordered_map<std::string, Scene> s_Scenes;
 };
 
 }

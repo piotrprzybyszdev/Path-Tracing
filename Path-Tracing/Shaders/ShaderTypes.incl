@@ -11,6 +11,7 @@ using namespace glm;
 using RenderModeFlags       = uint;
 using EnabledTextureFlags   = uint;
 using RaygenFlags           = uint;
+using MissFlags             = uint;
 using ClosestHitFlags       = uint;
 
 #endif
@@ -39,6 +40,11 @@ const uint RaygenFlagsNone                  = 0x0u;
 const uint RaygenFlagsForceOpaque           = 0x1u;
 const uint RaygenFlagsCullBackFaces         = 0x2u;
 const uint RaygenFlagsAll                   = 0x3u;
+
+const uint MissFlagsNone                    = 0x0u;
+const uint MissFlagsSkybox2D                = 0x1u;
+const uint MissFlagsSkyboxCube              = 0x2u;
+const uint MissFlagsAll                     = 0x3u;
 
 const uint ClosestHitFlagsNone              = 0x0u;
 const uint ClosestHitFlagsDisableMipMaps    = 0x1u;

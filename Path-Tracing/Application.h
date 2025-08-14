@@ -17,9 +17,11 @@ public:
 
     static void Run();
 
+    static uint32_t GetVulkanApiVersion();
     static const vk::detail::DispatchLoaderDynamic &GetDispatchLoader();
 
 private:
+    static uint32_t s_VulkanApiVersion;
     static vk::Instance s_Instance;
     static vk::detail::DispatchLoaderDynamic *s_DispatchLoader;
 

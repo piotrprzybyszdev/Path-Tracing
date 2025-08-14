@@ -81,8 +81,7 @@ void ShaderBindingTable::Upload(vk::Pipeline pipeline)
     BufferBuilder builder;
     builder
         .SetUsageFlags(
-            vk::BufferUsageFlagBits::eShaderBindingTableKHR | vk::BufferUsageFlagBits::eTransferSrc |
-            vk::BufferUsageFlagBits::eShaderDeviceAddress
+            vk::BufferUsageFlagBits::eShaderBindingTableKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress
         )
         .SetAlignment(m_GroupBaseAlignment);
 

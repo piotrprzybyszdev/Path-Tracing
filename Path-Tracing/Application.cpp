@@ -13,6 +13,7 @@
 #include "Renderer/Swapchain.h"
 
 #include "Application.h"
+#include "AssetManager.h"
 #include "ExampleScenes.h"
 #include "UserInterface.h"
 #include "Window.h"
@@ -49,6 +50,8 @@ static void GlfwErrorCallback(int error, const char *description)
     throw PathTracing::error(std::format("GLFW error {} {}", error, description).c_str());
 }
 
+uint32_t Application::s_VulkanApiVersion = vk::ApiVersion;
+
 vk::Instance Application::s_Instance = nullptr;
 vk::detail::DispatchLoaderDynamic *Application::s_DispatchLoader = nullptr;
 
@@ -72,14 +75,17 @@ void Application::Init()
 
     logger::debug("Highest supported vulkan version: {}.{}.{}", major, minor, patch);
 
-    version = vk::makeApiVersion(variant, major, minor, 0u);
+    if (major <= 1 && minor < 2)
+        throw error("Application requires Vulkan API version 1.2 or newer");
+
+    s_VulkanApiVersion = vk::makeApiVersion(variant, major, minor, 0u);
     logger::info("Selected vulkan version: {}.{}.{}", major, minor, 0u);
 
-    if (version == 0)
+    if (variant != 0)
         logger::error(std::format("Vulkan API version variant is not equal to 0: ({})", variant));
 
     const char *applicationName = "Path Tracing";
-    vk::ApplicationInfo applicationInfo(applicationName, 1, applicationName, 1, version);
+    vk::ApplicationInfo applicationInfo(applicationName, 1, applicationName, 1, s_VulkanApiVersion);
 
     if (glfwInit() == GLFW_FALSE)
         throw error("Glfw initialization failed!");
@@ -196,7 +202,7 @@ void Application::Run()
     float lastFrameTime = 0.0f;
     vk::Extent2D previousSize = {};
 
-    Renderer::SetScene(ExampleScenes::g_SponzaScene);
+    Renderer::SetScene(AssetManager::GetScene("Reuse Mesh"));
 
     while (!Window::ShouldClose())
     {
@@ -265,6 +271,11 @@ void Application::Run()
     }
 
     s_State = State::Initialized;
+}
+
+uint32_t Application::GetVulkanApiVersion()
+{
+    return s_VulkanApiVersion;
 }
 
 const vk::detail::DispatchLoaderDynamic &Application::GetDispatchLoader()

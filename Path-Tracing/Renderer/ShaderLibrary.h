@@ -54,9 +54,9 @@ public:
     );
 
 private:
-    const std::filesystem::path m_Path;
-    const std::filesystem::path m_OutputPath;
-    const vk::ShaderStageFlagBits m_Stage;
+    std::filesystem::path m_Path;
+    std::filesystem::path m_OutputPath;
+    vk::ShaderStageFlagBits m_Stage;
 
     std::set<std::filesystem::path> m_IncludedPaths;
 

@@ -69,6 +69,9 @@ void DeviceContext::Init(
 
     logger::info("Selected physical device: {}", s_PhysicalDevice.Properties.deviceName.data());
 
+    for (vk::QueueFamilyProperties prop : s_PhysicalDevice.QueueFamilyProperties)
+        logger::debug("Found queue family ({}): {}", prop.queueCount, vk::to_string(prop.queueFlags));
+
     constexpr auto flags = vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eTransfer;
     for (uint32_t index = 0; index < s_PhysicalDevice.QueueFamilyProperties.size(); index++)
     {
@@ -76,6 +79,7 @@ void DeviceContext::Init(
             (s_PhysicalDevice.QueueFamilyProperties[index].queueFlags & flags) == flags)
         {
             s_LogicalDevice.MainQueueFamilyIndex = index;
+            logger::debug("Set MainQueueFamily to index: {}", index);
             break;
         }
     }
@@ -89,7 +93,7 @@ void DeviceContext::Init(
     );
 
     vk::PhysicalDeviceFeatures2 features;
-
+    
     vk::PhysicalDeviceBufferDeviceAddressFeatures bufferFeatures;
     bufferFeatures.setBufferDeviceAddress(vk::True);
     features.setPNext(&bufferFeatures);

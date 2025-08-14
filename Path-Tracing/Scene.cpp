@@ -86,6 +86,16 @@ uint32_t Scene::AddMaterial(std::string name, Material material)
     return m_Materials.size() - 1;
 }
 
+void Scene::SetSkybox(Skybox2D &&skybox)
+{
+    m_Skybox = skybox;
+}
+
+void Scene::SetSkybox(SkyboxCube &&skybox)
+{
+    m_Skybox = skybox;
+}
+
 uint32_t Scene::AddTexture(TextureType type, std::filesystem::path path)
 {
     const std::string name = path.string();
@@ -127,7 +137,7 @@ std::span<const Shaders::Material> Scene::GetMaterials() const
     return m_Materials;
 }
 
-std::span<const Texture> Scene::GetTextures() const
+std::span<const TextureInfo> Scene::GetTextures() const
 {
     return m_Textures;
 }
@@ -140,6 +150,11 @@ std::span<const Model> Scene::GetModels() const
 std::span<const ModelInstance> Scene::GetModelInstances() const
 {
     return m_ModelInstances;
+}
+
+const Scene::SkyboxVariant &Scene::GetSkybox() const
+{
+    return m_Skybox;
 }
 
 }

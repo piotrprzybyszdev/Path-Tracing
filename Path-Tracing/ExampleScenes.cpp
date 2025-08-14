@@ -15,18 +15,22 @@ static void CreateTexturedCubesScene();
 static void CreateReuseMeshCubesScene();
 static void CreateSponzaScene();
 static void CreateChessGameScene();
+static void CreateVirtualCity();
 
 void CreateScenes()
 {
     // TODO: Only load them on demand
     // CreateTexturedCubesScene();
-    // CreateReuseMeshCubesScene();
-    CreateSponzaScene();
+    CreateReuseMeshCubesScene();
+    // CreateSponzaScene();
     // CreateChessGameScene();
+    // CreateVirtualCity();
 }
 
 static void CreateTexturedCubesScene()
 {
+    Scene scene;
+
     const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets" / "textures";
     const std::array<std::string, 3> assetNames = { "Metal", "PavingStones", "Logs" };
     const std::array<std::string, 3> materials = {
@@ -39,7 +43,7 @@ static void CreateTexturedCubesScene()
     {
         const std::filesystem::path materialPath = base / assetNames[i];
         const std::string &material = materials[i];
-        g_TexturedCubesScene.AddMaterial(
+        scene.AddMaterial(
             assetNames[i],
             Material {
                 materialPath / (material + "_Color.jpg"),
@@ -90,7 +94,7 @@ static void CreateTexturedCubesScene()
     auto indexIterator = ii.begin();
     for (uint32_t i = 0; i < 6; i++)
     {
-        g_TexturedCubesScene.AddGeometry(std::span(vertexIterator, 4), std::span(indexIterator, 6), true);
+        scene.AddGeometry(std::span(vertexIterator, 4), std::span(indexIterator, 6), true);
         std::advance(vertexIterator, 4);
         std::advance(indexIterator, 6);
     }
@@ -113,31 +117,35 @@ static void CreateTexturedCubesScene()
         { 5, 0, glm::mat4(1.0f) },
     } };
 
-    const uint32_t cube1 = g_TexturedCubesScene.AddModel(m1);
-    g_TexturedCubesScene.ModelNames.Set(cube1, "Cube different materials (ver 1)");
-    g_TexturedCubesScene.MeshNames.Set({ cube1, 5 }, "Bottom Square");
-    g_TexturedCubesScene.MeshNames.Set({ cube1, 6 }, "Top Square");
+    const uint32_t cube1 = scene.AddModel(m1);
+    scene.ModelNames.Set(cube1, "Cube different materials (ver 1)");
+    scene.MeshNames.Set({ cube1, 5 }, "Bottom Square");
+    scene.MeshNames.Set({ cube1, 6 }, "Top Square");
 
-    const uint32_t cube2 = g_TexturedCubesScene.AddModel(m2);
-    g_TexturedCubesScene.ModelNames.Set(cube2, "Cube one material (ver 2)");
+    const uint32_t cube2 = scene.AddModel(m2);
+    scene.ModelNames.Set(cube2, "Cube one material (ver 2)");
 
-    const uint32_t cube1inst1 = g_TexturedCubesScene.AddModelInstance(
-        cube1, glm::transpose(glm::translate(glm::mat4(1.0f), glm::vec3(1.0f)))
-    );
-    g_TexturedCubesScene.ModelInstanceNames.Set(cube1inst1, "Cube Instance (ver 1) (inst 1)");
-    const uint32_t cube1inst2 = g_TexturedCubesScene.AddModelInstance(
-        cube1, glm::transpose(glm::translate(glm::mat4(1.0f), glm::vec3(-1.0f)))
-    );
-    g_TexturedCubesScene.ModelInstanceNames.Set(cube1inst2, "Cube Instance (ver 1) (inst 2)");
-    g_TexturedCubesScene.AddModelInstance(
+    const uint32_t cube1inst1 =
+        scene.AddModelInstance(cube1, glm::transpose(glm::translate(glm::mat4(1.0f), glm::vec3(1.0f))));
+    scene.ModelInstanceNames.Set(cube1inst1, "Cube Instance (ver 1) (inst 1)");
+    const uint32_t cube1inst2 =
+        scene.AddModelInstance(cube1, glm::transpose(glm::translate(glm::mat4(1.0f), glm::vec3(-1.0f))));
+    scene.ModelInstanceNames.Set(cube1inst2, "Cube Instance (ver 1) (inst 2)");
+    scene.AddModelInstance(
         cube2, glm::transpose(glm::scale(
                    glm::translate(glm::mat4(1.0f), glm::vec3(0.5f, -1.0f, -3.0f)), glm::vec3(2.0f, 1.0f, 0.3f)
                ))
     );
+
+    scene.SetSkybox(Skybox2D { base / "skybox" / "sky_42_2k.png" });
+
+    AssetManager::AddScene("Textured Cubes", std::move(scene));
 }
 
 void CreateReuseMeshCubesScene()
 {
+    Scene scene;
+
     const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets" / "textures";
     const std::array<std::string, 3> assetNames = { "Metal", "PavingStones", "Logs" };
     const std::array<std::string, 3> materials = {
@@ -150,7 +158,7 @@ void CreateReuseMeshCubesScene()
     {
         const std::filesystem::path materialPath = base / assetNames[i];
         const std::string &material = materials[i];
-        g_ReuseMeshCubesScene.AddMaterial(
+        scene.AddMaterial(
             assetNames[i],
             Material {
                 materialPath / (material + "_Color.jpg"),
@@ -186,7 +194,7 @@ void CreateReuseMeshCubesScene()
     auto indexIterator = ii.begin();
     for (uint32_t i = 0; i < 3; i++)
     {
-        g_ReuseMeshCubesScene.AddGeometry(std::span(vertexIterator, 4), std::span(indexIterator, 6), true);
+        scene.AddGeometry(std::span(vertexIterator, 4), std::span(indexIterator, 6), true);
         std::advance(vertexIterator, 4);
         std::advance(indexIterator, 6);
     }
@@ -203,36 +211,53 @@ void CreateReuseMeshCubesScene()
           glm::transpose(glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(0.0f, 0.0f, 1.0f))) },
     } };
 
-    const uint32_t cube = g_ReuseMeshCubesScene.AddModel(m);
-    g_ReuseMeshCubesScene.ModelNames.Set(cube, "Cube Model");
-    g_ReuseMeshCubesScene.MeshNames.Set({ cube, 0 }, "z-axis plane (+) (mat 1)");
-    g_ReuseMeshCubesScene.MeshNames.Set({ cube, 1 }, "z-axis plane (-) (mat 1)");
-    g_ReuseMeshCubesScene.MeshNames.Set({ cube, 2 }, "x-axis plane (-) (mat 1)");
-    g_ReuseMeshCubesScene.MeshNames.Set({ cube, 3 }, "x-axis plane (+) (mat 2)");
-    g_ReuseMeshCubesScene.MeshNames.Set({ cube, 4 }, "y-axis plane (+) (mat 2)");
-    g_ReuseMeshCubesScene.MeshNames.Set({ cube, 5 }, "y-axis plane (-) (mat 2)");
+    const uint32_t cube = scene.AddModel(m);
+    scene.ModelNames.Set(cube, "Cube Model");
+    scene.MeshNames.Set({ cube, 0 }, "z-axis plane (+) (mat 1)");
+    scene.MeshNames.Set({ cube, 1 }, "z-axis plane (-) (mat 1)");
+    scene.MeshNames.Set({ cube, 2 }, "x-axis plane (-) (mat 1)");
+    scene.MeshNames.Set({ cube, 3 }, "x-axis plane (+) (mat 2)");
+    scene.MeshNames.Set({ cube, 4 }, "y-axis plane (+) (mat 2)");
+    scene.MeshNames.Set({ cube, 5 }, "y-axis plane (-) (mat 2)");
 
-    const uint32_t cube1inst1 = g_ReuseMeshCubesScene.AddModelInstance(cube, glm::mat4(1.0f));
-    g_ReuseMeshCubesScene.ModelInstanceNames.Set(cube1inst1, "Cube Instance");
+    const uint32_t cube1inst1 = scene.AddModelInstance(cube, glm::mat4(1.0f));
+    scene.ModelInstanceNames.Set(cube1inst1, "Cube Instance");
+
+    const auto skyboxPath = base / "skybox" / "sky_42_cubemap_(roblox)_2k";
+    scene.SetSkybox(SkyboxCube {
+        skyboxPath / "px.png",
+        skyboxPath / "nx.png",
+        skyboxPath / "py.png",
+        skyboxPath / "ny.png",
+        skyboxPath / "pz.png",
+        skyboxPath / "nz.png",
+    });
+
+    AssetManager::AddScene("Reuse Mesh", std::move(scene));
 }
 
 static void CreateSponzaScene()
 {
     const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets" / "scenes";
-
-    g_SponzaScene = AssetManager::LoadScene(
-        base / "KhronosScenes" / "glTF-Sample-Models-main" / "2.0" / "Sponza" / "glTF" / "Sponza.gltf"
-    );
+    const std::filesystem::path path =
+        base / "KhronosScenes" / "glTF-Sample-Models-main" / "2.0" / "Sponza" / "glTF" / "Sponza.gltf";
+    AssetManager::LoadScene("Sponza", path);
 }
 
 void CreateChessGameScene()
 {
     const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets" / "scenes";
+    const std::filesystem::path path = base / "KhronosScenes" / "glTF-Sample-Models-main" / "2.0" /
+                                       "ABeautifulGame" / "glTF" / "ABeautifulGame.gltf";
+    AssetManager::LoadScene("Chess Game", path);
+}
 
-    g_ChessGameScene = AssetManager::LoadScene(
-        base / "KhronosScenes" / "glTF-Sample-Models-main" / "2.0" / "ABeautifulGame" / "glTF" /
-        "ABeautifulGame.gltf"
-    );
+void CreateVirtualCity()
+{
+    const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets" / "scenes";
+    const std::filesystem::path path =
+        base / "KhronosScenes" / "glTF-Sample-Models-main" / "2.0" / "VC" / "glTF" / "VC.gltf";
+    AssetManager::LoadScene("Virtual City", path);
 }
 
 }

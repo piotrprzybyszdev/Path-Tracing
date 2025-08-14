@@ -31,8 +31,12 @@ if (CMAKE_GENERATOR MATCHES "^Visual Studio")
     set_target_properties(zlibstatic PROPERTIES FOLDER vendor/assimp)
 endif()
 
-set(ASSETS textures/PavingStones textures/Metal textures/Logs scenes/KhronosScenes)
-set(ASSET_URLS https://ambientcg.com/get?file=PavingStones142_1K-JPG.zip https://ambientcg.com/get?file=Metal062C_1K-JPG.zip https://ambientcg.com/get?file=Logs001_1K-JPG.zip https://github.com/KhronosGroup/glTF-Sample-Models/archive/refs/heads/main.zip)
+if (MSVC)
+    set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT "Path-Tracing")
+endif()
+
+set(ASSETS textures/PavingStones textures/Metal textures/Logs scenes/KhronosScenes textures/skybox)
+set(ASSET_URLS https://ambientcg.com/get?file=PavingStones142_1K-JPG.zip https://ambientcg.com/get?file=Metal062C_1K-JPG.zip https://ambientcg.com/get?file=Logs001_1K-JPG.zip https://github.com/KhronosGroup/glTF-Sample-Models/archive/refs/heads/main.zip https://drive.google.com/uc?id=1zg2hlXbV598pRHIVO8Qsu13OpGHLwuFc)
 list(LENGTH ASSETS ASSET_COUNT)
 
 set(INDEX 1)

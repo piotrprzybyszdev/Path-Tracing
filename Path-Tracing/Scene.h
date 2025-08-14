@@ -9,6 +9,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <variant>
 #include <vector>
 
 #include "Core/Registry.h"
@@ -18,12 +19,12 @@
 namespace PathTracing
 {
 
-enum class TextureType
+enum class TextureType : uint8_t
 {
     Color, Normal, Roughness, Metalic
 };
 
-struct Texture
+struct TextureInfo
 {
     TextureType Type;
     std::filesystem::path Path;
@@ -72,8 +73,30 @@ struct ModelInstance
     glm::mat4 Transform;
 };
 
+struct SkyboxClearColor
+{
+};
+
+struct Skybox2D
+{
+    std::filesystem::path Path;
+};
+
+struct SkyboxCube
+{
+    std::filesystem::path Front;
+    std::filesystem::path Back;
+    std::filesystem::path Up;
+    std::filesystem::path Down;
+    std::filesystem::path Left;
+    std::filesystem::path Right;
+};
+
 class Scene
 {
+public:
+    using SkyboxVariant = std::variant<SkyboxClearColor, Skybox2D, SkyboxCube>;
+
 public:
     Scene();
 
@@ -85,15 +108,20 @@ public:
 
     uint32_t AddMaterial(std::string name, Material material);
 
+    void SetSkybox(Skybox2D &&skybox);
+    void SetSkybox(SkyboxCube &&skybox);
+
     [[nodiscard]] std::span<const Shaders::Vertex> GetVertices() const;
     [[nodiscard]] std::span<const uint32_t> GetIndices() const;
     [[nodiscard]] std::span<const glm::mat4> GetTransforms() const;
     [[nodiscard]] std::span<const Geometry> GetGeometries() const;
     [[nodiscard]] std::span<const Shaders::Material> GetMaterials() const;
-    [[nodiscard]] std::span<const Texture> GetTextures() const;
+    [[nodiscard]] std::span<const TextureInfo> GetTextures() const;
 
     [[nodiscard]] std::span<const Model> GetModels() const;
     [[nodiscard]] std::span<const ModelInstance> GetModelInstances() const;
+
+    [[nodiscard]] const SkyboxVariant &GetSkybox() const;
 
     static inline constexpr uint32_t IdentityTransformIndex = 0;
 
@@ -107,11 +135,13 @@ private:
     std::vector<Shaders::Material> m_Materials;
     std::unordered_map<std::string, uint32_t> m_MaterialIndices;
 
-    std::vector<Texture> m_Textures;
+    std::vector<TextureInfo> m_Textures;
     std::unordered_map<std::string, uint32_t> m_TextureIndices;
 
     std::vector<Model> m_Models;
     std::vector<ModelInstance> m_ModelInstances;
+
+    SkyboxVariant m_Skybox = SkyboxClearColor {};
 
 #ifndef NDEBUG
     static inline constexpr bool g_EnableNameRegistries = true;

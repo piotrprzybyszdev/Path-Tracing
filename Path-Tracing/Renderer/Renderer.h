@@ -34,11 +34,12 @@ public:
 
     static void ReloadShaders();
 
-    static inline constexpr vk::Extent2D s_MaxTextureSize = {1024u, 1024u };
+    static inline constexpr vk::Extent2D s_MaxTextureSize = { 512u, 512u };
 
     static Shaders::RenderModeFlags s_RenderMode;
     static Shaders::EnabledTextureFlags s_EnabledTextures;
     static Shaders::RaygenFlags s_RaygenFlags;
+    static Shaders::MissFlags s_MissFlags;
     static Shaders::ClosestHitFlags s_ClosestHitFlags;
 
     // Blocking one time submission buffer
@@ -68,6 +69,7 @@ private:
 
         std::unique_ptr<Buffer> RaygenUniformBuffer;
         std::unique_ptr<Buffer> ClosestHitUniformBuffer;
+        std::unique_ptr<Buffer> MissUniformBuffer;
     };
 
     static std::vector<RenderingResources> s_RenderingResources;
@@ -83,6 +85,8 @@ private:
 
         std::vector<Image> Textures;
 
+        std::unique_ptr<Image> Skybox = nullptr;
+
         std::unique_ptr<ShaderBindingTable> SceneShaderBindingTable = nullptr;
         std::unique_ptr<AccelerationStructure> SceneAccelerationStructure = nullptr;
     } s_StaticSceneData;
@@ -97,10 +101,14 @@ private:
 
 private:
     static void AddTexture(vk::Extent2D extent, vk::Format format, const std::byte *data);
-    static void AddTexture(Texture texture);
-    static void AddTexture(Texture texture, const std::string &name);
-    static bool SetupPipeline();
+    static void AddTexture(TextureInfo textureInfo);
+    static void AddTexture(TextureInfo textureInfo, const std::string &name);
     
+    static void AddSkybox(const Skybox2D &skybox);
+    static void AddSkybox(const SkyboxCube &skybox);
+    
+    static bool SetupPipeline();
+
     static void RecordCommandBuffer(const RenderingResources &resources);
 
     static std::unique_ptr<Image> CreateStorageImage(vk::Extent2D extent);
@@ -111,7 +119,7 @@ private:
     static std::unique_ptr<BufferBuilder> s_BufferBuilder;
     static std::unique_ptr<ImageBuilder> s_ImageBuilder;
 
-    static vk::Sampler s_Sampler;
+    static vk::Sampler s_TextureSampler;
 };
 
 }

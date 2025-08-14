@@ -64,7 +64,7 @@ public:
     DescriptorSetBuilder(const DescriptorSetBuilder &) = delete;
     DescriptorSetBuilder &operator=(const DescriptorSetBuilder &) = delete;
 
-    DescriptorSetBuilder &SetDescriptor(vk::DescriptorSetLayoutBinding binding);
+    DescriptorSetBuilder &SetDescriptor(vk::DescriptorSetLayoutBinding binding, bool partial = false);
 
     [[nodiscard]] vk::DescriptorSetLayout CreateLayout();
     [[nodiscard]] std::unique_ptr<DescriptorSet> CreateSetUnique(uint32_t framesInFlight);

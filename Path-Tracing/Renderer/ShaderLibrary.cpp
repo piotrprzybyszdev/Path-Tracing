@@ -78,13 +78,14 @@ std::filesystem::path Shader::ToOutputPath(const std::filesystem::path &path)
 }
 
 Shader::Shader(std::filesystem::path path, vk::ShaderStageFlagBits stage)
-    : m_Path(path), m_OutputPath(ToOutputPath(path)), m_Stage(stage)
+    : m_Path(std::move(path)), m_OutputPath(ToOutputPath(m_Path)), m_Stage(stage)
 {
 }
 
 Shader::Shader(Shader &&shader) noexcept
-    : m_Path(shader.m_Path), m_OutputPath(shader.m_OutputPath), m_Stage(shader.m_Stage),
-      m_IncludedPaths(shader.m_IncludedPaths), m_UpdateTime(shader.m_UpdateTime), m_Code(shader.m_Code),
+    : m_Path(std::move(shader.m_Path)), m_OutputPath(std::move(shader.m_OutputPath)),
+      m_Stage(shader.m_Stage), m_IncludedPaths(std::move(shader.m_IncludedPaths)),
+      m_UpdateTime(shader.m_UpdateTime), m_Code(std::move(shader.m_Code)),
       m_Module(shader.m_Module)
 {
     shader.m_IsMoved = true;
@@ -210,7 +211,7 @@ ShaderLibrary::ShaderLibrary()
     m_Includer = includer.get();
     m_Options.SetIncluder(std::move(includer));
 
-    m_Options.SetTargetEnvironment(shaderc_target_env_vulkan, shaderc_env_version_vulkan_1_4);
+    m_Options.SetTargetEnvironment(shaderc_target_env_vulkan, Application::GetVulkanApiVersion());
 #ifndef NDEBUG
     m_Options.SetGenerateDebugInfo();
 #endif
@@ -220,7 +221,7 @@ ShaderLibrary::~ShaderLibrary() = default;
 
 ShaderId ShaderLibrary::AddShader(std::filesystem::path path, vk::ShaderStageFlagBits stage)
 {
-    m_Shaders.emplace_back(path, stage);
+    m_Shaders.emplace_back(std::move(path), stage);
     m_Stages.emplace_back(vk::PipelineShaderStageCreateFlags(), stage, nullptr, "main");
     return m_Shaders.size() - 1;
 }

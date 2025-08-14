@@ -27,6 +27,11 @@ struct RaygenUniformData
     uint u_Flags;               // enum
 };
 
+struct MissUniformData
+{
+    uint u_Flags;               // enum
+};
+
 struct ClosestHitUniformData
 {
     uint u_RenderMode;          // enum

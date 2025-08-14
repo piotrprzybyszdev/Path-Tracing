@@ -97,7 +97,7 @@ DescriptorSetBuilder::~DescriptorSetBuilder()
     DeviceContext::GetLogical().destroyDescriptorSetLayout(m_Layout);
 }
 
-DescriptorSetBuilder &DescriptorSetBuilder::SetDescriptor(vk::DescriptorSetLayoutBinding binding)
+DescriptorSetBuilder &DescriptorSetBuilder::SetDescriptor(vk::DescriptorSetLayoutBinding binding, bool partial)
 {
     const uint32_t bindingIndex = binding.binding;
 
@@ -109,8 +109,10 @@ DescriptorSetBuilder &DescriptorSetBuilder::SetDescriptor(vk::DescriptorSetLayou
     }
 
     m_Types[bindingIndex] = binding.descriptorType;
-    m_Flags[bindingIndex] = binding.descriptorCount == 1 ? vk::DescriptorBindingFlags()
-                                                         : vk::DescriptorBindingFlagBits::ePartiallyBound;
+    
+    m_Flags[bindingIndex] = !partial && binding.descriptorCount == 1
+                                ? vk::DescriptorBindingFlags()
+                                : vk::DescriptorBindingFlagBits::ePartiallyBound;
     m_Bindings[bindingIndex] = binding;
     return *this;
 }

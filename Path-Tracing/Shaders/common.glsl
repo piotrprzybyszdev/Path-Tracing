@@ -1,5 +1,7 @@
 #include "ShaderRendererTypes.incl"
 
+const float PI = 3.14159265359f;
+
 vec3 computeBarycentricCoords(vec3 attribs)
 {
     return vec3(1.0f - attribs.x - attribs.y, attribs.x, attribs.y);
