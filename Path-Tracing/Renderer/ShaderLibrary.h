@@ -4,6 +4,7 @@
 #include <vulkan/vulkan.hpp>
 
 #include <filesystem>
+#include <map>
 #include <set>
 #include <string_view>
 #include <vector>
@@ -60,7 +61,7 @@ private:
 
     std::set<std::filesystem::path> m_IncludedPaths;
 
-    std::filesystem::file_time_type m_UpdateTime;
+    std::filesystem::file_time_type m_UpdateTime = std::filesystem::file_time_type::min();
     std::vector<char> m_Code;
     vk::ShaderModule m_Module;
 

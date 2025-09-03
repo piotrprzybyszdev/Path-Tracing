@@ -1,5 +1,6 @@
 #pragma once
 
+#define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 
@@ -21,8 +22,9 @@ enum Key : uint16_t
     S = GLFW_KEY_S,
     W = GLFW_KEY_W,
 
-    Space = GLFW_KEY_SPACE,
     H = GLFW_KEY_H,
+    Space = GLFW_KEY_SPACE,
+    Enter = GLFW_KEY_ENTER,
 };
 
 class Input

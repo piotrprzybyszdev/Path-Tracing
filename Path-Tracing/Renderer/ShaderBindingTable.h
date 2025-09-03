@@ -30,9 +30,9 @@ public:
     [[nodiscard]] vk::StridedDeviceAddressRegionKHR GetMissTableEntry() const;
     [[nodiscard]] vk::StridedDeviceAddressRegionKHR GetClosestHitTableEntry() const;
 
-    static inline uint32_t RaygenGroupIndex = 0;
-    static inline uint32_t MissGroupIndex = 1;
-    static inline uint32_t HitGroupIndex = 2;
+    static inline constexpr uint32_t RaygenGroupIndex = 0;
+    static inline constexpr uint32_t MissGroupIndex = 1;
+    static inline constexpr uint32_t HitGroupIndex = 2;
 
 private:
     const uint32_t m_HandleSize;
@@ -47,9 +47,8 @@ private:
     uint32_t m_ClosestHitGroupCapacity = 0;
     std::vector<std::byte> m_ClosestHitGroups;
 
-    Buffer m_RaygenTable;
-    Buffer m_MissTable;
-    Buffer m_ClosestHitTable;
+    Buffer m_TableBuffer;
+    vk::DeviceAddress m_TableBufferDeviceAddress = 0;
 };
 
 }

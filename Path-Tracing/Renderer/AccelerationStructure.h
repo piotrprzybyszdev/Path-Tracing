@@ -1,10 +1,9 @@
 #pragma once
 
-#include <optional>
+#include <vulkan/vulkan.hpp>
+
 #include <span>
 #include <vector>
-
-#include <vulkan/vulkan.hpp>
 
 #include "Scene.h"
 

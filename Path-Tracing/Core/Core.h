@@ -22,28 +22,31 @@ class Stats
 {
 public:
     template<typename... Args>
-    static void AddStat(std::string_view statName, std::format_string<Args...> format, Args &&...args);
-
-    static void AddMeasurement(std::string_view timer, std::chrono::nanoseconds measurement);
+    static void AddStat(const std::string &statName, std::format_string<Args...> format, Args &&...args);
 
     static void Clear();
     static void FlushTimers();
+    static void ResetMax();
 
     static const std::map<std::string, std::string> &GetStats();
 
-    static void LogStat(std::string_view stat);
+    static void LogStat(const std::string &stat);
     static void LogStats();
 
 private:
     static std::map<std::string, std::string> s_Stats;
     static std::map<std::string, std::chrono::nanoseconds> s_Measurements;
+    static std::map<std::string, std::chrono::nanoseconds> s_MaxMeasurements;
+
+    friend class Timer;
+    friend class MaxTimer;
 };
 
 template<typename... Args>
-void Stats::AddStat(std::string_view statName, const std::format_string<Args...> format, Args &&...args)
+void Stats::AddStat(const std::string &statName, const std::format_string<Args...> format, Args &&...args)
 {
     logger::trace(std::vformat(format.get(), std::make_format_args(args...)));
-    s_Stats[statName.data()] = std::vformat(format.get(), std::make_format_args(args...));
+    s_Stats[statName] = std::vformat(format.get(), std::make_format_args(args...));
 }
 
 class Timer
@@ -55,6 +58,17 @@ public:
 private:
     std::string m_Name;
 
+    std::chrono::time_point<std::chrono::high_resolution_clock> m_Start;
+};
+
+class MaxTimer
+{
+public:
+    explicit MaxTimer(std::string &&name);
+    ~MaxTimer();
+
+private:
+    std::string m_Name;
     std::chrono::time_point<std::chrono::high_resolution_clock> m_Start;
 };
 
@@ -94,9 +108,11 @@ struct Assert
     }
 };
 
+namespace
+{
+
 template<typename T1, typename T2>
-T2 TrivialCopy(const T1 &in)
-    requires std::is_trivially_copyable_v<T1> && std::is_trivially_copyable_v<T2>
+T2 TrivialCopy(const T1 &in) requires std::is_trivially_copyable_v<T1> && std::is_trivially_copyable_v<T2>
 {
     T2 out;
     memcpy(reinterpret_cast<void *>(&out), reinterpret_cast<const void *>(&in), sizeof(T2));
@@ -110,16 +126,22 @@ std::span<std::byte> ToByteSpan(T &value)
     return std::span<std::byte>(reinterpret_cast<std::byte *>(&value), sizeof(T));
 }
 
-template<typename T> std::span<const std::byte> ToByteSpan(const T &value)
+template<typename T>
+std::span<const std::byte> ToByteSpan(const T &value)
     requires std::is_trivially_copyable_v<T> && std::is_trivially_copyable_v<T>
 {
     return std::span<const std::byte>(reinterpret_cast<const std::byte *>(&value), sizeof(T));
 }
 
-template<typename T1, typename T2> std::span<T2> SpanCast(std::span<T1> span)
+template<typename T> std::span<const std::byte> ToByteSpan(T &&value) = delete;
+
+template<typename T1, typename T2>
+std::span<T2> SpanCast(std::span<T1> span)
     requires std::is_standard_layout_v<T1> && std::is_standard_layout_v<T2>
 {
     return std::span(reinterpret_cast<T2 *>(span.data()), span.size() * sizeof(T1) / sizeof(T2));
+}
+
 }
 
 }

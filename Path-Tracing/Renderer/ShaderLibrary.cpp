@@ -45,7 +45,7 @@ vk::RayTracingShaderGroupTypeKHR ToShaderGroupType(vk::ShaderStageFlagBits stage
     }
 }
 
-FileInfo ReadFile(std::filesystem::path path)
+FileInfo ReadFile(const std::filesystem::path &path)
 {
     FileInfo fileInfo = { .Time = std::filesystem::last_write_time(path), .Path = path.string() };
 
@@ -83,21 +83,21 @@ Shader::Shader(std::filesystem::path path, vk::ShaderStageFlagBits stage)
 }
 
 Shader::Shader(Shader &&shader) noexcept
-    : m_Path(std::move(shader.m_Path)), m_OutputPath(std::move(shader.m_OutputPath)),
-      m_Stage(shader.m_Stage), m_IncludedPaths(std::move(shader.m_IncludedPaths)),
-      m_UpdateTime(shader.m_UpdateTime), m_Code(std::move(shader.m_Code)),
-      m_Module(shader.m_Module)
+    : m_Path(std::move(shader.m_Path)), m_OutputPath(std::move(shader.m_OutputPath)), m_Stage(shader.m_Stage),
+      m_IncludedPaths(std::move(shader.m_IncludedPaths)), m_UpdateTime(shader.m_UpdateTime),
+      m_Code(std::move(shader.m_Code)), m_Module(shader.m_Module)
 {
     shader.m_IsMoved = true;
 }
 
-Shader::~Shader()
+Shader::~Shader() noexcept
 {
     if (m_IsMoved)
         return;
 
-    if (!std::filesystem::is_regular_file(m_OutputPath) ||
-        m_UpdateTime > std::filesystem::last_write_time(m_OutputPath))
+    if ((!std::filesystem::is_regular_file(m_OutputPath) ||
+         m_UpdateTime > std::filesystem::last_write_time(m_OutputPath)) &&
+        m_UpdateTime >= ComputeUpdateTime())
     {
         logger::info("Saving {} to disk", m_OutputPath.string());
         std::ofstream file(m_OutputPath, std::ios::binary);
@@ -198,7 +198,7 @@ vk::ShaderModule Shader::GetModule(
     }
 
     logger::info("Shader {} compiled successfully!", m_Path.string());
-    
+
     UpdateModule(std::span(compileResult), updateTime);
     return m_Module;
 }
@@ -214,6 +214,9 @@ ShaderLibrary::ShaderLibrary()
     m_Options.SetTargetEnvironment(shaderc_target_env_vulkan, Application::GetVulkanApiVersion());
 #ifndef NDEBUG
     m_Options.SetGenerateDebugInfo();
+    m_Options.SetOptimizationLevel(shaderc_optimization_level_zero);
+#else
+    m_Options.SetOptimizationLevel(shaderc_optimization_level_performance);
 #endif
 }
 
@@ -270,7 +273,7 @@ vk::Pipeline ShaderLibrary::CreatePipeline(vk::PipelineLayout layout)
 
 shaderc_include_result *Includer::GetInclude(
     const char *requested_source, shaderc_include_type type, const char *requesting_source,
-    size_t include_depth
+    size_t /* include_depth */
 )
 {
     std::filesystem::path path;
@@ -309,7 +312,7 @@ shaderc_include_result *Includer::GetInclude(
 
 void Includer::ReleaseInclude(shaderc_include_result *data)
 {
-    delete data->user_data;
+    delete static_cast<FileInfo *>(data->user_data);
     delete data;
 }
 

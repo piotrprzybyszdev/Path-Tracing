@@ -1,3 +1,4 @@
+#define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan.hpp>
 
@@ -53,7 +54,7 @@ static void GlfwErrorCallback(int error, const char *description)
 uint32_t Application::s_VulkanApiVersion = vk::ApiVersion;
 
 vk::Instance Application::s_Instance = nullptr;
-vk::detail::DispatchLoaderDynamic *Application::s_DispatchLoader = nullptr;
+std::unique_ptr<vk::detail::DispatchLoaderDynamic> Application::s_DispatchLoader = nullptr;
 
 #ifndef NDEBUG
 vk::DebugUtilsMessengerEXT Application::s_DebugMessenger = nullptr;
@@ -114,7 +115,7 @@ void Application::Init()
     s_Instance = vk::createInstance(createInfo);
     s_State = State::HasInstance;
 
-    s_DispatchLoader = new vk::detail::DispatchLoaderDynamic(s_Instance, vkGetInstanceProcAddr);
+    s_DispatchLoader = std::make_unique<vk::detail::DispatchLoaderDynamic>(s_Instance, vkGetInstanceProcAddr);
 
 #ifndef NDEBUG
     {
@@ -134,14 +135,14 @@ void Application::Init()
     }
 #endif
 
-    constexpr vk::Extent2D windowSize(1280, 720);
+    const vk::Extent2D windowSize(1280, 720);
 
     Window::Create(windowSize.width, windowSize.height, applicationName);
     s_Surface = Window::CreateSurface(s_Instance);
     Input::SetWindow(Window::GetHandle());
     s_State = State::HasWindow;
 
-    DeviceContext::Init(s_Instance, version, requestedLayers, s_Surface);
+    DeviceContext::Init(s_Instance, requestedLayers, s_Surface);
     s_State = State::HasDevice;
 
     s_Swapchain = std::make_unique<Swapchain>(
@@ -151,9 +152,9 @@ void Application::Init()
     s_State = State::HasSwapchain;
 
     UserInterface::Init(s_Instance, s_Swapchain->GetSurfaceFormat().format, s_Swapchain->GetImageCount());
-    ExampleScenes::CreateScenes();
-
     s_State = State::HasUserInterface;
+
+    ExampleScenes::CreateScenes();
 
     Renderer::Init(s_Swapchain.get());
     s_State = State::Initialized;
@@ -186,7 +187,7 @@ void Application::Shutdown()
 #ifndef NDEBUG
         s_Instance.destroyDebugUtilsMessengerEXT(s_DebugMessenger, nullptr, *s_DispatchLoader);
 #endif
-        delete s_DispatchLoader;
+        s_DispatchLoader.reset();
         s_Instance.destroy();
     }
 
@@ -202,7 +203,7 @@ void Application::Run()
     float lastFrameTime = 0.0f;
     vk::Extent2D previousSize = {};
 
-    Renderer::SetScene(AssetManager::GetScene("Reuse Mesh"));
+    Renderer::SetScene(AssetManager::GetScene("Sponza"));
 
     while (!Window::ShouldClose())
     {
@@ -240,7 +241,7 @@ void Application::Run()
         }
 
         {
-            Timer timer("Frame total");
+            MaxTimer timer("Frame total");
 
             {
                 Timer timer("Update");
@@ -255,7 +256,7 @@ void Application::Run()
             }
 
             {
-                Timer timer("Render");
+                MaxTimer timer("Render");
 
                 if (!s_Swapchain->AcquireImage())
                     continue;

@@ -5,8 +5,7 @@
 namespace PathTracing
 {
 
-template<typename Key, typename Value>
-struct RegistryStorage
+template<typename Key, typename Value> struct RegistryStorage
 {
     std::map<Key, Value> m_Content;
 };

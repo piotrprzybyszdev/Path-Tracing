@@ -23,8 +23,8 @@ public:
     Swapchain(const Swapchain &) = delete;
     Swapchain &operator=(const Swapchain &) = delete;
 
-    uint32_t GetImageCount() const;
-    uint32_t GetInFlightCount() const;
+    [[nodiscard]] uint32_t GetImageCount() const;
+    [[nodiscard]] uint32_t GetInFlightCount() const;
 
     struct Frame
     {
@@ -39,16 +39,16 @@ public:
         vk::Fence InFlightFence;
     };
 
-    const Frame &GetCurrentFrame() const;
-    const SynchronizationObjects &GetCurrentSyncObjects() const;
-    uint32_t GetCurrentFrameInFlightIndex() const;
+    [[nodiscard]] const Frame &GetCurrentFrame() const;
+    [[nodiscard]] const SynchronizationObjects &GetCurrentSyncObjects() const;
+    [[nodiscard]] uint32_t GetCurrentFrameInFlightIndex() const;
 
     bool AcquireImage();
     bool Present();
 
-    vk::Extent2D GetExtent() const;
-    vk::SurfaceFormatKHR GetSurfaceFormat() const;
-    vk::PresentModeKHR GetPresentMode() const;
+    [[nodiscard]] vk::Extent2D GetExtent() const;
+    [[nodiscard]] vk::SurfaceFormatKHR GetSurfaceFormat() const;
+    [[nodiscard]] vk::PresentModeKHR GetPresentMode() const;
 
 private:
     vk::SwapchainKHR m_Handle { nullptr };
@@ -61,7 +61,7 @@ private:
     uint32_t m_InFlightCount;
     vk::Extent2D m_Extent;
 
-    uint32_t GetImageCount(vk::PresentModeKHR presentMode) const;
+    [[nodiscard]] uint32_t GetImageCount(vk::PresentModeKHR presentMode) const;
 
     std::vector<Frame> m_Frames;
     std::vector<SynchronizationObjects> m_SynchronizationObjects;

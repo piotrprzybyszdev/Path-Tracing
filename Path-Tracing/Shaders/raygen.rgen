@@ -12,7 +12,7 @@ layout(binding = 2, set = 0) uniform MainBlock {
 
 layout(location = 0) rayPayloadEXT vec3 hitValue;
 
-void main() 
+void main()
 {
 	const Camera camera = mainUniform.u_Camera;
 

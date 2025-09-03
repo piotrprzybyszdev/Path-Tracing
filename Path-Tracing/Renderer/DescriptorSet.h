@@ -28,14 +28,16 @@ public:
     );
     void UpdateBuffer(uint32_t binding, uint32_t frameIndex, const Buffer &buffer);
     void UpdateImage(
-        uint32_t binding, uint32_t frameIndex, const Image &image, vk::Sampler sampler, vk::ImageLayout layout
+        uint32_t binding, uint32_t frameIndex, const Image &image, vk::Sampler sampler,
+        vk::ImageLayout layout, uint32_t index = 0
     );
     void UpdateImageArray(
-        uint32_t binding, uint32_t frameIndex, std::span<const Image> images, vk::Sampler sampler,
-        vk::ImageLayout layout, uint32_t firstIndex = 0
+        uint32_t binding, uint32_t frameIndex, std::span<const Image> images,
+        std::span<const uint32_t> imageMap, vk::Sampler sampler, vk::ImageLayout layout,
+        uint32_t firstIndex = 0
     );
 
-    void FlushUpdate();
+    void FlushUpdate(uint32_t frameIndex);
 
 private:
     const uint32_t m_FramesInFlight;
@@ -44,15 +46,21 @@ private:
     const std::vector<vk::DescriptorType> m_Types;
 
     std::vector<vk::DescriptorSet> m_Sets;
-    std::vector<vk::WriteDescriptorSet> m_Writes;
 
-    std::list<std::vector<vk::AccelerationStructureKHR>> m_AccelerationStructures;
-    std::list<vk::WriteDescriptorSetAccelerationStructureKHR> m_AccelerationStructureInfos;
-    std::list<vk::DescriptorBufferInfo> m_BufferInfos;
-    std::list<std::vector<vk::DescriptorImageInfo>> m_ImageInfos;
+    struct FrameDescriptors
+    {
+        std::list<std::vector<vk::AccelerationStructureKHR>> AccelerationStructures;
+        std::list<vk::WriteDescriptorSetAccelerationStructureKHR> AccelerationStructureInfos;
+        std::list<vk::DescriptorBufferInfo> BufferInfos;
+        std::list<std::vector<vk::DescriptorImageInfo>> ImageInfos;
+
+        std::vector<vk::WriteDescriptorSet> Writes;
+    };
+
+    std::vector<FrameDescriptors> m_Descriptors;
 
 private:
-    void AddWrite(uint32_t binding, uint32_t frameIndex, uint32_t count = 1, uint32_t arrayIndex = 0);
+    void AddWrite(uint32_t binding, uint32_t frameIndex, uint32_t arrayIndex = 0, uint32_t count = 1);
 };
 
 class DescriptorSetBuilder

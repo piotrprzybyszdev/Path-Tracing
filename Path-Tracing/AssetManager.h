@@ -18,9 +18,8 @@ struct Texture
 class AssetManager
 {
 public:
-    static void LoadTexture(const std::filesystem::path &path);
-    static const Texture &GetTexture(const std::filesystem::path &path);
-    static void ReleaseTexture(const std::filesystem::path &path);
+    static Texture LoadTexture(const std::filesystem::path &path);
+    static void ReleaseTexture(Texture texture);
 
     static void AddScene(const std::string &name, Scene &&scene);
     static void LoadScene(const std::string &name, const std::filesystem::path &path);
@@ -28,7 +27,6 @@ public:
     static void ReleaseScene(const std::string &name);
 
 private:
-    static std::unordered_map<std::filesystem::path, Texture> s_Textures;
     static std::unordered_map<std::string, Scene> s_Scenes;
 };
 

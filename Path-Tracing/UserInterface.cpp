@@ -6,29 +6,38 @@
 
 #include "Core/Core.h"
 
-#include "Renderer/Renderer.h"
 #include "Renderer/DeviceContext.h"
+#include "Renderer/Renderer.h"
+
+#include "AssetManager.h"
 #include "UserInterface.h"
 #include "Window.h"
 
 namespace PathTracing
 {
 
-static vk::PresentModeKHR s_PresentMode = vk::PresentModeKHR::eFifo;
-static Shaders::EnabledTextureFlags s_EnabledTextures = Shaders::TexturesEnableAll;
-static Shaders::RenderModeFlags s_RenderMode = Shaders::RenderModeColor;
-static Shaders::RaygenFlags s_RaygenFlags = Shaders::RaygenFlagsNone;
-static Shaders::ClosestHitFlags s_ClosestHitFlags = Shaders::ClosestHitFlagsNone;
 bool UserInterface::s_IsVisible = false;
 bool UserInterface::s_IsFocused = false;
 ImGuiIO *UserInterface::s_Io = nullptr;
 
-static void CheckVkResult(VkResult err)
+namespace
+{
+
+vk::PresentModeKHR s_PresentMode = vk::PresentModeKHR::eFifo;
+Shaders::EnabledTextureFlags s_EnabledTextures = Shaders::TexturesEnableAll;
+Shaders::RenderModeFlags s_RenderMode = Shaders::RenderModeColor;
+Shaders::RaygenFlags s_RaygenFlags = Shaders::RaygenFlagsNone;
+Shaders::ClosestHitFlags s_ClosestHitFlags = Shaders::ClosestHitFlagsNone;
+char s_SceneName[256] = "Sponza";
+
+void CheckVkResult(VkResult err)
 {
     if (err == VkResult::VK_SUCCESS)
         return;
 
     logger::error("ImGui Vulkan Error: {}", vk::to_string(static_cast<vk::Result>(err)));
+}
+
 }
 
 void UserInterface::Init(vk::Instance instance, vk::Format format, uint32_t swapchainImageCount)
@@ -51,7 +60,7 @@ void UserInterface::Init(vk::Instance instance, vk::Format format, uint32_t swap
     init_info.ImageCount = swapchainImageCount;
     init_info.CheckVkResultFn = CheckVkResult;
     init_info.UseDynamicRendering = true;
-    std::vector<vk::Format> formats = { format };
+    std::array<vk::Format, 1> formats = { format };
     init_info.PipelineRenderingCreateInfo = vk::PipelineRenderingCreateInfoKHR(0, formats);
     ImGui_ImplVulkan_Init(&init_info);
 }
@@ -81,10 +90,15 @@ void UserInterface::OnKeyRelease(Key key)
     switch (key)
     {
     case Key::Space:
-        s_IsVisible = !s_IsVisible;
+        if (!s_IsFocused)
+            s_IsVisible = !s_IsVisible;
         break;
     case Key::H:
-        Renderer::ReloadShaders();
+        if (!s_IsFocused)
+            Renderer::ReloadShaders();
+        break;
+    case Key::Enter:
+        Renderer::SetScene(AssetManager::GetScene(s_SceneName));
         break;
     }
 }
@@ -139,18 +153,18 @@ void UserInterface::DefineUI()
         "Immediate",
     };
 
-    static int selected_idx = 0;
-    const char *combo_preview_value = modeNames[selected_idx];
+    static int selectedIdx = 0;
+    const char *comboPreviewValue = modeNames[selectedIdx];
 
-    if (ImGui::BeginCombo("Present Mode", combo_preview_value))
+    if (ImGui::BeginCombo("Present Mode", comboPreviewValue))
     {
         for (int i = 0; i < 3; i++)
         {
             ImGui::PushID(i);
-            const bool is_selected = (selected_idx == i);
-            if (ImGui::Selectable(modeNames[i], is_selected))
+            const bool isSelected = (selectedIdx == i);
+            if (ImGui::Selectable(modeNames[i], isSelected))
             {
-                selected_idx = i;
+                selectedIdx = i;
                 s_PresentMode = modes[i];
             }
             ImGui::PopID();
@@ -183,11 +197,8 @@ void UserInterface::DefineUI()
     }
 
     static constexpr Shaders::RenderModeFlags renderModes[] = {
-        Shaders::RenderModeColor,
-        Shaders::RenderModeWorldPosition,
-        Shaders::RenderModeNormal,
-        Shaders::RenderModeTextureCoords,
-        Shaders::RenderModeMips,
+        Shaders::RenderModeColor,         Shaders::RenderModeWorldPosition, Shaders::RenderModeNormal,
+        Shaders::RenderModeTextureCoords, Shaders::RenderModeMips,
     };
 
     static constexpr const char *renderModeNames[] = {
@@ -214,9 +225,8 @@ void UserInterface::DefineUI()
     if (ImGui::Checkbox("Disable Mip Maps", &disableMipMaps))
         s_ClosestHitFlags ^= Shaders::ClosestHitFlagsDisableMipMaps;
 
-    // TODO: Remove
     char textBuf[256] = {};
-    ImGui::InputText("Text", textBuf, 256);
+    ImGui::InputText("Scene Name:", s_SceneName, 256);
     ImGui::End();
 
     ImGui::Begin("Statistics");
@@ -225,7 +235,7 @@ void UserInterface::DefineUI()
         "Framerate", "Framerate: {:.3f} ms/frame ({:.1f} FPS)", 1000.0f / s_Io->Framerate, s_Io->Framerate
     );
 
-    for (auto &[key, value] : Stats::GetStats())
+    for (const auto &[key, value] : Stats::GetStats())
         ImGui::Text("%s", value.c_str());
     ImGui::End();
 }

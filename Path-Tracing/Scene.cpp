@@ -15,20 +15,13 @@ Scene::Scene()
     m_Transforms.push_back(glm::mat4(1.0f));
 }
 
-uint32_t Scene::AddGeometry(
-    std::span<const Shaders::Vertex> vertices, std::span<const uint32_t> indices, bool IsOpaque
-)
+uint32_t Scene::AddGeometry(Geometry &&geometry)
 {
-    m_Geometries.emplace_back(
-        static_cast<uint32_t>(m_Vertices.size()), static_cast<uint32_t>(vertices.size()),
-        static_cast<uint32_t>(m_Indices.size()), static_cast<uint32_t>(indices.size()), IsOpaque
+    logger::trace(
+        "Added Geometry to Scene with {} vertices and {} indices", geometry.VertexLength, geometry.IndexLength
     );
 
-    std::ranges::copy(vertices, std::back_inserter(m_Vertices));
-    std::ranges::copy(indices, std::back_inserter(m_Indices));
-
-    logger::trace("Added Geometry to Scene with {} vertices and {} indices", vertices.size(), indices.size());
-
+    m_Geometries.push_back(geometry);
     return m_Geometries.size() - 1;
 }
 
@@ -86,6 +79,16 @@ uint32_t Scene::AddMaterial(std::string name, Material material)
     return m_Materials.size() - 1;
 }
 
+void Scene::SetVertices(std::vector<Shaders::Vertex> &&vertices)
+{
+    m_Vertices = std::move(vertices);
+}
+
+void Scene::SetIndices(std::vector<uint32_t> &&indices)
+{
+    m_Indices = std::move(indices);
+}
+
 void Scene::SetSkybox(Skybox2D &&skybox)
 {
     m_Skybox = skybox;
@@ -96,7 +99,7 @@ void Scene::SetSkybox(SkyboxCube &&skybox)
     m_Skybox = skybox;
 }
 
-uint32_t Scene::AddTexture(TextureType type, std::filesystem::path path)
+uint32_t Scene::AddTexture(TextureType type, const std::filesystem::path &path)
 {
     const std::string name = path.string();
 

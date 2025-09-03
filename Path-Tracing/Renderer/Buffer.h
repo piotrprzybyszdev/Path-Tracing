@@ -12,6 +12,17 @@
 namespace PathTracing
 {
 
+struct BufferContent
+{
+    template<Utils::uploadable T>
+    BufferContent(std::span<T> content) : Size(content.size_bytes()), Data(content.data())
+    {
+    }
+
+    vk::DeviceSize Size;
+    const void *Data;
+};
+
 class Buffer
 {
 public:
@@ -29,6 +40,10 @@ public:
     Buffer &operator=(const Buffer &buffer) = delete;
 
     void Upload(const void *data) const;
+    void Upload(BufferContent content, vk::DeviceSize offset = 0) const;
+
+    void UploadStaging(vk::CommandBuffer commandBuffer, const Buffer &staging) const;
+    void UploadStaging(vk::CommandBuffer commandBuffer, const Buffer &staging, vk::DeviceSize size) const;
 
     [[nodiscard]] vk::Buffer GetHandle() const;
     [[nodiscard]] vk::DeviceAddress GetDeviceAddress() const;
@@ -66,29 +81,22 @@ public:
     [[nodiscard]] std::unique_ptr<Buffer> CreateDeviceBufferUnique(
         vk::DeviceSize size, const std::string &name
     ) const;
-    
-    struct BufferContent
-    {
-        template<Utils::uploadable T>
-        BufferContent(std::span<T> content) : Size(content.size() * sizeof(T)), Data(content.data())
-        {
-        }
-
-        vk::DeviceSize Size;
-        const void *Data;
-    };
 
     [[nodiscard]] Buffer CreateHostBuffer(BufferContent content) const;
-    [[nodiscard]] Buffer CreateDeviceBuffer(BufferContent content) const;
+    [[nodiscard]] Buffer CreateDeviceBuffer(vk::CommandBuffer commandBuffer, const Buffer &staging) const;
     [[nodiscard]] Buffer CreateHostBuffer(BufferContent content, const std::string &name) const;
-    [[nodiscard]] Buffer CreateDeviceBuffer(BufferContent content, const std::string &name) const;
+    [[nodiscard]] Buffer CreateDeviceBuffer(
+        vk::CommandBuffer commandBuffer, const Buffer &staging, const std::string &name
+    ) const;
     [[nodiscard]] std::unique_ptr<Buffer> CreateHostBufferUnique(BufferContent content) const;
-    [[nodiscard]] std::unique_ptr<Buffer> CreateDeviceBufferUnique(BufferContent content) const;
+    [[nodiscard]] std::unique_ptr<Buffer> CreateDeviceBufferUnique(
+        vk::CommandBuffer commandBuffer, const Buffer &staging
+    ) const;
     [[nodiscard]] std::unique_ptr<Buffer> CreateHostBufferUnique(
         BufferContent content, const std::string &name
     ) const;
     [[nodiscard]] std::unique_ptr<Buffer> CreateDeviceBufferUnique(
-        BufferContent content, const std::string &name
+        vk::CommandBuffer commandBuffer, const Buffer &staging, const std::string &name
     ) const;
 
 private:

@@ -11,23 +11,23 @@
 namespace PathTracing::ExampleScenes
 {
 
-static void CreateTexturedCubesScene();
-static void CreateReuseMeshCubesScene();
-static void CreateSponzaScene();
-static void CreateChessGameScene();
-static void CreateVirtualCity();
+void CreateTexturedCubesScene();
+void CreateReuseMeshCubesScene();
+void CreateSponzaScene();
+void CreateChessGameScene();
+void CreateVirtualCity();
 
 void CreateScenes()
 {
     // TODO: Only load them on demand
-    // CreateTexturedCubesScene();
+    CreateTexturedCubesScene();
     CreateReuseMeshCubesScene();
-    // CreateSponzaScene();
-    // CreateChessGameScene();
-    // CreateVirtualCity();
+    CreateSponzaScene();
+    CreateChessGameScene();
+    CreateVirtualCity();
 }
 
-static void CreateTexturedCubesScene()
+void CreateTexturedCubesScene()
 {
     Scene scene;
 
@@ -54,7 +54,7 @@ static void CreateTexturedCubesScene()
         );
     }
 
-    std::vector<Shaders::Vertex> vv = {
+    std::vector<Shaders::Vertex> vertices = {
         { { -1, -1, 1 }, { 1, 1 }, { 0, 0, 1 }, { 1, 0, 0 }, { 0, 1, 0 } },
         { { 1, -1, 1 }, { 0, 1 }, { 0, 0, 1 }, { 1, 0, 0 }, { 0, 1, 0 } },
         { { 1, 1, 1 }, { 0, 0 }, { 0, 0, 1 }, { 1, 0, 0 }, { 0, 1, 0 } },
@@ -86,17 +86,19 @@ static void CreateTexturedCubesScene()
         { { -1, -1, 1 }, { 1, 0 }, { 0, -1, 0 }, { 1, 0, 0 }, { 0, 0, 1 } },
     };
 
-    std::vector<uint32_t> ii = {};
+    std::vector<uint32_t> indices = {};
     for (int i = 0; i < 6; i++)
-        std::ranges::copy(std::vector<uint32_t> { 0, 1, 2, 2, 3, 0 }, std::back_inserter(ii));
+        std::ranges::copy(std::vector<uint32_t> { 0, 1, 2, 2, 3, 0 }, std::back_inserter(indices));
 
-    auto vertexIterator = vv.begin();
-    auto indexIterator = ii.begin();
+    scene.SetVertices(std::move(vertices));
+    scene.SetIndices(std::move(indices));
+
+    uint32_t vertexOffset = 0, indexOffset = 0;
     for (uint32_t i = 0; i < 6; i++)
     {
-        scene.AddGeometry(std::span(vertexIterator, 4), std::span(indexIterator, 6), true);
-        std::advance(vertexIterator, 4);
-        std::advance(indexIterator, 6);
+        scene.AddGeometry({ vertexOffset, 4, indexOffset, 6, true });
+        vertexOffset += 4;
+        indexOffset += 6;
     }
 
     std::array<MeshInfo, 6> m1 = { {
@@ -169,7 +171,7 @@ void CreateReuseMeshCubesScene()
         );
     }
 
-    std::vector<Shaders::Vertex> vv = {
+    std::vector<Shaders::Vertex> vertices = {
         { { -1, -1, 1 }, { 1, 1 }, { 0, 0, 1 }, { 1, 0, 0 }, { 0, 1, 0 } },
         { { 1, -1, 1 }, { 0, 1 }, { 0, 0, 1 }, { 1, 0, 0 }, { 0, 1, 0 } },
         { { 1, 1, 1 }, { 0, 0 }, { 0, 0, 1 }, { 1, 0, 0 }, { 0, 1, 0 } },
@@ -186,17 +188,19 @@ void CreateReuseMeshCubesScene()
         { { -1, 1, -1 }, { 1, 0 }, { 0, 1, 0 }, { 1, 0, 0 }, { 0, 0, -1 } },
     };
 
-    std::vector<uint32_t> ii = {};
+    std::vector<uint32_t> indices = {};
     for (int i = 0; i < 3; i++)
-        std::ranges::copy(std::vector<uint32_t> { 0, 1, 2, 2, 3, 0 }, std::back_inserter(ii));
+        std::ranges::copy(std::vector<uint32_t> { 0, 1, 2, 2, 3, 0 }, std::back_inserter(indices));
 
-    auto vertexIterator = vv.begin();
-    auto indexIterator = ii.begin();
+    scene.SetVertices(std::move(vertices));
+    scene.SetIndices(std::move(indices));
+
+    uint32_t vertexOffset = 0, indexOffset = 0;
     for (uint32_t i = 0; i < 3; i++)
     {
-        scene.AddGeometry(std::span(vertexIterator, 4), std::span(indexIterator, 6), true);
-        std::advance(vertexIterator, 4);
-        std::advance(indexIterator, 6);
+        scene.AddGeometry({ vertexOffset, 4, indexOffset, 6, true });
+        vertexOffset += 4;
+        indexOffset += 6;
     }
 
     std::array<MeshInfo, 6> m = { {
@@ -236,7 +240,7 @@ void CreateReuseMeshCubesScene()
     AssetManager::AddScene("Reuse Mesh", std::move(scene));
 }
 
-static void CreateSponzaScene()
+void CreateSponzaScene()
 {
     const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets" / "scenes";
     const std::filesystem::path path =

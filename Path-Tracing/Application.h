@@ -23,7 +23,7 @@ public:
 private:
     static uint32_t s_VulkanApiVersion;
     static vk::Instance s_Instance;
-    static vk::detail::DispatchLoaderDynamic *s_DispatchLoader;
+    static std::unique_ptr<vk::detail::DispatchLoaderDynamic> s_DispatchLoader;
 
 #ifndef NDEBUG
     static vk::DebugUtilsMessengerEXT s_DebugMessenger;

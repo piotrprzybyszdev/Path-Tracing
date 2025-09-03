@@ -12,10 +12,9 @@
 namespace PathTracing
 {
 
-std::unordered_map<std::filesystem::path, Texture> AssetManager::s_Textures = {};
 std::unordered_map<std::string, Scene> AssetManager::s_Scenes = {};
 
-void AssetManager::LoadTexture(const std::filesystem::path &path)
+Texture AssetManager::LoadTexture(const std::filesystem::path &path)
 {
     Texture texture = {};
     const std::string pathString = path.string();
@@ -27,23 +26,26 @@ void AssetManager::LoadTexture(const std::filesystem::path &path)
 
     texture.Data = reinterpret_cast<std::byte *>(data);
 
-    s_Textures[path] = std::move(texture);
+    return texture;
 }
 
-const Texture &AssetManager::GetTexture(const std::filesystem::path &path)
+void AssetManager::ReleaseTexture(Texture texture)
 {
-    return s_Textures[path];
+    stbi_image_free(texture.Data);
 }
 
-void AssetManager::ReleaseTexture(const std::filesystem::path &path)
+void AssetManager::AddScene(const std::string &name, Scene &&scene)
 {
-    auto it = s_Textures.find(path);
-    stbi_image_free(it->second.Data);
-    s_Textures.erase(it);
+    s_Scenes[name] = std::move(scene);
 }
 
-static std::optional<std::filesystem::path> ReadTexture(
-    std::filesystem::path base, const aiMaterial *material, aiTextureType type
+namespace
+{
+
+Assimp::Importer s_Importer = Assimp::Importer();
+
+std::optional<std::filesystem::path> ReadTexture(
+    const std::filesystem::path &base, const aiMaterial *material, aiTextureType type
 )
 {
     const uint32_t cnt = material->GetTextureCount(type);
@@ -61,12 +63,137 @@ static std::optional<std::filesystem::path> ReadTexture(
     return base / std::filesystem::path(path.C_Str());
 }
 
-void AssetManager::AddScene(const std::string &name, Scene &&scene)
+std::vector<uint32_t> LoadMaterials(const std::filesystem::path &path, Scene &outScene, const aiScene *scene)
 {
-    s_Scenes[name] = std::move(scene);
+    std::vector<uint32_t> materialIndexMap(scene->mNumMaterials);
+    for (int i = 0; i < scene->mNumMaterials; i++)
+    {
+        const aiMaterial *material = scene->mMaterials[i];
+        const aiString originalName = material->GetName();
+        const std::string materialName =
+            originalName.length != 0 ? originalName.C_Str() : std::format("Unnamed Material at index {}", i);
+
+        logger::debug("Adding Material: {}", materialName);
+        const Material outMaterial = {
+            .Color = ReadTexture(path.parent_path(), material, aiTextureType_BASE_COLOR),
+            .Normal = ReadTexture(path.parent_path(), material, aiTextureType_NORMALS),
+            .Roughness = ReadTexture(path.parent_path(), material, aiTextureType_DIFFUSE_ROUGHNESS),
+            .Metalic = ReadTexture(path.parent_path(), material, aiTextureType_METALNESS),
+        };
+
+        materialIndexMap[i] = outScene.AddMaterial(materialName, outMaterial);
+    }
+
+    return materialIndexMap;
 }
 
-static Assimp::Importer s_Importer = Assimp::Importer();
+bool CheckOpaque(const aiMaterial *material)
+{
+    // TODO: Handle other opaque flags from input file
+    if (material->GetTextureCount(aiTextureType_BASE_COLOR) == 0)
+        return true;
+
+    aiString colorTexturePath;
+    aiReturn ret = material->GetTexture(aiTextureType_BASE_COLOR, 0, &colorTexturePath);
+    assert(ret == aiReturn::aiReturn_SUCCESS);
+    int channels;
+    int result = stbi_info(colorTexturePath.C_Str(), nullptr, nullptr, &channels);
+    assert(result == 0);
+    return channels == 3;
+}
+
+// Some meshes might differ only in material, but have the same geometry
+uint32_t FindSameGeometry(std::span<aiMesh *const> haystack, const aiMesh *needle)
+{
+    // TODO: Should check that both materials are opaque
+
+    for (uint32_t i = 0; i < haystack.size(); i++)
+        if (haystack[i]->mFaces == needle->mFaces && haystack[i]->mNumFaces == needle->mNumFaces)
+            return i;
+
+    return haystack.size();
+}
+
+std::vector<uint32_t> LoadMeshes(Scene &outScene, const aiScene *scene)
+{
+    std::vector<Shaders::Vertex> vertices;
+    std::vector<uint32_t> indices;
+
+    {
+        uint32_t vertexCount = 0, indexCount = 0;
+        for (int i = 0; i < scene->mNumMeshes; i++)
+        {
+            vertexCount += scene->mMeshes[i]->mNumVertices;
+            indexCount += scene->mMeshes[i]->mNumFaces * 3;
+        }
+        vertices.resize(vertexCount);
+        indices.resize(indexCount);
+    }
+
+    std::vector<uint32_t> meshToGeometry(scene->mNumMeshes);
+    uint32_t vertexOffset = 0, indexOffset = 0;
+    for (uint32_t i = 0; i < scene->mNumMeshes; i++)
+    {
+        const aiMesh *mesh = scene->mMeshes[i];
+
+        const uint32_t otherGeometryIndex = FindSameGeometry(std::span(scene->mMeshes, i), mesh);
+        if (otherGeometryIndex != i)
+        {
+            const aiMesh *other = scene->mMeshes[otherGeometryIndex];
+            logger::debug(
+                "Adding geometry of mesh {} (idx: {}) as the same as geometry of mesh {} (idx: {})",
+                mesh->mName.C_Str(), i, other->mName.C_Str(), otherGeometryIndex
+            );
+            continue;
+        }
+
+        const uint32_t vertexCount = mesh->mNumVertices;
+        const uint32_t indexCount = mesh->mNumFaces * 3;
+
+        assert(!mesh->HasTextureCoords(0) || mesh->mNumUVComponents[0] == 2);
+
+        for (int j = 0; j < vertexCount; j++)
+        {
+            const uint32_t idx = vertexOffset + j;
+            vertices[idx].Position = TrivialCopy<aiVector3D, glm::vec3>(mesh->mVertices[j]);
+            if (mesh->HasTextureCoords(0))
+                vertices[idx].TexCoords = TrivialCopy<aiVector3D, glm::vec2>(mesh->mTextureCoords[0][j]);
+            vertices[idx].Normal = TrivialCopy<aiVector3D, glm::vec3>(mesh->mNormals[j]);
+            if (mesh->HasTangentsAndBitangents())
+            {
+                vertices[idx].Tangent = TrivialCopy<aiVector3D, glm::vec3>(mesh->mTangents[j]);
+                vertices[idx].Bitangent = TrivialCopy<aiVector3D, glm::vec3>(mesh->mBitangents[j]);
+            }
+        }
+
+        for (int j = 0; j < mesh->mNumFaces; j++)
+        {
+            const uint32_t idx = indexOffset + j * 3;
+            const aiFace &face = mesh->mFaces[j];
+            assert(face.mNumIndices == 3);
+            std::ranges::copy(std::span(face.mIndices, 3), indices.begin() + idx);
+        }
+
+        bool isOpaque = CheckOpaque(scene->mMaterials[mesh->mMaterialIndex]);
+
+        meshToGeometry[i] =
+            outScene.AddGeometry({ vertexOffset, vertexCount, indexOffset, indexCount, isOpaque });
+        vertexOffset += vertexCount;
+        indexOffset += indexCount;
+
+        logger::debug(
+            "Adding geometry (mesh {}) with {} vertices and {} indices", mesh->mName.C_Str(), vertexCount,
+            indexCount
+        );
+    }
+
+    outScene.SetVertices(std::move(vertices));
+    outScene.SetIndices(std::move(indices));
+
+    return meshToGeometry;
+}
+
+}
 
 void AssetManager::LoadScene(const std::string &name, const std::filesystem::path &path)
 {
@@ -74,10 +201,13 @@ void AssetManager::LoadScene(const std::string &name, const std::filesystem::pat
 
     const aiScene *scene = nullptr;
     {
+        unsigned int flags = aiProcess_Triangulate | aiProcess_FlipUVs | aiProcess_CalcTangentSpace;
+#ifdef NDEBUG
+        flags |= aiProcess_JoinIdenticalVertices | aiProcess_ImproveCacheLocality | aiProcess_OptimizeMeshes;
+#endif
+
         Timer timer("File Import");
-        scene = s_Importer.ReadFile(
-            path.string().c_str(), aiProcess_Triangulate | aiProcess_FlipUVs | aiProcess_CalcTangentSpace
-        );
+        scene = s_Importer.ReadFile(path.string().c_str(), flags);
 
         if (scene == nullptr)
             throw error(s_Importer.GetErrorString());
@@ -97,109 +227,8 @@ void AssetManager::LoadScene(const std::string &name, const std::filesystem::pat
 
     Scene outScene;
 
-    std::map<uint32_t, uint32_t> materialIndex = {};
-    for (int i = 0; i < scene->mNumMaterials; i++)
-    {
-        Timer timer("Material Copy");
-
-        const aiMaterial *material = scene->mMaterials[i];
-        const char *originalName = material->GetName().C_Str();
-        const std::string materialName =
-            originalName != std::string("") ? originalName : std::format("Unnamed Material at index {}", i); 
-
-        logger::debug("Adding Material: {}", materialName);
-        const Material outMaterial = {
-            .Color = ReadTexture(path.parent_path(), material, aiTextureType_BASE_COLOR),
-            .Normal = ReadTexture(path.parent_path(), material, aiTextureType_NORMALS),
-            .Roughness = ReadTexture(path.parent_path(), material, aiTextureType_DIFFUSE_ROUGHNESS),
-            .Metalic = ReadTexture(path.parent_path(), material, aiTextureType_METALNESS),
-        };
-
-        materialIndex[i] = outScene.AddMaterial(materialName, outMaterial);
-    }
-
-    // TODO (when multithreading): Build the vectors and submit them to the scene class once to avoid a copy
-    std::vector<Shaders::Vertex> vertices;
-    std::vector<uint32_t> indices;
-    std::map<uint32_t, uint32_t> meshToGeometry = {};
-    for (int i = 0; i < scene->mNumMeshes; i++)
-    {
-        const aiMesh *mesh = scene->mMeshes[i];
-
-        {
-            // Check if this mesh has the same vertices and indices as another one and reference that geometry
-            bool found = false;
-            for (int j = 0; j < i; j++)
-            {
-                if (scene->mMeshes[j]->mFaces == mesh->mFaces &&
-                    scene->mMeshes[j]->mNumFaces == mesh->mNumFaces)
-                {
-                    logger::debug("Adding mesh {} geometry as the same as mesh {} geometry", j, i);
-                    meshToGeometry[i] = meshToGeometry[j];
-                    found = true;
-                    break;
-                }
-            }
-
-            if (found)
-                continue;
-        }
-
-        const uint32_t vertexCount = mesh->mNumVertices;
-        const uint32_t indexCount = mesh->mNumFaces * 3;
-        if (vertices.size() < vertexCount)
-            vertices.resize(vertexCount);
-        if (indices.size() < indexCount)
-            indices.resize(indexCount);
-
-        assert(!mesh->HasTextureCoords(0) || mesh->mNumUVComponents[0] == 2);
-
-        for (int j = 0; j < vertexCount; j++)
-        {
-            vertices[j].Position = TrivialCopy<aiVector3D, glm::vec3>(mesh->mVertices[j]);
-            if (mesh->HasTextureCoords(0))
-                vertices[j].TexCoords = TrivialCopy<aiVector3D, glm::vec2>(mesh->mTextureCoords[0][j]);
-            vertices[j].Normal = TrivialCopy<aiVector3D, glm::vec3>(mesh->mNormals[j]);
-            if (mesh->HasTangentsAndBitangents())
-            {
-                vertices[j].Tangent = TrivialCopy<aiVector3D, glm::vec3>(mesh->mTangents[j]);
-                vertices[j].Bitangent = TrivialCopy<aiVector3D, glm::vec3>(mesh->mBitangents[j]);
-            }
-        }
-
-        for (int j = 0; j < mesh->mNumFaces; j++)
-        {
-            const aiFace &face = mesh->mFaces[j];
-            assert(face.mNumIndices == 3);
-            std::ranges::copy(std::span(face.mIndices, 3), indices.begin() + j * 3);
-        }
-
-        bool isOpaque;
-        {
-            // TODO: Handle other opaque flags from input file
-            const aiMaterial *material = scene->mMaterials[mesh->mMaterialIndex];
-            if (material->GetTextureCount(aiTextureType_BASE_COLOR) > 0)
-            {
-                aiString colorTexturePath;
-                aiReturn ret = material->GetTexture(aiTextureType_BASE_COLOR, 0, &colorTexturePath);
-                assert(ret == aiReturn::aiReturn_SUCCESS);
-                int channels;
-                int result = stbi_info(colorTexturePath.C_Str(), nullptr, nullptr, &channels);
-                assert(result == 0);
-                isOpaque = channels == 3;
-            }
-            else
-                isOpaque = true;
-        }
-
-        logger::debug(
-            "Adding geometry (mesh {}) with {} vertices and {} indices", mesh->mName.C_Str(), vertexCount,
-            indexCount
-        );
-        meshToGeometry[i] = outScene.AddGeometry(
-            std::span(vertices.data(), vertexCount), std::span(indices.data(), indexCount), isOpaque
-        );
-    }
+    std::vector<uint32_t> materialIndexMap = LoadMaterials(path, outScene, scene);
+    std::vector<uint32_t> meshToGeometry = LoadMeshes(outScene, scene);
 
     const auto toTransformMatrix = TrivialCopy<aiMatrix4x4, glm::mat4>;
 
@@ -210,7 +239,8 @@ void AssetManager::LoadScene(const std::string &name, const std::filesystem::pat
         {
             meshInfos.emplace_back(
                 meshToGeometry[scene->mRootNode->mMeshes[j]],
-                materialIndex[scene->mMeshes[scene->mRootNode->mMeshes[j]]->mMaterialIndex], glm::mat4(1.0f)
+                materialIndexMap[scene->mMeshes[scene->mRootNode->mMeshes[j]]->mMaterialIndex],
+                glm::mat4(1.0f)
             );
             logger::info("{}, mesh count: {}", scene->mRootNode->mName.C_Str(), scene->mRootNode->mNumMeshes);
         }
@@ -231,7 +261,7 @@ void AssetManager::LoadScene(const std::string &name, const std::filesystem::pat
         std::vector<MeshInfo> meshInfos;
         std::stack<std::tuple<const aiNode *, aiMatrix4x4, int>> stack;
 
-        stack.push({ startNode, aiMatrix4x4(), 0 });
+        stack.emplace(startNode, aiMatrix4x4(), 0);
 
         while (!stack.empty())
         {
@@ -247,13 +277,13 @@ void AssetManager::LoadScene(const std::string &name, const std::filesystem::pat
             {
                 meshInfos.emplace_back(
                     meshToGeometry[node->mMeshes[j]],
-                    materialIndex[scene->mMeshes[node->mMeshes[j]]->mMaterialIndex],
+                    materialIndexMap[scene->mMeshes[node->mMeshes[j]]->mMaterialIndex],
                     toTransformMatrix(transform)
                 );
             }
 
             for (int j = 0; j < node->mNumChildren; j++)
-                stack.push({ node->mChildren[j], transform, depth + 1 });
+                stack.emplace(node->mChildren[j], transform, depth + 1);
         }
 
         if (!meshInfos.empty())
@@ -268,7 +298,9 @@ void AssetManager::LoadScene(const std::string &name, const std::filesystem::pat
 
 const Scene &AssetManager::GetScene(const std::string &name)
 {
-    return s_Scenes[name];
+    auto it = s_Scenes.find(name);
+    assert(it != s_Scenes.end());
+    return it->second;
 }
 
 void AssetManager::ReleaseScene(const std::string &name)

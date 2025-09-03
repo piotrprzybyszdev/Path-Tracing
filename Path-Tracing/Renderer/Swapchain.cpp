@@ -194,10 +194,6 @@ const Swapchain::SynchronizationObjects &Swapchain::GetCurrentSyncObjects() cons
 
 bool Swapchain::AcquireImage()
 {
-    m_CurrentFrameInFlightIndex++;
-    if (m_CurrentFrameInFlightIndex == m_InFlightCount)
-        m_CurrentFrameInFlightIndex = 0;
-
     const SynchronizationObjects &sync = m_SynchronizationObjects[m_CurrentFrameInFlightIndex];
 
     {
@@ -216,11 +212,11 @@ bool Swapchain::AcquireImage()
         m_CurrentFrameIndex = result.value;
 
         if (result.result == vk::Result::eSuboptimalKHR)
-            logger::warn("Swapchain Acquire: ", vk::to_string(result.result));
+            logger::warn("Swapchain Acquire: {}", vk::to_string(result.result));
         else
             assert(result.result == vk::Result::eSuccess);
     }
-    catch (vk::OutOfDateKHRError error)
+    catch (const vk::OutOfDateKHRError &error)
     {
         logger::warn(error.what());
         return false;
@@ -241,16 +237,20 @@ bool Swapchain::Present()
         vk::Result res = DeviceContext::GetPresentQueue().presentKHR(presentInfo);
         if (res == vk::Result::eSuboptimalKHR)
         {
-            logger::warn("Swapchain Acquire: ", vk::to_string(res));
+            logger::warn("Swapchain Present: {}", vk::to_string(res));
             return false;
         }
         assert(res == vk::Result::eSuccess);
     }
-    catch (vk::OutOfDateKHRError error)
+    catch (const vk::OutOfDateKHRError &error)
     {
         logger::warn(error.what());
         return false;
     }
+
+    m_CurrentFrameInFlightIndex++;
+    if (m_CurrentFrameInFlightIndex == m_InFlightCount)
+        m_CurrentFrameInFlightIndex = 0;
 
     return true;
 }

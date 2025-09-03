@@ -3,8 +3,8 @@
 #include "Core/Core.h"
 
 #include "Application.h"
-
 #include "DeviceContext.h"
+#include "Renderer.h"
 #include "ShaderBindingTable.h"
 
 namespace PathTracing
@@ -13,12 +13,12 @@ namespace PathTracing
 ShaderBindingTable::ShaderBindingTable()
     : m_HandleSize(DeviceContext::GetRayTracingPipelineProperties().shaderGroupHandleSize),
       m_HitGroupSize(m_HandleSize + sizeof(Shaders::SBTBuffer)),
-      m_AlignedHandleSize(
-          Utils::AlignTo(m_HandleSize, DeviceContext::GetRayTracingPipelineProperties().shaderGroupHandleAlignment)
-      ),
-      m_AlignedHitGroupSize(
-          Utils::AlignTo(m_HitGroupSize, DeviceContext::GetRayTracingPipelineProperties().shaderGroupHandleAlignment)
-      ),
+      m_AlignedHandleSize(Utils::AlignTo(
+          m_HandleSize, DeviceContext::GetRayTracingPipelineProperties().shaderGroupHandleAlignment
+      )),
+      m_AlignedHitGroupSize(Utils::AlignTo(
+          m_HitGroupSize, DeviceContext::GetRayTracingPipelineProperties().shaderGroupHandleAlignment
+      )),
       m_GroupBaseAlignment(DeviceContext::GetRayTracingPipelineProperties().shaderGroupBaseAlignment)
 {
     assert(m_HitGroupSize < DeviceContext::GetRayTracingPipelineProperties().maxShaderGroupStride);
@@ -79,31 +79,44 @@ void ShaderBindingTable::Upload(vk::Pipeline pipeline)
         std::ranges::copy(closestHitHandle, m_ClosestHitGroups.begin() + i * m_AlignedHitGroupSize);
 
     BufferBuilder builder;
+    builder.SetUsageFlags(vk::BufferUsageFlagBits::eTransferSrc);
+
+    Buffer shaderBindingTable = builder.CreateHostBuffer(
+        2 * m_GroupBaseAlignment + m_ClosestHitGroups.size(), "Shader Binding Table Staging Buffer"
+    );
+    shaderBindingTable.Upload(raygenHandle);
+    shaderBindingTable.Upload(missHandle, m_GroupBaseAlignment);
+    shaderBindingTable.Upload(std::span(m_ClosestHitGroups), 2 * m_GroupBaseAlignment);
+
     builder
         .SetUsageFlags(
-            vk::BufferUsageFlagBits::eShaderBindingTableKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress
+            vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eShaderBindingTableKHR |
+            vk::BufferUsageFlagBits::eShaderDeviceAddress
         )
         .SetAlignment(m_GroupBaseAlignment);
 
-    m_RaygenTable = builder.CreateHostBuffer(raygenHandle, "Raygen Shader Binding Table Buffer");
-    m_MissTable = builder.CreateHostBuffer(missHandle, "Miss Shader Binding Table Buffer");
-    m_ClosestHitTable =
-        builder.CreateHostBuffer(std::span(m_ClosestHitGroups), "Closest Hit Shader Binding Table Buffer");
+    Renderer::s_MainCommandBuffer->Begin();
+    m_TableBuffer = builder.CreateDeviceBuffer(
+        Renderer::s_MainCommandBuffer->Buffer, shaderBindingTable, "Shader Binding Table Buffer"
+    );
+    Renderer::s_MainCommandBuffer->SubmitBlocking();
+
+    m_TableBufferDeviceAddress = m_TableBuffer.GetDeviceAddress();
 }
 
 vk::StridedDeviceAddressRegionKHR ShaderBindingTable::GetRaygenTableEntry() const
 {
-    return { m_RaygenTable.GetDeviceAddress(), m_AlignedHandleSize, m_AlignedHandleSize };
+    return { m_TableBufferDeviceAddress, m_AlignedHandleSize, m_AlignedHandleSize };
 }
 
 vk::StridedDeviceAddressRegionKHR ShaderBindingTable::GetMissTableEntry() const
 {
-    return { m_MissTable.GetDeviceAddress(), m_AlignedHandleSize, m_AlignedHandleSize };
+    return { m_TableBufferDeviceAddress + m_GroupBaseAlignment, m_AlignedHandleSize, m_AlignedHandleSize };
 }
 
 vk::StridedDeviceAddressRegionKHR ShaderBindingTable::GetClosestHitTableEntry() const
 {
-    return { m_ClosestHitTable.GetDeviceAddress(), m_AlignedHitGroupSize, m_HitGroupSize };
+    return { m_TableBufferDeviceAddress + 2 * m_GroupBaseAlignment, m_AlignedHitGroupSize, m_HitGroupSize };
 }
 
 }

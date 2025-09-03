@@ -2,8 +2,8 @@
 
 #include <vector>
 
-#include <vulkan/vulkan.hpp>
 #include <vk_mem_alloc.h>
+#include <vulkan/vulkan.hpp>
 
 namespace PathTracing
 {
@@ -12,8 +12,7 @@ class DeviceContext
 {
 public:
     static void Init(
-        vk::Instance instance, uint32_t vulkanApiVersion, const std::vector<const char *> &requestedLayers,
-        vk::SurfaceKHR surface
+        vk::Instance instance, const std::vector<const char *> &requestedLayers, vk::SurfaceKHR surface
     );
     static void Shutdown();
 
@@ -22,9 +21,15 @@ public:
 
     static std::vector<uint32_t> GetQueueFamilyIndices();
     static uint32_t GetGraphicsQueueFamilyIndex();
+    static uint32_t GetTransferQueueFamilyIndex();
 
     static vk::Queue GetPresentQueue();
     static vk::Queue GetGraphicsQueue();
+    static vk::Queue GetMipQueue();
+    static vk::Queue GetTransferQueue();
+
+    static bool HasMipQueue();
+    static bool HasTransferQueue();
 
     static VmaAllocator GetAllocator();
 
@@ -34,7 +39,7 @@ public:
 private:
     static struct PhysicalDevice
     {
-        vk::PhysicalDevice Handle { nullptr };
+        vk::PhysicalDevice Handle = nullptr;
 
         vk::PhysicalDeviceProperties Properties;
         std::vector<vk::QueueFamilyProperties> QueueFamilyProperties;
@@ -45,11 +50,16 @@ private:
 
     static struct LogicalDevice
     {
-        vk::Device Handle { nullptr };
+        vk::Device Handle = nullptr;
 
-        // Supports present, graphics and compute
-        uint32_t MainQueueFamilyIndex = vk::QueueFamilyIgnored;
-        vk::Queue MainQueue;
+        uint32_t PresentQueueFamilyIndex = vk::QueueFamilyIgnored;
+        uint32_t GraphicsQueueFamilyIndex = vk::QueueFamilyIgnored;
+        uint32_t MipQueueFamilyIndex = vk::QueueFamilyIgnored;
+        uint32_t TransferQueueFamilyIndex = vk::QueueFamilyIgnored;
+        vk::Queue PresentQueue = nullptr;
+        vk::Queue GraphicsQueue = nullptr;
+        vk::Queue MipQueue = nullptr;
+        vk::Queue TransferQueue = nullptr;
     } s_LogicalDevice;
 
     static VmaAllocator s_Allocator;
@@ -59,6 +69,12 @@ private:
         vk::PhysicalDevice device, const std::vector<const char *> &requestedExtensions,
         const std::vector<const char *> &requestedLayers
     );
+
+    static void FindQueueFamilies(vk::SurfaceKHR surface);
+    static void GetQueueCreateInfos(
+        std::vector<std::vector<float>> &priorities, std::vector<vk::DeviceQueueCreateInfo> &createInfos
+    );
+    static void GetQueues();
 };
 
 }

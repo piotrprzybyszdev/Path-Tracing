@@ -1,10 +1,12 @@
 #pragma once
 
+#include <vk_mem_alloc.h>
+#include <vulkan/vulkan.hpp>
+
 #include <span>
 #include <string>
 
-#include <vk_mem_alloc.h>
-#include <vulkan/vulkan.hpp>
+#include "Buffer.h"
 
 namespace PathTracing
 {
@@ -17,7 +19,10 @@ public:
         vk::Format format, vk::Extent2D extent, vk::ImageUsageFlags usageFlags, uint32_t layers,
         uint32_t mipLevels, bool isCube
     );
-    Image(vk::Format format, vk::Extent2D extent, vk::ImageUsageFlags usageFlags, uint32_t layers, bool mips, bool isCube);
+    Image(
+        vk::Format format, vk::Extent2D extent, vk::ImageUsageFlags usageFlags, uint32_t layers, bool mips,
+        bool isCube
+    );
 
     ~Image();
 
@@ -27,26 +32,41 @@ public:
     Image &operator=(Image &&image) noexcept;
     Image &operator=(const Image &image) = delete;
 
+    [[nodiscard]] vk::Extent2D GetExtent() const;
     [[nodiscard]] vk::Image GetHandle() const;
     [[nodiscard]] vk::ImageView GetView() const;
 
-    void UploadStaging(const std::byte *data, vk::Extent2D extent, vk::ImageLayout layout, uint32_t layer = 0)
-        const;
+    /* Commands from the transfer buffer should be executed before mip buffer */
+    /* If they are the same buffer they can be submitted at once because of barriers*/
+    void UploadStaging(
+        vk::CommandBuffer mipBuffer, vk::CommandBuffer transferBuffer, const Buffer &buffer,
+        const Image &temporary, vk::Extent2D extent, vk::ImageLayout layout
+    ) const;
+    void UploadStaging(
+        vk::CommandBuffer mipBuffer, vk::CommandBuffer transferBuffer, const Buffer &buffer,
+        const Image &temporary, vk::Extent2D extent, vk::ImageLayout layout, uint32_t layer,
+        uint32_t layerCount
+    ) const;
 
     void SetDebugName(const std::string &name) const;
 
     void Transition(
-        vk::CommandBuffer buffer, vk::ImageLayout layoutFrom, vk::ImageLayout layoutTo, uint32_t layer = 0
+        vk::CommandBuffer buffer, vk::ImageLayout layoutFrom, vk::ImageLayout layoutTo, uint32_t layer = 0,
+        uint32_t layerCount = 1
     ) const;
     void TransitionMip(
         vk::CommandBuffer buffer, vk::ImageLayout layoutFrom, vk::ImageLayout layoutTo, uint32_t mipLevel,
-        uint32_t layer = 0
+        uint32_t layer = 0, uint32_t layerCount = 1
     ) const;
 
 public:
+    [[nodiscard]] static vk::DeviceSize GetByteSize(
+        vk::Extent2D extent, vk::Format format, uint32_t layers = 1
+    );
+
     static void Transition(
         vk::CommandBuffer buffer, vk::Image image, vk::ImageLayout layoutFrom, vk::ImageLayout layoutTo,
-        uint32_t baseMipLevel = 0, uint32_t mipLevels = 1, uint32_t layer = 0
+        uint32_t baseMipLevel = 0, uint32_t mipLevels = 1, uint32_t layer = 0, uint32_t layerCount = 1
     );
 
 private:
@@ -62,12 +82,30 @@ private:
 
 private:
     [[nodiscard]] std::array<vk::Offset3D, 2> GetMipLevelArea(uint32_t level) const;
-    [[nodiscard]] vk::ImageSubresourceLayers GetMipLayer(uint32_t level, uint32_t layer = 0) const;
+    [[nodiscard]] vk::ImageSubresourceLayers GetMipLayer(
+        uint32_t level, uint32_t layer = 0, uint32_t layerCount = 1
+    ) const;
 
-    void GenerateMips(uint32_t layer, vk::ImageLayout layout) const;
+    void UploadFromBuffer(
+        vk::CommandBuffer commandBuffer, const Buffer &buffer, vk::Extent2D extent, uint32_t mip,
+        uint32_t layer = 0, uint32_t layerCount = 1
+    ) const;
+
+    [[nodiscard]] uint32_t GetMip(vk::Extent2D extent) const;
+    void Scale(
+        vk::CommandBuffer mipBuffer, vk::CommandBuffer transferBuffer, const Buffer &buffer,
+        vk::Extent2D extent, uint32_t destMip
+    ) const;
+    void GenerateFullMips(
+        vk::CommandBuffer commandBuffer, vk::ImageLayout layout, uint32_t layer = 0, uint32_t layerCount = 1
+    ) const;
+    void GenerateMips(
+        vk::CommandBuffer commandBuffer, vk::ImageLayout layout, uint32_t fromMip, uint32_t toMip,
+        uint32_t layer = 0, uint32_t layerCount = 1
+    ) const;
 
     static vk::AccessFlags GetAccessFlags(vk::ImageLayout layout);
-    static vk::PipelineStageFlagBits GetPipelineStageFlags(vk::ImageLayout layout);
+    static vk::PipelineStageFlags GetPipelineStageFlags(vk::ImageLayout layout);
 };
 
 class ImageBuilder

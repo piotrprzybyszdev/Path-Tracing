@@ -114,7 +114,8 @@ void AccelerationStructure::BuildBlases()
         blasInfo.BlasScratchBufferOffset = totalBlasScratchBufferSize;
         blasInfo.BlasBufferSize = buildSizesInfo.accelerationStructureSize;
         totalBlasBufferSize += Utils::AlignTo(buildSizesInfo.accelerationStructureSize, 256);
-        totalBlasScratchBufferSize += Utils::AlignTo(buildSizesInfo.buildScratchSize, m_ScratchOffsetAlignment);
+        totalBlasScratchBufferSize +=
+            Utils::AlignTo(buildSizesInfo.buildScratchSize, m_ScratchOffsetAlignment);
     }
 
     auto builder = BufferBuilder().SetUsageFlags(
@@ -157,14 +158,14 @@ void AccelerationStructure::BuildBlases()
     }
 
     {
+        Renderer::s_MainCommandBuffer->Begin();
         Utils::DebugLabel label(
-            Renderer::s_MainCommandBuffer.CommandBuffer, "BLAS Build", { 0.96f, 0.95f, 0.48f, 1.0f }
+            Renderer::s_MainCommandBuffer->Buffer, "BLAS Build", { 0.96f, 0.95f, 0.48f, 1.0f }
         );
-        Renderer::s_MainCommandBuffer.Begin();
-        Renderer::s_MainCommandBuffer.CommandBuffer.buildAccelerationStructuresKHR(
+        Renderer::s_MainCommandBuffer->Buffer.buildAccelerationStructuresKHR(
             outBuild, outRanges, Application::GetDispatchLoader()
         );
-        Renderer::s_MainCommandBuffer.Submit(DeviceContext::GetGraphicsQueue());
+        Renderer::s_MainCommandBuffer->SubmitBlocking();
     }
 }
 
@@ -179,8 +180,7 @@ void AccelerationStructure::BuildTlas()
 
         instances.emplace_back(
             TrivialCopy<glm::mat3x4, vk::TransformMatrixKHR>(instance.Transform), 0, 0xff,
-            m_Scene.GetModels()[instance.ModelIndex].SbtOffset,
-            vk::GeometryInstanceFlagsKHR(), address
+            m_Scene.GetModels()[instance.ModelIndex].SbtOffset, vk::GeometryInstanceFlagsKHR(), address
         );
     }
 
@@ -249,14 +249,14 @@ void AccelerationStructure::BuildTlas()
     vk::AccelerationStructureBuildRangeInfoKHR rangeInfo(instances.size(), 0, 0, 0);
 
     {
+        Renderer::s_MainCommandBuffer->Begin();
         Utils::DebugLabel label(
-            Renderer::s_MainCommandBuffer.CommandBuffer, "TLAS Build", { 0.89f, 0.96f, 0.13f, 1.0f }
+            Renderer::s_MainCommandBuffer->Buffer, "TLAS Build", { 0.89f, 0.96f, 0.13f, 1.0f }
         );
-        Renderer::s_MainCommandBuffer.Begin();
-        Renderer::s_MainCommandBuffer.CommandBuffer.buildAccelerationStructuresKHR(
+        Renderer::s_MainCommandBuffer->Buffer.buildAccelerationStructuresKHR(
             { geometryInfo }, { &rangeInfo }, Application::GetDispatchLoader()
         );
-        Renderer::s_MainCommandBuffer.Submit(DeviceContext::GetGraphicsQueue());
+        Renderer::s_MainCommandBuffer->SubmitBlocking();
     }
 }
 

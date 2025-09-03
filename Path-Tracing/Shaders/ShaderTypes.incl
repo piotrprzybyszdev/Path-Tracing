@@ -75,5 +75,11 @@ struct Material
 
 
 #ifndef GL_core_profile
+
+inline uint GetSceneTextureIndex(uint textureIndex)
+{
+    return SceneTextureOffset + textureIndex;
+}
+
 }
 #endif

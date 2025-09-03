@@ -21,7 +21,10 @@ namespace PathTracing
 
 enum class TextureType : uint8_t
 {
-    Color, Normal, Roughness, Metalic
+    Color,
+    Normal,
+    Roughness,
+    Metalic
 };
 
 struct TextureInfo
@@ -100,13 +103,14 @@ public:
 public:
     Scene();
 
-    uint32_t AddGeometry(
-        std::span<const Shaders::Vertex> vertices, std::span<const uint32_t> indices, bool IsOpaque
-    );
+    uint32_t AddGeometry(Geometry &&geometry);
     uint32_t AddModel(std::span<const MeshInfo> meshInfos);
     uint32_t AddModelInstance(uint32_t modelIndex, glm::mat4 transform);
 
     uint32_t AddMaterial(std::string name, Material material);
+
+    void SetVertices(std::vector<Shaders::Vertex> &&vertices);
+    void SetIndices(std::vector<uint32_t> &&indices);
 
     void SetSkybox(Skybox2D &&skybox);
     void SetSkybox(SkyboxCube &&skybox);
@@ -160,7 +164,7 @@ public:
     Registry<uint32_t, std::string, g_DefaultModelInstanceName, g_EnableNameRegistries> ModelInstanceNames;
 
 private:
-    uint32_t AddTexture(TextureType type, std::filesystem::path path);
+    uint32_t AddTexture(TextureType type, const std::filesystem::path &path);
 };
 
 }

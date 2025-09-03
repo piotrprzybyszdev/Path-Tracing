@@ -1,5 +1,6 @@
 #pragma once
 
+#define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 
@@ -15,11 +16,11 @@ public:
     void OnUpdate(float timeStep);
     void OnResize(uint32_t width, uint32_t height);
 
-    glm::mat4 GetInvViewMatrix() const;
-    glm::mat4 GetInvProjectionMatrix() const;
+    [[nodiscard]] glm::mat4 GetInvViewMatrix() const;
+    [[nodiscard]] glm::mat4 GetInvProjectionMatrix() const;
 
-    glm::vec3 GetPosition() const;
-    glm::vec3 GetDirection() const;
+    [[nodiscard]] glm::vec3 GetPosition() const;
+    [[nodiscard]] glm::vec3 GetDirection() const;
 
 private:
     static constexpr float CameraSpeed = 5.0f;
