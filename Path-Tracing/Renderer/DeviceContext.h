@@ -11,9 +11,7 @@ namespace PathTracing
 class DeviceContext
 {
 public:
-    static void Init(
-        vk::Instance instance, const std::vector<const char *> &requestedLayers, vk::SurfaceKHR surface
-    );
+    static void Init(vk::Instance instance, vk::SurfaceKHR surface);
     static void Shutdown();
 
     static vk::PhysicalDevice GetPhysical();
@@ -35,17 +33,18 @@ public:
 
     static const vk::PhysicalDeviceRayTracingPipelinePropertiesKHR &GetRayTracingPipelineProperties();
     static const vk::PhysicalDeviceAccelerationStructurePropertiesKHR &GetAccelerationStructureProperties();
+    static const vk::FormatProperties2 &GetFormatProperties(vk::Format format);
 
 private:
     static struct PhysicalDevice
     {
         vk::PhysicalDevice Handle = nullptr;
 
-        vk::PhysicalDeviceProperties Properties;
-        std::vector<vk::QueueFamilyProperties> QueueFamilyProperties;
-        vk::PhysicalDeviceMemoryProperties MemoryProperties;
+        vk::PhysicalDeviceProperties2 Properties;
+        std::vector<vk::QueueFamilyProperties2> QueueFamilyProperties;
         vk::PhysicalDeviceRayTracingPipelinePropertiesKHR RayTracingPipelineProperties;
         vk::PhysicalDeviceAccelerationStructurePropertiesKHR AccelerationStructureProperties;
+        std::vector<std::pair<vk::FormatProperties2, bool>> FormatProperties;
     } s_PhysicalDevice;
 
     static struct LogicalDevice
@@ -66,8 +65,7 @@ private:
 
 private:
     static bool CheckSuitable(
-        vk::PhysicalDevice device, const std::vector<const char *> &requestedExtensions,
-        const std::vector<const char *> &requestedLayers
+        vk::PhysicalDevice device, const std::vector<const char *> &requestedExtensions
     );
 
     static void FindQueueFamilies(vk::SurfaceKHR surface);

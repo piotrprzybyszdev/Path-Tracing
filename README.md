@@ -2,9 +2,9 @@
 Path Tracer written in Vulkan for an engineering thesis.
 
 ## Requirements
-* [Vulkan SDK 1.2 or higher](https://www.lunarg.com/vulkan-sdk/)
+* [Vulkan SDK 1.3 or higher](https://www.lunarg.com/vulkan-sdk/)
 * [CMake 3.25 or higher](https://cmake.org/)
-* C++ 20 capable compiler (tested with MSVC)
+* C++ 20 capable compiler (tested with MSVC and gcc)
 
 ## Build
 In order to build the project execute the following commands:

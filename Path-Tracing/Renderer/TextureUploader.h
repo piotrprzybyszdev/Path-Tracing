@@ -43,6 +43,7 @@ private:
 
     const bool m_AlwaysBlock;
     const bool m_UseTransferQueue;
+    const bool m_TextureScalingSupported;
 
     Image m_TemporaryImage;
     std::jthread m_SubmitThread;
@@ -77,6 +78,7 @@ private:
     static inline constexpr vk::Extent2D MaxTextureDataSize = { 4096u, 4096u };
     static inline constexpr size_t StagingBufferSize =
         4ull * MaxTextureDataSize.width * MaxTextureDataSize.height;
+    static inline constexpr vk::Format IntermediateTextureFormat = vk::Format::eR8G8B8A8Unorm;
 
 private:
     void StartLoaderThreads(const Scene &scene);
@@ -96,6 +98,9 @@ private:
         std::span<const TextureInfo> textures, std::span<const UploadInfo> infos,
         std::span<const Buffer> buffers
     );
+
+    static vk::Format SelectTextureFormat(TextureType type);
+    static bool CheckBlitSupported(vk::Format format);
 };
 
 }

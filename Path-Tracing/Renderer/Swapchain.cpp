@@ -77,8 +77,8 @@ void Swapchain::Recreate(vk::PresentModeKHR presentMode)
         logger::trace(
             "Supported format: {} ({})", vk::to_string(format.format), vk::to_string(format.colorSpace)
         );
-
-    if (std::find(formats.begin(), formats.end(), m_SurfaceFormat) == formats.end())
+     
+    if (std::ranges::find(formats, m_SurfaceFormat) == formats.end())
         throw error("Desired surface format not supported");
 
     auto modes = DeviceContext::GetPhysical().getSurfacePresentModesKHR(m_Surface);
@@ -86,7 +86,7 @@ void Swapchain::Recreate(vk::PresentModeKHR presentMode)
     for (vk::PresentModeKHR mode : modes)
         logger::debug("Supported present mode: {}", vk::to_string(mode));
 
-    if (std::find(modes.begin(), modes.end(), presentMode) != modes.end())
+    if (std::ranges::find(modes, presentMode) != modes.end())
         m_PresentMode = presentMode;
     logger::info("Selected present mode: {}", vk::to_string(m_PresentMode));
 

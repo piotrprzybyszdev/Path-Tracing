@@ -29,7 +29,7 @@ CommandBuffer::~CommandBuffer()
     DeviceContext::GetLogical().destroyCommandPool(m_CommandPool);
 }
 
-void CommandBuffer::Begin(vk::Semaphore waitSemaphore, vk::PipelineStageFlags stage)
+void CommandBuffer::Begin(vk::Semaphore waitSemaphore, vk::PipelineStageFlags2 stage)
 {
     assert(m_IsOpen == false);
 
@@ -76,20 +76,24 @@ void CommandBuffer::Submit(vk::Fence waitFence)
     if (m_IsOpen)
         End();
 
-    vk::SubmitInfo info;
-    info.setCommandBuffers(Buffer);
+    vk::SubmitInfo2 info;
+    vk::CommandBufferSubmitInfo cmdInfo(Buffer);
+    info.setCommandBufferInfos(cmdInfo);
     if (m_ShouldSignal)
-        info.setSignalSemaphores(m_SignalSemaphore);
+    {
+        vk::SemaphoreSubmitInfo signalInfo(m_SignalSemaphore);
+        info.setSignalSemaphoreInfos(signalInfo);
+    }
     if (m_WaitSemaphore != nullptr)
     {
-        info.setWaitDstStageMask(m_WaitStageMask);
-        info.setWaitSemaphores(m_WaitSemaphore);
+        vk::SemaphoreSubmitInfo waitInfo(m_WaitSemaphore, 0, m_WaitStageMask);
+        info.setWaitSemaphoreInfos(waitInfo);
     }
 
-    m_Queue.submit(info, waitFence);
+    m_Queue.submit2(info, waitFence);
 
     m_WaitSemaphore = nullptr;
-    m_WaitStageMask = vk::PipelineStageFlags();
+    m_WaitStageMask = vk::PipelineStageFlags2();
     m_ShouldSignal = false;
 }
 

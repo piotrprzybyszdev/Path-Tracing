@@ -14,16 +14,13 @@ DeviceContext::PhysicalDevice DeviceContext::s_PhysicalDevice = {};
 DeviceContext::LogicalDevice DeviceContext::s_LogicalDevice = {};
 VmaAllocator DeviceContext::s_Allocator = nullptr;
 
-void DeviceContext::Init(
-    vk::Instance instance, const std::vector<const char *> &requestedLayers, vk::SurfaceKHR surface
-)
+void DeviceContext::Init(vk::Instance instance, vk::SurfaceKHR surface)
 {
     std::vector<const char *> deviceExtensions = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
         VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
         VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
         VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
-        VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
     };
 
     for (const char *extension : deviceExtensions)
@@ -39,7 +36,7 @@ void DeviceContext::Init(
             vk::to_string(properties.deviceType)
         );
 
-        if (CheckSuitable(device, deviceExtensions, requestedLayers))
+        if (CheckSuitable(device, deviceExtensions))
             suitableDevices.push_back(device);
     }
 
@@ -55,9 +52,8 @@ void DeviceContext::Init(
         }
     );
 
-    s_PhysicalDevice.Properties = s_PhysicalDevice.Handle.getProperties();
-    s_PhysicalDevice.MemoryProperties = s_PhysicalDevice.Handle.getMemoryProperties();
-    s_PhysicalDevice.QueueFamilyProperties = s_PhysicalDevice.Handle.getQueueFamilyProperties();
+    s_PhysicalDevice.Properties = s_PhysicalDevice.Handle.getProperties2();
+    s_PhysicalDevice.QueueFamilyProperties = s_PhysicalDevice.Handle.getQueueFamilyProperties2();
     std::tie(
         s_PhysicalDevice.RayTracingPipelineProperties, s_PhysicalDevice.AccelerationStructureProperties
     ) = s_PhysicalDevice.Handle
@@ -68,7 +64,7 @@ void DeviceContext::Init(
                 vk::PhysicalDeviceRayTracingPipelinePropertiesKHR,
                 vk::PhysicalDeviceAccelerationStructurePropertiesKHR>();
 
-    logger::info("Selected physical device: {}", s_PhysicalDevice.Properties.deviceName.data());
+    logger::info("Selected physical device: {}", s_PhysicalDevice.Properties.properties.deviceName.data());
 
     FindQueueFamilies(surface);
 
@@ -79,9 +75,13 @@ void DeviceContext::Init(
 
     vk::PhysicalDeviceFeatures2 features;
 
+    vk::PhysicalDeviceSynchronization2Features synchronizationFeatures;
+    synchronizationFeatures.setSynchronization2(vk::True);
+    features.setPNext(&synchronizationFeatures);
+
     vk::PhysicalDeviceBufferDeviceAddressFeatures bufferFeatures;
     bufferFeatures.setBufferDeviceAddress(vk::True);
-    features.setPNext(&bufferFeatures);
+    synchronizationFeatures.setPNext(&bufferFeatures);
 
     vk::PhysicalDeviceAccelerationStructureFeaturesKHR accelerationStructureFeatures;
     accelerationStructureFeatures.setAccelerationStructure(vk::True);
@@ -101,7 +101,7 @@ void DeviceContext::Init(
     dynamicRenderingFeatures.setPNext(&descriptorIndexingFeatures);
 
     vk::DeviceCreateInfo createInfo(
-        vk::DeviceCreateFlags(), queueCreateInfos, requestedLayers, deviceExtensions, nullptr, &features
+        vk::DeviceCreateFlags(), queueCreateInfos, {}, deviceExtensions, nullptr, &features
     );
 
     s_LogicalDevice.Handle = s_PhysicalDevice.Handle.createDevice(createInfo);
@@ -196,9 +196,27 @@ const vk::PhysicalDeviceAccelerationStructurePropertiesKHR &DeviceContext::GetAc
     return s_PhysicalDevice.AccelerationStructureProperties;
 }
 
+const vk::FormatProperties2 &DeviceContext::GetFormatProperties(vk::Format format)
+{
+    const size_t index = static_cast<size_t>(format);
+
+    if (s_PhysicalDevice.FormatProperties.size() <= index ||
+        s_PhysicalDevice.FormatProperties[index].second == false)
+    {
+        if (s_PhysicalDevice.FormatProperties.size() <= index)
+            s_PhysicalDevice.FormatProperties.resize(
+                index + 1, std::make_pair(vk::FormatProperties2(), false)
+            );
+
+        s_PhysicalDevice.FormatProperties[index] =
+            std::make_pair(s_PhysicalDevice.Handle.getFormatProperties2(format), true);
+    }
+
+    return s_PhysicalDevice.FormatProperties[index].first;
+}
+
 bool DeviceContext::CheckSuitable(
-    vk::PhysicalDevice device, const std::vector<const char *> &requestedExtensions,
-    const std::vector<const char *> &requestedLayers
+    vk::PhysicalDevice device, const std::vector<const char *> &requestedExtensions
 )
 {
     const auto *deviceName = device.getProperties().deviceName.data();
@@ -218,30 +236,17 @@ bool DeviceContext::CheckSuitable(
         }
     }
 
-    std::vector<vk::LayerProperties> supportedLayers = device.enumerateDeviceLayerProperties();
-    auto supportedLayerNames =
-        supportedLayers | std::views::transform([](auto &props) { return props.layerName.data(); });
-
-    for (const auto &extension : supportedLayerNames)
-        logger::debug("{} supports layer {}", deviceName, extension);
-
-    for (std::string_view layer : requestedLayers)
-    {
-        if (std::ranges::find(supportedLayerNames, layer) == supportedLayerNames.end())
-        {
-            logger::warn("{} does not support Layer {}", deviceName, layer);
-            return false;
-        }
-    }
-
     logger::info("{} is a suitable device", deviceName);
     return true;
 }
 
 void DeviceContext::FindQueueFamilies(vk::SurfaceKHR surface)
 {
-    for (vk::QueueFamilyProperties prop : s_PhysicalDevice.QueueFamilyProperties)
-        logger::debug("Found queue family ({}): {}", prop.queueCount, vk::to_string(prop.queueFlags));
+    for (vk::QueueFamilyProperties2 prop : s_PhysicalDevice.QueueFamilyProperties)
+        logger::debug(
+            "Found queue family ({}): {}", prop.queueFamilyProperties.queueCount,
+            vk::to_string(prop.queueFamilyProperties.queueFlags)
+        );
 
     auto checkHasFlags = [](vk::QueueFamilyProperties properties, vk::QueueFlags flags) {
         return (properties.queueFlags & flags) == flags;
@@ -250,7 +255,7 @@ void DeviceContext::FindQueueFamilies(vk::SurfaceKHR surface)
     // Try getting one queue family for graphics and present
     for (uint32_t index = 0; index < s_PhysicalDevice.QueueFamilyProperties.size(); index++)
     {
-        const auto &properties = s_PhysicalDevice.QueueFamilyProperties[index];
+        const auto &properties = s_PhysicalDevice.QueueFamilyProperties[index].queueFamilyProperties;
         if (s_PhysicalDevice.Handle.getSurfaceSupportKHR(index, surface) == vk::True &&
             checkHasFlags(properties, vk::QueueFlagBits::eGraphics))
         {
@@ -280,7 +285,7 @@ void DeviceContext::FindQueueFamilies(vk::SurfaceKHR surface)
     if (s_LogicalDevice.GraphicsQueueFamilyIndex == vk::QueueFamilyIgnored)
         for (uint32_t index = 0; index < s_PhysicalDevice.QueueFamilyProperties.size(); index++)
         {
-            const auto &properties = s_PhysicalDevice.QueueFamilyProperties[index];
+            const auto &properties = s_PhysicalDevice.QueueFamilyProperties[index].queueFamilyProperties;
             if (checkHasFlags(properties, vk::QueueFlagBits::eGraphics))
             {
                 s_LogicalDevice.GraphicsQueueFamilyIndex = index;
@@ -298,7 +303,7 @@ void DeviceContext::FindQueueFamilies(vk::SurfaceKHR surface)
     // Get a mip queue family (override if any was found eariler as this will be better)
     for (uint32_t index = 0; index < s_PhysicalDevice.QueueFamilyProperties.size(); index++)
     {
-        const auto &properties = s_PhysicalDevice.QueueFamilyProperties[index];
+        const auto &properties = s_PhysicalDevice.QueueFamilyProperties[index].queueFamilyProperties;
         if (s_LogicalDevice.GraphicsQueueFamilyIndex != index &&
             checkHasFlags(properties, vk::QueueFlagBits::eGraphics))
         {
@@ -310,7 +315,7 @@ void DeviceContext::FindQueueFamilies(vk::SurfaceKHR surface)
     // Get a dedicated transfer queue
     for (uint32_t index = 0; index < s_PhysicalDevice.QueueFamilyProperties.size(); index++)
     {
-        const auto &properties = s_PhysicalDevice.QueueFamilyProperties[index];
+        const auto &properties = s_PhysicalDevice.QueueFamilyProperties[index].queueFamilyProperties;
         if (!checkHasFlags(properties, vk::QueueFlagBits::eGraphics) &&
             checkHasFlags(properties, vk::QueueFlagBits::eTransfer))
         {
@@ -322,7 +327,7 @@ void DeviceContext::FindQueueFamilies(vk::SurfaceKHR surface)
     // This one would be even better
     for (uint32_t index = 0; index < s_PhysicalDevice.QueueFamilyProperties.size(); index++)
     {
-        const auto &properties = s_PhysicalDevice.QueueFamilyProperties[index];
+        const auto &properties = s_PhysicalDevice.QueueFamilyProperties[index].queueFamilyProperties;
         if (!checkHasFlags(properties, vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute) &&
             checkHasFlags(properties, vk::QueueFlagBits::eTransfer))
         {
@@ -337,11 +342,10 @@ void DeviceContext::FindQueueFamilies(vk::SurfaceKHR surface)
     logger::debug("Set TransferQueueFamily to index: {}", s_LogicalDevice.TransferQueueFamilyIndex);
 
     if (s_LogicalDevice.MipQueueFamilyIndex == vk::QueueFamilyIgnored)
-        logger::warn("Couldn't find a second graphics queue. Asynchronous texture loading will be unavailable"
-        );
+        logger::warn("Couldn't find a second graphics queue");
 
     if (s_LogicalDevice.TransferQueueFamilyIndex == vk::QueueFamilyIgnored)
-        logger::warn("Couldn't find a dedicated transfer queue family. Falling back to a graphics queue");
+        logger::warn("Couldn't find a dedicated transfer queue family.");
 }
 
 void DeviceContext::GetQueueCreateInfos(

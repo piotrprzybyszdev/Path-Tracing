@@ -14,7 +14,8 @@ public:
     vk::CommandBuffer Buffer;
 
     void Begin(
-        vk::Semaphore waitSemaphore = nullptr, vk::PipelineStageFlags stage = vk::PipelineStageFlagBits::eNone
+        vk::Semaphore waitSemaphore = nullptr,
+        vk::PipelineStageFlags2 stage = vk::PipelineStageFlagBits2::eNone
     );
     [[nodiscard]] vk::Semaphore Signal();
 
@@ -34,7 +35,7 @@ private:
     vk::Semaphore m_SignalSemaphore = nullptr;
 
     vk::Semaphore m_WaitSemaphore = nullptr;
-    vk::PipelineStageFlags m_WaitStageMask;
+    vk::PipelineStageFlags2 m_WaitStageMask;
 
 private:
     void Submit(vk::Fence waitFence);

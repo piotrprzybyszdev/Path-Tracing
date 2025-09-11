@@ -27,8 +27,21 @@ TextureUploader::TextureUploader(
           DeviceContext::GetTransferQueueFamilyIndex(), DeviceContext::GetTransferQueue()
       ),
       m_MipCommandBuffer(DeviceContext::GetGraphicsQueueFamilyIndex(), DeviceContext::GetMipQueue()),
-      m_AlwaysBlock(!DeviceContext::HasMipQueue()), m_UseTransferQueue(DeviceContext::HasTransferQueue())
+      m_AlwaysBlock(!DeviceContext::HasMipQueue()), m_UseTransferQueue(DeviceContext::HasTransferQueue()),
+      m_TextureScalingSupported(CheckBlitSupported(IntermediateTextureFormat))
 {
+    if (m_AlwaysBlock)
+        logger::warn("Secondary graphics queue wasn't found - asynchronous texture loading unavailable");
+
+    if (!m_AlwaysBlock && !m_UseTransferQueue)
+        logger::warn("Dedicated transfer queue for texture upload not found - using graphics queue instead");
+
+    if (!m_TextureScalingSupported)
+        logger::warn(
+            "Blit operation is not supported on {} format. Textures with size above {}x{} are not supported",
+            vk::to_string(IntermediateTextureFormat), MaxTextureSize.width, MaxTextureSize.height
+        );
+
     m_LoaderThreads.resize(m_LoaderThreadCount);
     m_FreeBuffers.reserve(m_StagingBufferCount);
     m_DataBuffers.reserve(m_StagingBufferCount);
@@ -36,26 +49,21 @@ TextureUploader::TextureUploader(
     auto builder = BufferBuilder().SetUsageFlags(vk::BufferUsageFlagBits::eTransferSrc);
 
     for (int i = 0; i < m_StagingBufferCount; i++)
-        m_FreeBuffers.push_back(builder.CreateHostBuffer(StagingBufferSize, "TextureUploader Staging Buffer")
+        m_FreeBuffers.push_back(builder.CreateHostBuffer(StagingBufferSize, "Texture Uploader Staging Buffer")
         );
 
     m_ImageBuilder = ImageBuilder()
+                         .SetFormat(IntermediateTextureFormat)
                          .SetUsageFlags(
                              vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst |
                              vk::ImageUsageFlagBits::eSampled
                          )
-                         .SetFormat(vk::Format::eR8G8B8A8Unorm)
                          .EnableMips();
 
     m_TemporaryImage = m_ImageBuilder.CreateImage(MaxTextureDataSize, "Texture Uploader Staging Image");
 
-    Stats::AddStat(
-        "Max Texture Size", "Max Texture Size: {}x{}", MaxTextureSize.width, MaxTextureSize.height
-    );
-    Stats::AddStat(
-        "Max Texture Data Size", "Max Texture Data Size: {}x{}", MaxTextureDataSize.width,
-        MaxTextureDataSize.height
-    );
+    logger::info("Max Texture Size: {}x{}", MaxTextureSize.width, MaxTextureSize.height);
+    logger::info("Max Texture Data Size: {}x{}", MaxTextureDataSize.width, MaxTextureDataSize.height);
 }
 
 TextureUploader::~TextureUploader()
@@ -72,6 +80,9 @@ void TextureUploader::UploadTexturesBlocking(const Scene &scene)
         const TextureInfo textureInfo = textures[i];
 
         TextureSpec textureSpec = UploadToBuffer(textureInfo, buffer);
+
+        if (!m_TextureScalingSupported && textureSpec.Extent > MaxTextureSize)
+            continue;
 
         Renderer::s_MainCommandBuffer->Begin();
         UploadTexture(
@@ -208,6 +219,8 @@ void TextureUploader::StartSubmitThread(const Scene &scene)
                 std::lock_guard lock(m_DescriptorSetMutex);
                 for (const auto &info : uploadInfos)
                 {
+                    if (!m_TextureScalingSupported && info.Spec.Extent > MaxTextureSize)
+                        continue;
                     Renderer::UpdateTexture(Shaders::GetSceneTextureIndex(info.TextureIndex));
                     logger::debug("Uploaded Texture: {}", textures[info.TextureIndex].Path.string());
                 }
@@ -232,7 +245,7 @@ TextureUploader::TextureSpec TextureUploader::UploadToBuffer(
     const Texture texture = AssetManager::LoadTexture(textureInfo.Path);
 
     const vk::Extent2D extent(texture.Width, texture.Height);
-    const size_t dataSize = Image::GetByteSize(extent, vk::Format::eR8G8B8A8Unorm);
+    const size_t dataSize = Image::GetByteSize(extent, IntermediateTextureFormat);
 
     assert(extent <= MaxTextureDataSize);
     assert(dataSize <= StagingBufferSize);
@@ -250,7 +263,21 @@ void TextureUploader::UploadTexture(
 {
     assert(std::has_single_bit(info.Spec.Extent.width) && std::has_single_bit(info.Spec.Extent.height));
 
-    // TODO: Pick format depending on TextureType
+    if (!m_TextureScalingSupported && info.Spec.Extent > MaxTextureSize)
+    {
+        logger::error(
+            "Texture {} can't be loaded because it has a size of {}x{} which is more than the max size: "
+            "{}x{} and texture scaling is unsupported",
+            texture.Path.string(), info.Spec.Extent.width, info.Spec.Extent.height, MaxTextureSize.width,
+            MaxTextureSize.height
+        );
+        return;
+    }
+
+    const vk::Format format = SelectTextureFormat(info.Spec.Type);
+    m_ImageBuilder.SetFormat(format);
+    m_ImageBuilder.EnableMips(CheckBlitSupported(format));
+
     Image image =
         m_ImageBuilder.CreateImage(std::min(info.Spec.Extent, MaxTextureSize), texture.Path.string());
 
@@ -282,7 +309,7 @@ void TextureUploader::UploadBuffersWithTransfer(
     {
         m_TransferCommandBuffer.Begin();
         vk::Semaphore semaphore = m_TransferCommandBuffer.Signal();
-        m_MipCommandBuffer.Begin(semaphore, vk::PipelineStageFlagBits::eTransfer);
+        m_MipCommandBuffer.Begin(semaphore, vk::PipelineStageFlagBits2::eTransfer);
 
         UploadTexture(
             m_MipCommandBuffer.Buffer, m_TransferCommandBuffer.Buffer, textures[i], infos[i], buffers[i]
@@ -291,6 +318,18 @@ void TextureUploader::UploadBuffersWithTransfer(
         m_TransferCommandBuffer.Submit();
         m_MipCommandBuffer.SubmitBlocking();
     }
+}
+
+vk::Format TextureUploader::SelectTextureFormat(TextureType type)
+{
+    // TODO: Select format depending on TextureType
+    return vk::Format::eR8G8B8A8Unorm;
+}
+
+bool TextureUploader::CheckBlitSupported(vk::Format format)
+{
+    const auto flags = vk::FormatFeatureFlagBits::eBlitSrc | vk::FormatFeatureFlagBits::eBlitDst;
+    return (DeviceContext::GetFormatProperties(format).formatProperties.bufferFeatures & flags) != flags;
 }
 
 }

@@ -104,8 +104,8 @@ private:
         uint32_t layer = 0, uint32_t layerCount = 1
     ) const;
 
-    static vk::AccessFlags GetAccessFlags(vk::ImageLayout layout);
-    static vk::PipelineStageFlags GetPipelineStageFlags(vk::ImageLayout layout);
+    static vk::AccessFlags2 GetAccessFlags(vk::ImageLayout layout);
+    static vk::PipelineStageFlags2 GetPipelineStageFlags(vk::ImageLayout layout);
 };
 
 class ImageBuilder
@@ -113,7 +113,7 @@ class ImageBuilder
 public:
     ImageBuilder &SetFormat(vk::Format format);
     ImageBuilder &SetUsageFlags(vk::ImageUsageFlags usageFlags);
-    ImageBuilder &EnableMips();
+    ImageBuilder &EnableMips(bool value = true);
     ImageBuilder &SetLayers(uint32_t layers);
     ImageBuilder &EnableCube();
 

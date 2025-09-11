@@ -74,10 +74,14 @@ void Application::Init()
     uint32_t minor = vk::apiVersionMinor(version);
     uint32_t patch = vk::apiVersionPatch(version);
 
+    uint32_t requiredMajor = 1, requiredMinor = 3;
+
     logger::debug("Highest supported vulkan version: {}.{}.{}", major, minor, patch);
 
-    if (major <= 1 && minor < 2)
-        throw error("Application requires Vulkan API version 1.2 or newer");
+    if (major < requiredMajor || (major == requiredMajor && minor < requiredMinor))
+        throw error(std::format(
+            "Application requires Vulkan API version {}.{} or newer", requiredMajor, requiredMinor
+        ));
 
     s_VulkanApiVersion = vk::makeApiVersion(variant, major, minor, 0u);
     logger::info("Selected vulkan version: {}.{}.{}", major, minor, 0u);
@@ -142,7 +146,7 @@ void Application::Init()
     Input::SetWindow(Window::GetHandle());
     s_State = State::HasWindow;
 
-    DeviceContext::Init(s_Instance, requestedLayers, s_Surface);
+    DeviceContext::Init(s_Instance, s_Surface);
     s_State = State::HasDevice;
 
     s_Swapchain = std::make_unique<Swapchain>(

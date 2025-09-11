@@ -526,8 +526,7 @@ void Renderer::RecordCommandBuffer(const RenderingResources &resources)
         );
 
         Image::Transition(
-            commandBuffer, image, vk::ImageLayout::eTransferDstOptimal,
-            vk::ImageLayout::eColorAttachmentOptimal
+            commandBuffer, image, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eAttachmentOptimal
         );
 
         resources.StorageImage.Transition(
@@ -539,17 +538,17 @@ void Renderer::RecordCommandBuffer(const RenderingResources &resources)
         Utils::DebugLabel label(commandBuffer, "UI pass", { 0.24f, 0.34f, 0.93f, 1.0f });
     
         std::array<vk::RenderingAttachmentInfo, 1> colorAttachments = {
-            vk::RenderingAttachmentInfo(imageView, vk::ImageLayout::eColorAttachmentOptimal)
+            vk::RenderingAttachmentInfo(imageView, vk::ImageLayout::eAttachmentOptimal)
         };
-    
+
         commandBuffer.beginRendering(
             vk::RenderingInfo(vk::RenderingFlags(), vk::Rect2D({}, extent), 1, 0, colorAttachments)
         );
         UserInterface::Render(commandBuffer);
         commandBuffer.endRendering();
-    
+
         Image::Transition(
-            commandBuffer, image, vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::ePresentSrcKHR
+            commandBuffer, image, vk::ImageLayout::eAttachmentOptimal, vk::ImageLayout::ePresentSrcKHR
         );
     }
     commandBuffer.end();
@@ -688,14 +687,14 @@ void Renderer::Render(const Camera &camera)
 
     RecordCommandBuffer(res);
 
-    std::array<vk::PipelineStageFlags, 1> stages = { vk::PipelineStageFlagBits::eColorAttachmentOutput };
-    std::array<vk::CommandBuffer, 1> commandBuffers = { res.CommandBuffer };
-
-    vk::SubmitInfo submitInfo(
-        { sync.ImageAcquiredSemaphore }, stages, commandBuffers, { sync.RenderCompleteSemaphore }
+    vk::CommandBufferSubmitInfo cmdInfo(res.CommandBuffer);
+    vk::SemaphoreSubmitInfo waitInfo(
+        sync.ImageAcquiredSemaphore, 0, vk::PipelineStageFlagBits2::eColorAttachmentOutput
     );
+    vk::SemaphoreSubmitInfo signalInfo(sync.RenderCompleteSemaphore);
+    vk::SubmitInfo2 submitInfo(vk::SubmitFlags(), waitInfo, cmdInfo, signalInfo);
 
-    DeviceContext::GetGraphicsQueue().submit({ submitInfo }, sync.InFlightFence);
+    DeviceContext::GetGraphicsQueue().submit2({ submitInfo }, sync.InFlightFence);
 }
 
 }

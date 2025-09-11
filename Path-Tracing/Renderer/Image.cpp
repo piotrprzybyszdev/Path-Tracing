@@ -147,32 +147,50 @@ void Image::UploadStaging(
 ) const
 {
     assert(buffer.GetSize() >= GetByteSize(m_Extent, m_Format, layerCount));
+    auto createBlitInfo = [=, &temporary](vk::ImageBlit2 imageBlit) {
+        return vk::BlitImageInfo2(
+            temporary.GetHandle(), vk::ImageLayout::eTransferSrcOptimal, m_Handle,
+            vk::ImageLayout::eTransferDstOptimal, imageBlit, vk::Filter::eLinear
+        );
+    };
 
     if (extent != m_Extent)
     {
         assert(layerCount == 1);
-        assert(temporary.m_Format == m_Format);
         assert(temporary.GetExtent() >= extent);
 
         const uint32_t destMip = temporary.GetMip(m_Extent) - 1;
         temporary.Scale(mipBuffer, transferBuffer, buffer, extent, destMip);
 
-        vk::ImageBlit imageBlit(
+        TransitionMip(mipBuffer, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, 0, layer);
+
+        vk::ImageBlit2 imageBlit(
             temporary.GetMipLayer(destMip), temporary.GetMipLevelArea(destMip), GetMipLayer(0, layer),
             GetMipLevelArea(0)
         );
 
-        TransitionMip(mipBuffer, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, 0, layer);
-
-        mipBuffer.blitImage(
-            temporary.GetHandle(), vk::ImageLayout::eTransferSrcOptimal, m_Handle,
-            vk::ImageLayout::eTransferDstOptimal, imageBlit, vk::Filter::eLinear
+        mipBuffer.blitImage2(createBlitInfo(imageBlit));
+    }
+    else if (temporary.m_Format != m_Format)
+    {
+        temporary.UploadFromBuffer(transferBuffer, buffer, extent, 0, layer, layerCount);
+        temporary.TransitionMip(
+            mipBuffer, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferSrcOptimal, 0, layer,
+            layerCount
         );
+        TransitionMip(
+            mipBuffer, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, 0, layer, layerCount
+        );
+
+        vk::ImageBlit2 imageBlit(
+            temporary.GetMipLayer(0, layer, layerCount), temporary.GetMipLevelArea(0),
+            GetMipLayer(0, layer, layerCount), GetMipLevelArea(0)
+        );
+
+        mipBuffer.blitImage2(createBlitInfo(imageBlit));
     }
     else
-    {
         UploadFromBuffer(transferBuffer, buffer, extent, 0, layer, layerCount);
-    }
 
     GenerateFullMips(mipBuffer, layout, layer, layerCount);
 }
@@ -194,12 +212,6 @@ void Image::GenerateMips(
         Transition(commandBuffer, vk::ImageLayout::eTransferDstOptimal, layout, layer, layerCount);
         return;
     }
-
-#ifndef NDEBUG
-    auto properties = DeviceContext::GetPhysical().getFormatProperties(m_Format).bufferFeatures;
-    if (properties & vk::FormatFeatureFlagBits::eBlitSrc & vk::FormatFeatureFlagBits::eBlitDst)
-        throw error(std::format("Can't generate mip maps for texture format {}", vk::to_string(m_Format)));
-#endif
 
     TransitionMip(
         commandBuffer, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferSrcOptimal, fromMip,
@@ -250,46 +262,47 @@ void Image::SetDebugName(const std::string &name) const
     Utils::SetDebugName(m_View, std::format("ImageView: {}", name));
 }
 
-vk::AccessFlags Image::GetAccessFlags(vk::ImageLayout layout)
+vk::AccessFlags2 Image::GetAccessFlags(vk::ImageLayout layout)
 {
     switch (layout)
     {
     case vk::ImageLayout::eUndefined:
-    case vk::ImageLayout::ePresentSrcKHR:
-        return vk::AccessFlagBits::eNone;
-    case vk::ImageLayout::eColorAttachmentOptimal:
-        return vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite;
+        return vk::AccessFlagBits2::eNone;
+    case vk::ImageLayout::eAttachmentOptimal:
+        return vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite;
     case vk::ImageLayout::eShaderReadOnlyOptimal:
-        return vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite;
+        return vk::AccessFlagBits2::eShaderSampledRead;
     case vk::ImageLayout::eTransferSrcOptimal:
-        return vk::AccessFlagBits::eTransferRead;
+        return vk::AccessFlagBits2::eTransferRead;
     case vk::ImageLayout::eTransferDstOptimal:
-        return vk::AccessFlagBits::eTransferWrite;
+        return vk::AccessFlagBits2::eTransferWrite;
+    case vk::ImageLayout::ePresentSrcKHR:
+        return vk::AccessFlagBits2::eNone;
     case vk::ImageLayout::eGeneral:
-        return vk::AccessFlagBits::eNone;
+        return vk::AccessFlagBits2::eNone;
     default:
         throw error("Unsupported layout transition");
     }
 }
 
-vk::PipelineStageFlags Image::GetPipelineStageFlags(vk::ImageLayout layout)
+vk::PipelineStageFlags2 Image::GetPipelineStageFlags(vk::ImageLayout layout)
 {
     switch (layout)
     {
     case vk::ImageLayout::eUndefined:
-        return vk::PipelineStageFlagBits::eTopOfPipe;
+        return vk::PipelineStageFlagBits2::eNone;
     case vk::ImageLayout::eTransferSrcOptimal:
-        return vk::PipelineStageFlagBits::eTransfer;
+        return vk::PipelineStageFlagBits2::eTransfer;
     case vk::ImageLayout::eTransferDstOptimal:
-        return vk::PipelineStageFlagBits::eTransfer;
-    case vk::ImageLayout::eColorAttachmentOptimal:
-        return vk::PipelineStageFlagBits::eColorAttachmentOutput;
+        return vk::PipelineStageFlagBits2::eTransfer;
+    case vk::ImageLayout::eAttachmentOptimal:
+        return vk::PipelineStageFlagBits2::eColorAttachmentOutput;
     case vk::ImageLayout::eShaderReadOnlyOptimal:
-        return vk::PipelineStageFlagBits::eRayTracingShaderKHR;
+        return vk::PipelineStageFlagBits2::eRayTracingShaderKHR;
     case vk::ImageLayout::ePresentSrcKHR:
-        return vk::PipelineStageFlagBits::eBottomOfPipe;
+        return vk::PipelineStageFlagBits2::eAllCommands;
     case vk::ImageLayout::eGeneral:
-        return vk::PipelineStageFlagBits::eAllCommands;
+        return vk::PipelineStageFlagBits2::eAllCommands;
     default:
         throw error("Unsupported layout transition");
     }
@@ -316,16 +329,17 @@ void Image::Transition(
     uint32_t baseMipLevel, uint32_t mipLevels, uint32_t layer, uint32_t layerCount
 )
 {
-    vk::ImageMemoryBarrier barrier(
-        Image::GetAccessFlags(layoutFrom), Image::GetAccessFlags(layoutTo), layoutFrom, layoutTo,
+    vk::ImageMemoryBarrier2 barrier(
+        Image::GetPipelineStageFlags(layoutFrom), Image::GetAccessFlags(layoutFrom),
+        Image::GetPipelineStageFlags(layoutTo), Image::GetAccessFlags(layoutTo), layoutFrom, layoutTo,
         vk::QueueFamilyIgnored, vk::QueueFamilyIgnored, image,
         vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, baseMipLevel, mipLevels, layer, layerCount)
     );
 
-    buffer.pipelineBarrier(
-        Image::GetPipelineStageFlags(layoutFrom), Image::GetPipelineStageFlags(layoutTo),
-        vk::DependencyFlags(), {}, {}, { barrier }
-    );
+    vk::DependencyInfo dependency;
+    dependency.setImageMemoryBarriers(barrier);
+
+    buffer.pipelineBarrier2(dependency);
 }
 
 std::array<vk::Offset3D, 2> Image::GetMipLevelArea(uint32_t level) const
@@ -357,9 +371,9 @@ ImageBuilder &ImageBuilder::SetUsageFlags(vk::ImageUsageFlags usageFlags)
     return *this;
 }
 
-ImageBuilder &ImageBuilder::EnableMips()
+ImageBuilder &ImageBuilder::EnableMips(bool value)
 {
-    m_Mips = true;
+    m_Mips = value;
     return *this;
 }
 
