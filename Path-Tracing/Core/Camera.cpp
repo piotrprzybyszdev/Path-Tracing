@@ -30,7 +30,7 @@ void Camera::OnUpdate(float timeStep)
     glm::vec3 prevPosition = m_Position;
     glm::vec3 prevDirection = m_Direction;
 
-    glm::vec3 rightDirection = glm::cross(m_Direction, UpDirection);
+    glm::vec3 rightDirection = glm::normalize(glm::cross(m_Direction, UpDirection));
 
     if (Input::IsKeyPressed(Key::W))
         m_Position += timeStep * CameraSpeed * m_Direction;
@@ -61,7 +61,7 @@ void Camera::OnUpdate(float timeStep)
         if (delta.x != 0.0f || delta.y != 0.0f)
         {
             m_Yaw -= delta.x;
-            m_Pitch -= delta.y;
+            m_Pitch = glm::clamp(m_Pitch - delta.y, -89.0f, 89.0f);
 
             m_Direction = glm::normalize(glm::vec3(
                 glm::cos(glm::radians(m_Yaw)) * glm::cos(glm::radians(m_Pitch)),
