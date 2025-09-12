@@ -23,17 +23,15 @@ TextureUploader::TextureUploader(
     : m_Textures(textures), m_DescriptorSetMutex(descriptorSetMutex), m_LoaderThreadCount(loaderThreadCount),
       m_StagingBufferCount(std::floor(stagingMemoryLimit / StagingBufferSize)),
       m_FreeBuffersSemaphore(m_StagingBufferCount), m_DataBuffersSemaphore(0),
-      m_TransferCommandBuffer(
-          DeviceContext::GetTransferQueueFamilyIndex(), DeviceContext::GetTransferQueue()
-      ),
-      m_MipCommandBuffer(DeviceContext::GetGraphicsQueueFamilyIndex(), DeviceContext::GetMipQueue()),
-      m_AlwaysBlock(!DeviceContext::HasMipQueue()), m_UseTransferQueue(DeviceContext::HasTransferQueue()),
+      m_TransferCommandBuffer(DeviceContext::GetTransferQueue()),
+      m_MipCommandBuffer(DeviceContext::GetMipQueue()), m_UseTransferQueue(DeviceContext::HasTransferQueue()),
       m_TextureScalingSupported(CheckBlitSupported(IntermediateTextureFormat))
 {
-    if (m_AlwaysBlock)
-        logger::warn("Secondary graphics queue wasn't found - asynchronous texture loading unavailable");
+    if (!DeviceContext::HasMipQueue())
+        logger::warn("Secondary graphics queue wasn't found - Texture loading will be asynchronous, but it "
+                     "will take up resources from the main rendering pipeline");
 
-    if (!m_AlwaysBlock && !m_UseTransferQueue)
+    if (!m_UseTransferQueue)
         logger::warn("Dedicated transfer queue for texture upload not found - using graphics queue instead");
 
     if (!m_TextureScalingSupported)
@@ -77,17 +75,17 @@ void TextureUploader::UploadTexturesBlocking(const Scene &scene)
     for (uint32_t i = 0; i < textures.size(); i++)
     {
         const Buffer &buffer = m_FreeBuffers.front();
-        const TextureInfo textureInfo = textures[i];
+        const TextureInfo &textureInfo = textures[i];
 
-        TextureSpec textureSpec = UploadToBuffer(textureInfo, buffer);
-
-        if (!m_TextureScalingSupported && textureSpec.Extent > MaxTextureSize)
+        if (!CheckCanUpload(textureInfo))
             continue;
+
+        UploadToBuffer(textureInfo, buffer);
 
         Renderer::s_MainCommandBuffer->Begin();
         UploadTexture(
-            Renderer::s_MainCommandBuffer->Buffer, Renderer::s_MainCommandBuffer->Buffer, textureInfo,
-            UploadInfo(i, textureSpec), buffer
+            Renderer::s_MainCommandBuffer->Buffer, Renderer::s_MainCommandBuffer->Buffer, textureInfo, i,
+            buffer
         );
         Renderer::s_MainCommandBuffer->SubmitBlocking();
 
@@ -98,15 +96,10 @@ void TextureUploader::UploadTexturesBlocking(const Scene &scene)
 
 void TextureUploader::UploadTextures(const Scene &scene)
 {
-    if (m_AlwaysBlock)
-    {
-        UploadTexturesBlocking(scene);
-        return;
-    }
-
     Cancel();
 
     m_TextureIndex = 0;
+    m_RejectedCount = 0;
     m_FreeBuffersSemaphore.release(m_DataBuffers.size());
     m_FreeBuffers.insert(
         m_FreeBuffers.end(), std::make_move_iterator(m_DataBuffers.begin()),
@@ -115,7 +108,7 @@ void TextureUploader::UploadTextures(const Scene &scene)
     if (!m_DataBuffers.empty())
         m_DataBuffersSemaphore.acquire();
     m_DataBuffers.clear();
-    m_UploadInfos.clear();
+    m_TextureIndices.clear();
 
     StartLoaderThreads(scene);
     StartSubmitThread(scene);
@@ -144,6 +137,15 @@ void TextureUploader::StartLoaderThreads(const Scene &scene)
             auto textures = scene.GetTextures();
             while (!stopToken.stop_requested() && m_TextureIndex < textures.size())
             {
+                const uint32_t textureIndex = m_TextureIndex++;
+                const TextureInfo &textureInfo = textures[textureIndex];
+
+                if (!CheckCanUpload(textureInfo))
+                {
+                    m_RejectedCount++;
+                    continue;
+                }
+
                 m_FreeBuffersSemaphore.acquire();
                 if (stopToken.stop_requested())
                 {
@@ -158,14 +160,13 @@ void TextureUploader::StartLoaderThreads(const Scene &scene)
                     m_FreeBuffers.pop_back();
                 }
 
-                const uint32_t textureIndex = m_TextureIndex++;
-                TextureSpec spec = UploadToBuffer(textures[textureIndex], buffer);
+                UploadToBuffer(textureInfo, buffer);
 
                 {
                     std::lock_guard lock(m_DataBuffersMutex);
 
                     m_DataBuffers.push_back(std::move(buffer));
-                    m_UploadInfos.emplace_back(textureIndex, spec);
+                    m_TextureIndices.push_back(textureIndex);
                 }
 
                 m_DataBuffersSemaphore.release();
@@ -181,11 +182,11 @@ void TextureUploader::StartSubmitThread(const Scene &scene)
         uint32_t uploadedCount = 0;
 
         std::vector<Buffer> buffers;
-        std::vector<UploadInfo> uploadInfos;
+        std::vector<uint32_t> textureIndices;
         buffers.reserve(m_StagingBufferCount);
-        uploadInfos.reserve(m_StagingBufferCount);
+        textureIndices.reserve(m_StagingBufferCount);
 
-        while (!stopToken.stop_requested() && uploadedCount < textures.size())
+        while (!stopToken.stop_requested() && uploadedCount < textures.size() - m_RejectedCount)
         {
             m_DataBuffersSemaphore.acquire();
             if (stopToken.stop_requested())
@@ -197,13 +198,13 @@ void TextureUploader::StartSubmitThread(const Scene &scene)
             {
                 std::lock_guard lock(m_DataBuffersMutex);
                 buffers.swap(m_DataBuffers);
-                uploadInfos.swap(m_UploadInfos);
+                textureIndices.swap(m_TextureIndices);
             }
 
             if (m_UseTransferQueue)
-                UploadBuffersWithTransfer(textures, uploadInfos, buffers);
+                UploadBuffersWithTransfer(textures, textureIndices, buffers);
             else
-                UploadBuffers(textures, uploadInfos, buffers);
+                UploadBuffers(textures, textureIndices, buffers);
 
             {
                 std::lock_guard lock(m_FreeBuffersMutex);
@@ -217,92 +218,85 @@ void TextureUploader::StartSubmitThread(const Scene &scene)
 
             {
                 std::lock_guard lock(m_DescriptorSetMutex);
-                for (const auto &info : uploadInfos)
+                for (uint32_t textureIndex : textureIndices)
                 {
-                    if (!m_TextureScalingSupported && info.Spec.Extent > MaxTextureSize)
-                        continue;
-                    Renderer::UpdateTexture(Shaders::GetSceneTextureIndex(info.TextureIndex));
-                    logger::debug("Uploaded Texture: {}", textures[info.TextureIndex].Path.string());
+                    Renderer::UpdateTexture(Shaders::GetSceneTextureIndex(textureIndex));
+                    logger::debug("Uploaded Texture: {}", textures[textureIndex].Path.string());
                 }
             }
 
-            uploadedCount += uploadInfos.size();
+            uploadedCount += textureIndices.size();
             buffers.clear();
-            uploadInfos.clear();
+            textureIndices.clear();
         }
 
-        if (uploadedCount == textures.size())
+        uint32_t rejectedcount = m_RejectedCount;
+        if (uploadedCount == textures.size() - rejectedcount)
             logger::info("Done uploading scene textures");
         else
             logger::debug("Texture upload cancelled");
+
+        if (rejectedcount > 0)
+            logger::warn("{} texture(s) weren't uploaded", rejectedcount);
     });
 }
 
-TextureUploader::TextureSpec TextureUploader::UploadToBuffer(
-    const TextureInfo &textureInfo, const Buffer &buffer
-)
+void TextureUploader::UploadToBuffer(const TextureInfo &textureInfo, const Buffer &buffer)
 {
-    const Texture texture = AssetManager::LoadTexture(textureInfo.Path);
+    std::byte *data = AssetManager::LoadTextureData(textureInfo);
 
-    const vk::Extent2D extent(texture.Width, texture.Height);
+    const vk::Extent2D extent(textureInfo.Width, textureInfo.Height);
     const size_t dataSize = Image::GetByteSize(extent, IntermediateTextureFormat);
 
     assert(extent <= MaxTextureDataSize);
     assert(dataSize <= StagingBufferSize);
 
-    buffer.Upload(std::span(texture.Data, dataSize));
-    AssetManager::ReleaseTexture(texture);
-
-    return { extent, textureInfo.Type };
+    buffer.Upload(std::span(data, dataSize));
+    AssetManager::ReleaseTextureData(data);
 }
 
 void TextureUploader::UploadTexture(
     vk::CommandBuffer mipBuffer, vk::CommandBuffer transferBuffer, const TextureInfo &texture,
-    const UploadInfo &info, const Buffer &buffer
+    uint32_t textureIndex, const Buffer &buffer
 )
 {
-    assert(std::has_single_bit(info.Spec.Extent.width) && std::has_single_bit(info.Spec.Extent.height));
+    assert(std::has_single_bit(texture.Width) && std::has_single_bit(texture.Height));
 
-    if (!m_TextureScalingSupported && info.Spec.Extent > MaxTextureSize)
-    {
-        logger::error(
-            "Texture {} can't be loaded because it has a size of {}x{} which is more than the max size: "
-            "{}x{} and texture scaling is unsupported",
-            texture.Path.string(), info.Spec.Extent.width, info.Spec.Extent.height, MaxTextureSize.width,
-            MaxTextureSize.height
-        );
-        return;
-    }
-
-    const vk::Format format = SelectTextureFormat(info.Spec.Type);
+    const vk::Format format = SelectTextureFormat(texture.Type);
     m_ImageBuilder.SetFormat(format);
     m_ImageBuilder.EnableMips(CheckBlitSupported(format));
 
-    Image image =
-        m_ImageBuilder.CreateImage(std::min(info.Spec.Extent, MaxTextureSize), texture.Path.string());
+    const uint32_t scale =
+        std::max(1u, std::max(texture.Width / MaxTextureSize.width, texture.Height / MaxTextureSize.height));
+    const vk::Extent2D extent(texture.Width / scale, texture.Height / scale);
+
+    Image image = m_ImageBuilder.CreateImage(extent, texture.Path.string());
 
     image.UploadStaging(
-        mipBuffer, transferBuffer, buffer, m_TemporaryImage, info.Spec.Extent,
+        mipBuffer, transferBuffer, buffer, m_TemporaryImage, vk::Extent2D(texture.Width, texture.Height),
         vk::ImageLayout::eShaderReadOnlyOptimal
     );
 
-    m_Textures[Shaders::GetSceneTextureIndex(info.TextureIndex)] = std::move(image);
+    m_Textures[Shaders::GetSceneTextureIndex(textureIndex)] = std::move(image);
 }
 
 void TextureUploader::UploadBuffers(
-    std::span<const TextureInfo> textures, std::span<const UploadInfo> infos, std::span<const Buffer> buffers
+    std::span<const TextureInfo> textures, std::span<const uint32_t> textureIndices,
+    std::span<const Buffer> buffers
 )
 {
     m_MipCommandBuffer.Begin();
     for (int i = 0; i < buffers.size(); i++)
         UploadTexture(
-            m_MipCommandBuffer.Buffer, m_MipCommandBuffer.Buffer, textures[i], infos[i], buffers[i]
+            m_MipCommandBuffer.Buffer, m_MipCommandBuffer.Buffer, textures[textureIndices[i]],
+            textureIndices[i], buffers[i]
         );
     m_MipCommandBuffer.SubmitBlocking();
 }
 
 void TextureUploader::UploadBuffersWithTransfer(
-    std::span<const TextureInfo> textures, std::span<const UploadInfo> infos, std::span<const Buffer> buffers
+    std::span<const TextureInfo> textures, std::span<const uint32_t> textureIndices,
+    std::span<const Buffer> buffers
 )
 {
     for (int i = 0; i < buffers.size(); i++)
@@ -312,12 +306,28 @@ void TextureUploader::UploadBuffersWithTransfer(
         m_MipCommandBuffer.Begin(semaphore, vk::PipelineStageFlagBits2::eTransfer);
 
         UploadTexture(
-            m_MipCommandBuffer.Buffer, m_TransferCommandBuffer.Buffer, textures[i], infos[i], buffers[i]
+            m_MipCommandBuffer.Buffer, m_TransferCommandBuffer.Buffer, textures[textureIndices[i]],
+            textureIndices[i], buffers[i]
         );
 
         m_TransferCommandBuffer.Submit();
         m_MipCommandBuffer.SubmitBlocking();
     }
+}
+
+bool TextureUploader::CheckCanUpload(const TextureInfo &info)
+{
+    if (!m_TextureScalingSupported && vk::Extent2D(info.Width, info.Height) > MaxTextureSize)
+    {
+        logger::error(
+            "Cannot load texture {} because Texture Scaling is not supported and the texture size {}x{} is "
+            "larger than the MaxTextureSize {}x{}",
+            info.Path.string(), info.Width, info.Height, MaxTextureSize.width, MaxTextureSize.height
+        );
+        return false;
+    }
+
+    return true;
 }
 
 vk::Format TextureUploader::SelectTextureFormat(TextureType type)

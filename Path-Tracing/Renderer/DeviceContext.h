@@ -1,5 +1,6 @@
 #pragma once
 
+#include <mutex>
 #include <vector>
 
 #include <vk_mem_alloc.h>
@@ -7,6 +8,26 @@
 
 namespace PathTracing
 {
+
+class DeviceContext;
+
+// GetLock() should be called everytime vulkan spec states
+// that a command requires external synchronization
+class Queue
+{
+public:
+    uint32_t FamilyIndex = vk::QueueFamilyIgnored;
+    vk::Queue Handle;
+
+    [[nodiscard]] std::unique_lock<std::mutex> GetLock();
+    void WaitIdle();
+
+private:
+    std::mutex m_Mutex;
+    bool m_ShouldLock = false;
+
+    friend DeviceContext;
+};
 
 class DeviceContext
 {
@@ -18,13 +39,13 @@ public:
     static vk::Device GetLogical();
 
     static std::vector<uint32_t> GetQueueFamilyIndices();
-    static uint32_t GetGraphicsQueueFamilyIndex();
-    static uint32_t GetTransferQueueFamilyIndex();
 
-    static vk::Queue GetPresentQueue();
-    static vk::Queue GetGraphicsQueue();
-    static vk::Queue GetMipQueue();
-    static vk::Queue GetTransferQueue();
+    // Present and graphics queues should be used by main thread only
+    // Transfer and mip queues should be used by texture loading `submit thread` only
+    static Queue &GetPresentQueue();
+    static Queue &GetGraphicsQueue();
+    static Queue &GetMipQueue();
+    static Queue &GetTransferQueue();
 
     static bool HasMipQueue();
     static bool HasTransferQueue();
@@ -51,14 +72,10 @@ private:
     {
         vk::Device Handle = nullptr;
 
-        uint32_t PresentQueueFamilyIndex = vk::QueueFamilyIgnored;
-        uint32_t GraphicsQueueFamilyIndex = vk::QueueFamilyIgnored;
-        uint32_t MipQueueFamilyIndex = vk::QueueFamilyIgnored;
-        uint32_t TransferQueueFamilyIndex = vk::QueueFamilyIgnored;
-        vk::Queue PresentQueue = nullptr;
-        vk::Queue GraphicsQueue = nullptr;
-        vk::Queue MipQueue = nullptr;
-        vk::Queue TransferQueue = nullptr;
+        Queue PresentQueue;
+        Queue GraphicsQueue;
+        Queue MipQueue;
+        Queue TransferQueue;
     } s_LogicalDevice;
 
     static VmaAllocator s_Allocator;

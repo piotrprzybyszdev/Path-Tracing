@@ -45,11 +45,19 @@ void CreateTexturedCubesScene()
         const std::string &material = materials[i];
         scene.AddMaterial(
             assetNames[i],
-            Material {
-                materialPath / (material + "_Color.jpg"),
-                materialPath / (material + "_NormalGL.jpg"),
-                materialPath / (material + "_Roughness.jpg"),
-                materialPath / (material + "_Roughness.jpg"),
+            Shaders::Material {
+                scene.AddTexture(
+                    AssetManager::GetTextureInfo(materialPath / (material + "_Color.jpg"), TextureType::Color)
+                ),
+                scene.AddTexture(AssetManager::GetTextureInfo(
+                    materialPath / (material + "_NormalGL.jpg"), TextureType::Normal
+                )),
+                scene.AddTexture(AssetManager::GetTextureInfo(
+                    materialPath / (material + "_Roughness.jpg"), TextureType::Roughness
+                )),
+                scene.AddTexture(AssetManager::GetTextureInfo(
+                    materialPath / (material + "_Roughness.jpg"), TextureType::Metalic
+                )),
             }
         );
     }
@@ -139,7 +147,9 @@ void CreateTexturedCubesScene()
                ))
     );
 
-    scene.SetSkybox(Skybox2D { base / "skybox" / "sky_42_2k.png" });
+    scene.SetSkybox(
+        Skybox2D(AssetManager::GetTextureInfo(base / "skybox" / "sky_42_2k.png", TextureType::Skybox))
+    );
 
     AssetManager::AddScene("Textured Cubes", std::move(scene));
 }
@@ -162,11 +172,19 @@ void CreateReuseMeshCubesScene()
         const std::string &material = materials[i];
         scene.AddMaterial(
             assetNames[i],
-            Material {
-                materialPath / (material + "_Color.jpg"),
-                materialPath / (material + "_NormalGL.jpg"),
-                materialPath / (material + "_Roughness.jpg"),
-                materialPath / (material + "_Roughness.jpg"),
+            Shaders::Material {
+                scene.AddTexture(
+                    AssetManager::GetTextureInfo(materialPath / (material + "_Color.jpg"), TextureType::Color)
+                ),
+                scene.AddTexture(AssetManager::GetTextureInfo(
+                    materialPath / (material + "_NormalGL.jpg"), TextureType::Normal
+                )),
+                scene.AddTexture(AssetManager::GetTextureInfo(
+                    materialPath / (material + "_Roughness.jpg"), TextureType::Roughness
+                )),
+                scene.AddTexture(AssetManager::GetTextureInfo(
+                    materialPath / (material + "_Roughness.jpg"), TextureType::Metalic
+                )),
             }
         );
     }
@@ -228,14 +246,14 @@ void CreateReuseMeshCubesScene()
     scene.ModelInstanceNames.Set(cube1inst1, "Cube Instance");
 
     const auto skyboxPath = base / "skybox" / "sky_42_cubemap_(roblox)_2k";
-    scene.SetSkybox(SkyboxCube {
-        skyboxPath / "px.png",
-        skyboxPath / "nx.png",
-        skyboxPath / "py.png",
-        skyboxPath / "ny.png",
-        skyboxPath / "pz.png",
-        skyboxPath / "nz.png",
-    });
+    scene.SetSkybox(SkyboxCube(
+        AssetManager::GetTextureInfo(skyboxPath / "px.png", TextureType::Skybox),
+        AssetManager::GetTextureInfo(skyboxPath / "nx.png", TextureType::Skybox),
+        AssetManager::GetTextureInfo(skyboxPath / "py.png", TextureType::Skybox),
+        AssetManager::GetTextureInfo(skyboxPath / "ny.png", TextureType::Skybox),
+        AssetManager::GetTextureInfo(skyboxPath / "pz.png", TextureType::Skybox),
+        AssetManager::GetTextureInfo(skyboxPath / "nz.png", TextureType::Skybox)
+    ));
 
     AssetManager::AddScene("Reuse Mesh", std::move(scene));
 }

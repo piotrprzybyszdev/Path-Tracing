@@ -9,22 +9,19 @@
 namespace PathTracing
 {
 
-struct Texture
-{
-    int Width, Height, Channels;
-    std::byte *Data;
-};
-
 class AssetManager
 {
 public:
-    static Texture LoadTexture(const std::filesystem::path &path);
-    static void ReleaseTexture(Texture texture);
+    static std::byte *LoadTextureData(const TextureInfo &info);
+    static void ReleaseTextureData(std::byte *data);
 
     static void AddScene(const std::string &name, Scene &&scene);
     static void LoadScene(const std::string &name, const std::filesystem::path &path);
     static const Scene &GetScene(const std::string &name);
     static void ReleaseScene(const std::string &name);
+
+public:
+    static TextureInfo GetTextureInfo(const std::filesystem::path path, TextureType type);
 
 private:
     static std::unordered_map<std::string, Scene> s_Scenes;

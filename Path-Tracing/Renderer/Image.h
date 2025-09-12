@@ -82,6 +82,7 @@ private:
 
 private:
     [[nodiscard]] std::array<vk::Offset3D, 2> GetMipLevelArea(uint32_t level) const;
+    [[nodiscard]] std::array<vk::Offset3D, 2> GetMipLevelArea(vk::Extent2D extent) const;
     [[nodiscard]] vk::ImageSubresourceLayers GetMipLayer(
         uint32_t level, uint32_t layer = 0, uint32_t layerCount = 1
     ) const;

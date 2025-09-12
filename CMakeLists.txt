@@ -41,8 +41,8 @@ list(LENGTH ASSETS ASSET_COUNT)
 
 set(INDEX 1)
 foreach (NAME URL IN ZIP_LISTS ASSETS ASSET_URLS)
-    set(ZIP_PATH "${CMAKE_BINARY_DIR}/assets/${NAME}.zip")
-    set(FOLDER_PATH "${CMAKE_BINARY_DIR}/assets/${NAME}")
+    set(ZIP_PATH "${CMAKE_SOURCE_DIR}/assets/${NAME}.zip")
+    set(FOLDER_PATH "${CMAKE_SOURCE_DIR}/assets/${NAME}")
 
     if (NOT EXISTS ${FOLDER_PATH})
         message("Downloading asset: ${FOLDER_PATH} (${INDEX}/${ASSET_COUNT})")
@@ -54,3 +54,18 @@ foreach (NAME URL IN ZIP_LISTS ASSETS ASSET_URLS)
 
     math(EXPR INDEX "${INDEX} + 1")
 endforeach()
+
+
+get_filename_component(SOURCE_DIR ${CMAKE_SOURCE_DIR} ABSOLUTE)
+get_filename_component(BINARY_DIR ${CMAKE_BINARY_DIR} ABSOLUTE)
+
+if (NOT SOURCE_DIR STREQUAL BINARY_DIR)
+    # Creating a symlink on Windows requires administrative permissions - create junction link instead
+    if (WIN32)
+        file(TO_NATIVE_PATH ${CMAKE_SOURCE_DIR}/assets WIN_SRC_ASSET)
+        file(TO_NATIVE_PATH ${CMAKE_BINARY_DIR}/assets WIN_DST_ASSET)
+        execute_process(COMMAND cmd.exe /c mklink /J ${WIN_DST_ASSET} ${WIN_SRC_ASSET} COMMAND_ERROR_IS_FATAL ANY)
+    else()
+        file(CREATE_LINK ${CMAKE_SOURCE_DIR}/assets ${CMAKE_BINARY_DIR}/assets SYMBOLIC)
+    endif()
+endif()

@@ -14,24 +14,24 @@ namespace PathTracing
 
 std::unordered_map<std::string, Scene> AssetManager::s_Scenes = {};
 
-Texture AssetManager::LoadTexture(const std::filesystem::path &path)
+std::byte *AssetManager::LoadTextureData(const TextureInfo &info)
 {
-    Texture texture = {};
-    const std::string pathString = path.string();
-    stbi_uc *data =
-        stbi_load(pathString.c_str(), &texture.Width, &texture.Height, &texture.Channels, STBI_rgb_alpha);
+    const std::string pathString = info.Path.string();
+
+    int x, y, channels;
+    stbi_uc *data = stbi_load(pathString.c_str(), &x, &y, &channels, STBI_rgb_alpha);
+
+    assert(x == info.Width && y == info.Height && channels == info.Channels);
 
     if (data == nullptr)
         throw error(std::format("Could not load texture {}: {}", pathString, stbi_failure_reason()));
 
-    texture.Data = reinterpret_cast<std::byte *>(data);
-
-    return texture;
+    return reinterpret_cast<std::byte *>(data);
 }
 
-void AssetManager::ReleaseTexture(Texture texture)
+void AssetManager::ReleaseTextureData(std::byte *data)
 {
-    stbi_image_free(texture.Data);
+    stbi_image_free(data);
 }
 
 void AssetManager::AddScene(const std::string &name, Scene &&scene)
@@ -39,28 +39,82 @@ void AssetManager::AddScene(const std::string &name, Scene &&scene)
     s_Scenes[name] = std::move(scene);
 }
 
+TextureInfo AssetManager::GetTextureInfo(const std::filesystem::path path, TextureType type)
+{
+    std::string pathString = path.string();
+    int x, y, channels;
+    int ret = stbi_info(pathString.c_str(), &x, &y, &channels);
+
+    if (ret == 0)
+        throw error(std::format("Could not load texture {}: {}", pathString, stbi_failure_reason()));
+
+    return TextureInfo(type, channels, x, y, path);
+}
+
 namespace
 {
 
 Assimp::Importer s_Importer = Assimp::Importer();
 
-std::optional<std::filesystem::path> ReadTexture(
-    const std::filesystem::path &base, const aiMaterial *material, aiTextureType type
+TextureType ToTextureType(aiTextureType type)
+{
+    switch (type)
+    {
+    case aiTextureType_BASE_COLOR:
+        return TextureType::Color;
+    case aiTextureType_NORMALS:
+        return TextureType::Normal;
+    case aiTextureType_DIFFUSE_ROUGHNESS:
+        return TextureType::Roughness;
+    case aiTextureType_METALNESS:
+        return TextureType::Metalic;
+    default:
+        throw error(std::format("Unsupported Texture type {}", static_cast<uint8_t>(type)));
+    }
+}
+
+uint32_t GetDefaultTextureIndex(TextureType type)
+{
+    switch (type)
+    {
+    case TextureType::Color:
+        return Shaders::DefaultColorTextureIndex;
+    case TextureType::Normal:
+        return Shaders::DefaultNormalTextureIndex;
+    case TextureType::Roughness:
+        return Shaders::DefaultRoughnessTextureIndex;
+    case TextureType::Metalic:
+        return Shaders::DefaultMetalicTextureIndex;
+    default:
+        throw error(std::format("Unsupported Texture type {}", static_cast<uint8_t>(type)));
+    }
+}
+
+uint32_t AddTexture(
+    Scene &outScene, const std::filesystem::path &base, const aiMaterial *material, aiTextureType type
 )
 {
     const uint32_t cnt = material->GetTextureCount(type);
+    const TextureType textureType = ToTextureType(type);
+
     if (cnt == 0)
     {
         logger::trace("Texture {} doesn't exist", aiTextureTypeToString(type));
-        return std::optional<std::filesystem::path>();
+        return GetDefaultTextureIndex(textureType);
     }
 
-    assert(cnt == 1);
     aiString path;
-    aiReturn ret = material->GetTexture(type, 0, &path);
-    assert(ret == aiReturn_SUCCESS);
+    {
+        assert(cnt == 1);
+        aiReturn ret = material->GetTexture(type, 0, &path);
+        assert(ret == aiReturn_SUCCESS);
+    }
+
     logger::trace("Adding texture {} at {}", aiTextureTypeToString(type), path.C_Str());
-    return base / std::filesystem::path(path.C_Str());
+
+    std::filesystem::path texturePath = base.string() / std::filesystem::path(path.C_Str());
+
+    return outScene.AddTexture(AssetManager::GetTextureInfo(texturePath, textureType));
 }
 
 std::vector<uint32_t> LoadMaterials(const std::filesystem::path &path, Scene &outScene, const aiScene *scene)
@@ -73,15 +127,16 @@ std::vector<uint32_t> LoadMaterials(const std::filesystem::path &path, Scene &ou
         const std::string materialName =
             originalName.length != 0 ? originalName.C_Str() : std::format("Unnamed Material at index {}", i);
 
-        logger::debug("Adding Material: {}", materialName);
-        const Material outMaterial = {
-            .Color = ReadTexture(path.parent_path(), material, aiTextureType_BASE_COLOR),
-            .Normal = ReadTexture(path.parent_path(), material, aiTextureType_NORMALS),
-            .Roughness = ReadTexture(path.parent_path(), material, aiTextureType_DIFFUSE_ROUGHNESS),
-            .Metalic = ReadTexture(path.parent_path(), material, aiTextureType_METALNESS),
+        const Shaders::Material outMaterial = {
+            .ColorIdx = AddTexture(outScene, path.parent_path(), material, aiTextureType_BASE_COLOR),
+            .NormalIdx = AddTexture(outScene, path.parent_path(), material, aiTextureType_NORMALS),
+            .RoughnessIdx =
+                AddTexture(outScene, path.parent_path(), material, aiTextureType_DIFFUSE_ROUGHNESS),
+            .MetalicIdx = AddTexture(outScene, path.parent_path(), material, aiTextureType_METALNESS),
         };
 
         materialIndexMap[i] = outScene.AddMaterial(materialName, outMaterial);
+        logger::debug("Added Material: {}", materialName);
     }
 
     return materialIndexMap;

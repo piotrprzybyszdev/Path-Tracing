@@ -10,6 +10,19 @@
 namespace PathTracing
 {
 
+std::unique_lock<std::mutex> Queue::GetLock()
+{
+    if (m_ShouldLock)
+        return std::unique_lock(m_Mutex);
+    return std::unique_lock(m_Mutex, std::defer_lock);
+}
+
+void Queue::WaitIdle()
+{
+    auto lock = GetLock();
+    Handle.waitIdle();
+}
+
 DeviceContext::PhysicalDevice DeviceContext::s_PhysicalDevice = {};
 DeviceContext::LogicalDevice DeviceContext::s_LogicalDevice = {};
 VmaAllocator DeviceContext::s_Allocator = nullptr;
@@ -31,7 +44,7 @@ void DeviceContext::Init(vk::Instance instance, vk::SurfaceKHR surface)
     {
         auto properties = device.getProperties();
 
-        logger::debug(
+        logger::info(
             "Found physical device {} ({})", properties.deviceName.data(),
             vk::to_string(properties.deviceType)
         );
@@ -135,49 +148,43 @@ vk::Device DeviceContext::GetLogical()
 
 std::vector<uint32_t> DeviceContext::GetQueueFamilyIndices()
 {
-    if (s_LogicalDevice.PresentQueueFamilyIndex == s_LogicalDevice.GraphicsQueueFamilyIndex)
-        return { s_LogicalDevice.GraphicsQueueFamilyIndex };
-    return { s_LogicalDevice.PresentQueueFamilyIndex, s_LogicalDevice.GraphicsQueueFamilyIndex };
+    if (s_LogicalDevice.PresentQueue.FamilyIndex == s_LogicalDevice.GraphicsQueue.FamilyIndex)
+        return { s_LogicalDevice.GraphicsQueue.FamilyIndex };
+    return { s_LogicalDevice.PresentQueue.FamilyIndex, s_LogicalDevice.GraphicsQueue.FamilyIndex };
 }
 
-uint32_t DeviceContext::GetGraphicsQueueFamilyIndex()
+Queue &DeviceContext::GetPresentQueue()
 {
-    return s_LogicalDevice.GraphicsQueueFamilyIndex;
-}
-
-uint32_t DeviceContext::GetTransferQueueFamilyIndex()
-{
-    return s_LogicalDevice.TransferQueueFamilyIndex;
-}
-
-vk::Queue DeviceContext::GetPresentQueue()
-{
+    if (s_LogicalDevice.PresentQueue.FamilyIndex == s_LogicalDevice.GraphicsQueue.FamilyIndex)
+        return s_LogicalDevice.GraphicsQueue;
     return s_LogicalDevice.PresentQueue;
 }
 
-vk::Queue DeviceContext::GetGraphicsQueue()
+Queue &DeviceContext::GetGraphicsQueue()
 {
     return s_LogicalDevice.GraphicsQueue;
 }
 
-vk::Queue DeviceContext::GetMipQueue()
+Queue &DeviceContext::GetMipQueue()
 {
+    if (s_LogicalDevice.MipQueue.FamilyIndex == vk::QueueFamilyIgnored)
+        return s_LogicalDevice.GraphicsQueue;
     return s_LogicalDevice.MipQueue;
 }
 
-vk::Queue DeviceContext::GetTransferQueue()
+Queue &DeviceContext::GetTransferQueue()
 {
     return s_LogicalDevice.TransferQueue;
 }
 
 bool DeviceContext::HasMipQueue()
 {
-    return s_LogicalDevice.MipQueue != nullptr;
+    return s_LogicalDevice.MipQueue.Handle != nullptr;
 }
 
 bool DeviceContext::HasTransferQueue()
 {
-    return s_LogicalDevice.TransferQueue != nullptr;
+    return s_LogicalDevice.TransferQueue.Handle != nullptr;
 }
 
 VmaAllocator DeviceContext::GetAllocator()
@@ -259,55 +266,55 @@ void DeviceContext::FindQueueFamilies(vk::SurfaceKHR surface)
         if (s_PhysicalDevice.Handle.getSurfaceSupportKHR(index, surface) == vk::True &&
             checkHasFlags(properties, vk::QueueFlagBits::eGraphics))
         {
-            s_LogicalDevice.PresentQueueFamilyIndex = index;
-            s_LogicalDevice.GraphicsQueueFamilyIndex = index;
+            s_LogicalDevice.PresentQueue.FamilyIndex = index;
+            s_LogicalDevice.GraphicsQueue.FamilyIndex = index;
 
             if (properties.queueCount > 1)
-                s_LogicalDevice.MipQueueFamilyIndex = index;
+                s_LogicalDevice.MipQueue.FamilyIndex = index;
 
             break;
         }
     }
 
     // Make sure we have a present queue family
-    if (s_LogicalDevice.PresentQueueFamilyIndex == vk::QueueFamilyIgnored)
+    if (s_LogicalDevice.PresentQueue.FamilyIndex == vk::QueueFamilyIgnored)
         for (uint32_t index = 0; index < s_PhysicalDevice.QueueFamilyProperties.size(); index++)
             if (s_PhysicalDevice.Handle.getSurfaceSupportKHR(index, surface) == vk::True)
             {
-                s_LogicalDevice.PresentQueueFamilyIndex = index;
+                s_LogicalDevice.PresentQueue.FamilyIndex = index;
                 break;
             }
 
-    if (s_LogicalDevice.PresentQueueFamilyIndex == vk::QueueFamilyIgnored)
+    if (s_LogicalDevice.PresentQueue.FamilyIndex == vk::QueueFamilyIgnored)
         throw error("No appropriate present queue family found");
 
     // Make sure we have a graphics family
-    if (s_LogicalDevice.GraphicsQueueFamilyIndex == vk::QueueFamilyIgnored)
+    if (s_LogicalDevice.GraphicsQueue.FamilyIndex == vk::QueueFamilyIgnored)
         for (uint32_t index = 0; index < s_PhysicalDevice.QueueFamilyProperties.size(); index++)
         {
             const auto &properties = s_PhysicalDevice.QueueFamilyProperties[index].queueFamilyProperties;
             if (checkHasFlags(properties, vk::QueueFlagBits::eGraphics))
             {
-                s_LogicalDevice.GraphicsQueueFamilyIndex = index;
+                s_LogicalDevice.GraphicsQueue.FamilyIndex = index;
 
                 if (properties.queueCount > 1)
-                    s_LogicalDevice.MipQueueFamilyIndex = index;
+                    s_LogicalDevice.MipQueue.FamilyIndex = index;
 
                 break;
             }
         }
 
-    if (s_LogicalDevice.GraphicsQueueFamilyIndex == vk::QueueFamilyIgnored)
+    if (s_LogicalDevice.GraphicsQueue.FamilyIndex == vk::QueueFamilyIgnored)
         throw error("No appropriate graphics queue family found");
 
     // Get a mip queue family (override if any was found eariler as this will be better)
     for (uint32_t index = 0; index < s_PhysicalDevice.QueueFamilyProperties.size(); index++)
     {
         const auto &properties = s_PhysicalDevice.QueueFamilyProperties[index].queueFamilyProperties;
-        if (s_LogicalDevice.GraphicsQueueFamilyIndex != index &&
+        if (s_LogicalDevice.GraphicsQueue.FamilyIndex != index &&
             checkHasFlags(properties, vk::QueueFlagBits::eGraphics))
         {
-            s_LogicalDevice.MipQueueFamilyIndex = index;
+            s_LogicalDevice.MipQueue.FamilyIndex = index;
             break;
         }
     }
@@ -319,7 +326,7 @@ void DeviceContext::FindQueueFamilies(vk::SurfaceKHR surface)
         if (!checkHasFlags(properties, vk::QueueFlagBits::eGraphics) &&
             checkHasFlags(properties, vk::QueueFlagBits::eTransfer))
         {
-            s_LogicalDevice.TransferQueueFamilyIndex = index;
+            s_LogicalDevice.TransferQueue.FamilyIndex = index;
             break;
         }
     }
@@ -328,23 +335,24 @@ void DeviceContext::FindQueueFamilies(vk::SurfaceKHR surface)
     for (uint32_t index = 0; index < s_PhysicalDevice.QueueFamilyProperties.size(); index++)
     {
         const auto &properties = s_PhysicalDevice.QueueFamilyProperties[index].queueFamilyProperties;
-        if (!checkHasFlags(properties, vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute) &&
+        if (!checkHasFlags(properties, vk::QueueFlagBits::eGraphics) &&
+            !checkHasFlags(properties, vk::QueueFlagBits::eCompute) &&
             checkHasFlags(properties, vk::QueueFlagBits::eTransfer))
         {
-            s_LogicalDevice.TransferQueueFamilyIndex = index;
+            s_LogicalDevice.TransferQueue.FamilyIndex = index;
             break;
         }
     }
 
-    logger::debug("Set PresentQueueFamily to index: {}", s_LogicalDevice.PresentQueueFamilyIndex);
-    logger::debug("Set GraphicsQueueFamily to index: {}", s_LogicalDevice.GraphicsQueueFamilyIndex);
-    logger::debug("Set MipQueueFamily to index: {}", s_LogicalDevice.MipQueueFamilyIndex);
-    logger::debug("Set TransferQueueFamily to index: {}", s_LogicalDevice.TransferQueueFamilyIndex);
+    logger::debug("Set PresentQueueFamily to index: {}", s_LogicalDevice.PresentQueue.FamilyIndex);
+    logger::debug("Set GraphicsQueueFamily to index: {}", s_LogicalDevice.GraphicsQueue.FamilyIndex);
+    logger::debug("Set MipQueueFamily to index: {}", s_LogicalDevice.MipQueue.FamilyIndex);
+    logger::debug("Set TransferQueueFamily to index: {}", s_LogicalDevice.TransferQueue.FamilyIndex);
 
-    if (s_LogicalDevice.MipQueueFamilyIndex == vk::QueueFamilyIgnored)
+    if (s_LogicalDevice.MipQueue.FamilyIndex == vk::QueueFamilyIgnored)
         logger::warn("Couldn't find a second graphics queue");
 
-    if (s_LogicalDevice.TransferQueueFamilyIndex == vk::QueueFamilyIgnored)
+    if (s_LogicalDevice.TransferQueue.FamilyIndex == vk::QueueFamilyIgnored)
         logger::warn("Couldn't find a dedicated transfer queue family.");
 }
 
@@ -352,76 +360,80 @@ void DeviceContext::GetQueueCreateInfos(
     std::vector<std::vector<float>> &priorities, std::vector<vk::DeviceQueueCreateInfo> &createInfos
 )
 {
-    if (s_LogicalDevice.PresentQueueFamilyIndex != s_LogicalDevice.GraphicsQueueFamilyIndex)
+    if (s_LogicalDevice.PresentQueue.FamilyIndex != s_LogicalDevice.GraphicsQueue.FamilyIndex)
     {
         priorities.push_back({ 1.0f });
         createInfos.emplace_back(
-            vk::DeviceQueueCreateFlags(), s_LogicalDevice.PresentQueueFamilyIndex, priorities.back()
+            vk::DeviceQueueCreateFlags(), s_LogicalDevice.PresentQueue.FamilyIndex, priorities.back()
         );
     }
 
     {
         std::vector<float> prio = { 1.0f };
-        if (s_LogicalDevice.GraphicsQueueFamilyIndex == s_LogicalDevice.MipQueueFamilyIndex)
+        if (s_LogicalDevice.GraphicsQueue.FamilyIndex == s_LogicalDevice.MipQueue.FamilyIndex)
             prio.push_back(0.5f);
         priorities.push_back(prio);
 
         createInfos.emplace_back(
-            vk::DeviceQueueCreateFlags(), s_LogicalDevice.GraphicsQueueFamilyIndex, priorities.back()
+            vk::DeviceQueueCreateFlags(), s_LogicalDevice.GraphicsQueue.FamilyIndex, priorities.back()
         );
     }
 
-    if (s_LogicalDevice.MipQueueFamilyIndex != s_LogicalDevice.GraphicsQueueFamilyIndex &&
-        s_LogicalDevice.MipQueueFamilyIndex != vk::QueueFamilyIgnored)
+    if (s_LogicalDevice.MipQueue.FamilyIndex != s_LogicalDevice.GraphicsQueue.FamilyIndex &&
+        s_LogicalDevice.MipQueue.FamilyIndex != vk::QueueFamilyIgnored)
     {
         priorities.push_back({ 1.0f });
         createInfos.emplace_back(
-            vk::DeviceQueueCreateFlags(), s_LogicalDevice.MipQueueFamilyIndex, priorities.back()
+            vk::DeviceQueueCreateFlags(), s_LogicalDevice.MipQueue.FamilyIndex, priorities.back()
         );
     }
 
-    if (s_LogicalDevice.TransferQueueFamilyIndex != vk::QueueFamilyIgnored)
+    if (s_LogicalDevice.TransferQueue.FamilyIndex != vk::QueueFamilyIgnored)
     {
         priorities.push_back({ 1.0f });
         createInfos.emplace_back(
-            vk::DeviceQueueCreateFlags(), s_LogicalDevice.TransferQueueFamilyIndex, priorities.back()
+            vk::DeviceQueueCreateFlags(), s_LogicalDevice.TransferQueue.FamilyIndex, priorities.back()
         );
     }
 }
 
 void DeviceContext::GetQueues()
 {
-    s_LogicalDevice.GraphicsQueue =
-        s_LogicalDevice.Handle.getQueue(s_LogicalDevice.GraphicsQueueFamilyIndex, 0);
+    s_LogicalDevice.GraphicsQueue.Handle =
+        s_LogicalDevice.Handle.getQueue(s_LogicalDevice.GraphicsQueue.FamilyIndex, 0);
+    Utils::SetDebugName(s_LogicalDevice.GraphicsQueue.Handle, "Graphics Queue");
 
-    if (s_LogicalDevice.PresentQueueFamilyIndex != s_LogicalDevice.GraphicsQueueFamilyIndex)
+    if (s_LogicalDevice.PresentQueue.FamilyIndex != s_LogicalDevice.GraphicsQueue.FamilyIndex)
     {
-        s_LogicalDevice.PresentQueue =
-            s_LogicalDevice.Handle.getQueue(s_LogicalDevice.PresentQueueFamilyIndex, 0);
-        Utils::SetDebugName(s_LogicalDevice.PresentQueue, "Present Queue");
+        s_LogicalDevice.PresentQueue.Handle =
+            s_LogicalDevice.Handle.getQueue(s_LogicalDevice.PresentQueue.FamilyIndex, 0);
+        Utils::SetDebugName(s_LogicalDevice.PresentQueue.Handle, "Present Queue");
+    }
+    else
+        Utils::SetDebugName(s_LogicalDevice.GraphicsQueue.Handle, "Graphics & Present Queue");
+
+    if (s_LogicalDevice.MipQueue.FamilyIndex != vk::QueueFamilyIgnored)
+    {
+        if (s_LogicalDevice.MipQueue.FamilyIndex == s_LogicalDevice.GraphicsQueue.FamilyIndex)
+            s_LogicalDevice.MipQueue.Handle =
+                s_LogicalDevice.Handle.getQueue(s_LogicalDevice.MipQueue.FamilyIndex, 1);
+        else
+            s_LogicalDevice.MipQueue.Handle =
+                s_LogicalDevice.Handle.getQueue(s_LogicalDevice.MipQueue.FamilyIndex, 0);
+        Utils::SetDebugName(s_LogicalDevice.MipQueue.Handle, "Mip Queue");
     }
     else
     {
-        s_LogicalDevice.PresentQueue = s_LogicalDevice.GraphicsQueue;
-        Utils::SetDebugName(s_LogicalDevice.GraphicsQueue, "Graphics & Present Queue");
+        s_LogicalDevice.GraphicsQueue.m_ShouldLock = true;
+        if (s_LogicalDevice.PresentQueue.FamilyIndex == s_LogicalDevice.GraphicsQueue.FamilyIndex)
+            Utils::SetDebugName(s_LogicalDevice.GraphicsQueue.Handle, "Graphics & Present & Mip Queue");
     }
 
-    if (s_LogicalDevice.MipQueueFamilyIndex != vk::QueueFamilyIgnored)
+    if (s_LogicalDevice.TransferQueue.FamilyIndex != vk::QueueFamilyIgnored)
     {
-        if (s_LogicalDevice.MipQueueFamilyIndex == s_LogicalDevice.GraphicsQueueFamilyIndex)
-            s_LogicalDevice.MipQueue =
-                s_LogicalDevice.Handle.getQueue(s_LogicalDevice.MipQueueFamilyIndex, 1);
-        else
-            s_LogicalDevice.MipQueue =
-                s_LogicalDevice.Handle.getQueue(s_LogicalDevice.MipQueueFamilyIndex, 0);
-        Utils::SetDebugName(s_LogicalDevice.GraphicsQueue, "Mip Queue");
-    }
-
-    if (s_LogicalDevice.TransferQueueFamilyIndex != vk::QueueFamilyIgnored)
-    {
-        s_LogicalDevice.TransferQueue =
-            s_LogicalDevice.Handle.getQueue(s_LogicalDevice.TransferQueueFamilyIndex, 0);
-        Utils::SetDebugName(s_LogicalDevice.TransferQueue, "Transfer Queue");
+        s_LogicalDevice.TransferQueue.Handle =
+            s_LogicalDevice.Handle.getQueue(s_LogicalDevice.TransferQueue.FamilyIndex, 0);
+        Utils::SetDebugName(s_LogicalDevice.TransferQueue.Handle, "Transfer Queue");
     }
 }
 

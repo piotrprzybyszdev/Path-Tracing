@@ -6,6 +6,10 @@ Path Tracer written in Vulkan for an engineering thesis.
 * [CMake 3.25 or higher](https://cmake.org/)
 * C++ 20 capable compiler (tested with MSVC and gcc)
 
+To run the Debug version of the application on Windows, you must install the "shader toolchain debug symbols" through the Vulkan SDK installer.
+
+For Linux, you also must install the [dependencies of the GLFW library](https://www.glfw.org/docs/latest/compile.html#compile_deps).
+
 ## Build
 In order to build the project execute the following commands:
 ```

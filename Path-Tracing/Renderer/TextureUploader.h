@@ -25,6 +25,9 @@ public:
     );
     ~TextureUploader();
 
+    TextureUploader(const TextureUploader &) = delete;
+    TextureUploader &operator=(const TextureUploader &) = delete;
+
     void UploadTexturesBlocking(const Scene &scene);
     void UploadTextures(const Scene &scene);
     void Cancel();
@@ -41,7 +44,6 @@ private:
     CommandBuffer m_TransferCommandBuffer;
     CommandBuffer m_MipCommandBuffer;
 
-    const bool m_AlwaysBlock;
     const bool m_UseTransferQueue;
     const bool m_TextureScalingSupported;
 
@@ -49,20 +51,9 @@ private:
     std::jthread m_SubmitThread;
     ImageBuilder m_ImageBuilder;
 
-    struct TextureSpec
-    {
-        vk::Extent2D Extent;
-        TextureType Type;
-    };
-
-    struct UploadInfo
-    {
-        uint32_t TextureIndex;
-        TextureSpec Spec;
-    };
-
     std::vector<std::jthread> m_LoaderThreads;
     std::atomic<uint32_t> m_TextureIndex = 0;
+    std::atomic<uint32_t> m_RejectedCount = 0;
 
     std::counting_semaphore<> m_FreeBuffersSemaphore;  // How many Free Buffers there are
     std::mutex m_FreeBuffersMutex;
@@ -71,7 +62,7 @@ private:
     std::binary_semaphore m_DataBuffersSemaphore;  // Is there at least one Data Buffer
     std::mutex m_DataBuffersMutex;
     std::vector<Buffer> m_DataBuffers;
-    std::vector<UploadInfo> m_UploadInfos;
+    std::vector<uint32_t> m_TextureIndices;
 
 private:
     static inline constexpr vk::Extent2D MaxTextureSize = { 512u, 512u };
@@ -84,20 +75,22 @@ private:
     void StartLoaderThreads(const Scene &scene);
     void StartSubmitThread(const Scene &scene);
 
-    TextureSpec UploadToBuffer(const TextureInfo &textureInfo, const Buffer &buffer);
+    void UploadToBuffer(const TextureInfo &textureInfo, const Buffer &buffer);
     void UploadTexture(
         vk::CommandBuffer mipBuffer, vk::CommandBuffer transferBuffer, const TextureInfo &texture,
-        const UploadInfo &info, const Buffer &buffer
+        uint32_t textureIndex, const Buffer &buffer
     );
 
     void UploadBuffers(
-        std::span<const TextureInfo> textures, std::span<const UploadInfo> infos,
+        std::span<const TextureInfo> textures, std::span<const uint32_t> textureIndices,
         std::span<const Buffer> buffers
     );
     void UploadBuffersWithTransfer(
-        std::span<const TextureInfo> textures, std::span<const UploadInfo> infos,
+        std::span<const TextureInfo> textures, std::span<const uint32_t> textureIndices,
         std::span<const Buffer> buffers
     );
+
+    bool CheckCanUpload(const TextureInfo &info);
 
     static vk::Format SelectTextureFormat(TextureType type);
     static bool CheckBlitSupported(vk::Format format);

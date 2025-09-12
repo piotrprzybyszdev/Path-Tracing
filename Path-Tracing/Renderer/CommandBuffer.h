@@ -2,14 +2,19 @@
 
 #include <vulkan/vulkan.hpp>
 
+#include "DeviceContext.h"
+
 namespace PathTracing
 {
 
 class CommandBuffer
 {
 public:
-    CommandBuffer(uint32_t queueFamilyIndex, vk::Queue queue);
+    CommandBuffer(Queue &queue);
     ~CommandBuffer();
+
+    CommandBuffer(const CommandBuffer &) = delete;
+    CommandBuffer &operator=(const CommandBuffer &) = delete;
 
     vk::CommandBuffer Buffer;
 
@@ -25,7 +30,7 @@ public:
     void SubmitBlocking();
 
 private:
-    const vk::Queue m_Queue;
+    Queue &m_Queue;
     vk::CommandPool m_CommandPool;
 
     bool m_IsOpen = false;

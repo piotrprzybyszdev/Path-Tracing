@@ -166,9 +166,6 @@ void Application::Init()
 
 void Application::Shutdown()
 {
-    if (DeviceContext::GetLogical())
-        DeviceContext::GetLogical().waitIdle();
-
     switch (s_State)
     {
     case State::Initialized:
@@ -226,7 +223,7 @@ void Application::Run()
 
         if (s_Swapchain->GetPresentMode() != UserInterface::GetPresentMode())
         {
-            DeviceContext::GetLogical().waitIdle();
+            DeviceContext::GetGraphicsQueue().WaitIdle();
             s_Swapchain->Recreate(UserInterface::GetPresentMode());
         }
 
@@ -235,7 +232,7 @@ void Application::Run()
         {
             logger::info("Resize event for: {}x{}", windowSize.width, windowSize.height);
 
-            DeviceContext::GetLogical().waitIdle();
+            DeviceContext::GetGraphicsQueue().WaitIdle();
             s_Swapchain->Recreate(windowSize);
 
             camera.OnResize(windowSize.width, windowSize.height);

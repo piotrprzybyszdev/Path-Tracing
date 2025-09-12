@@ -6,13 +6,13 @@
 namespace PathTracing
 {
 
-CommandBuffer::CommandBuffer(uint32_t queueFamilyIndex, vk::Queue queue) : m_Queue(queue)
+CommandBuffer::CommandBuffer(Queue &queue) : m_Queue(queue)
 {
-    if (queueFamilyIndex == vk::QueueFamilyIgnored)
+    if (queue.Handle == nullptr)
         return;
 
     vk::CommandPoolCreateInfo createInfo(
-        vk::CommandPoolCreateFlagBits::eResetCommandBuffer, queueFamilyIndex
+        vk::CommandPoolCreateFlagBits::eResetCommandBuffer, queue.FamilyIndex
     );
     m_CommandPool = DeviceContext::GetLogical().createCommandPool(createInfo);
     m_Fence = DeviceContext::GetLogical().createFence(vk::FenceCreateInfo());
@@ -78,19 +78,19 @@ void CommandBuffer::Submit(vk::Fence waitFence)
 
     vk::SubmitInfo2 info;
     vk::CommandBufferSubmitInfo cmdInfo(Buffer);
+    vk::SemaphoreSubmitInfo signalInfo(m_SignalSemaphore);
+    vk::SemaphoreSubmitInfo waitInfo(m_WaitSemaphore, 0, m_WaitStageMask);
+
     info.setCommandBufferInfos(cmdInfo);
     if (m_ShouldSignal)
-    {
-        vk::SemaphoreSubmitInfo signalInfo(m_SignalSemaphore);
         info.setSignalSemaphoreInfos(signalInfo);
-    }
     if (m_WaitSemaphore != nullptr)
-    {
-        vk::SemaphoreSubmitInfo waitInfo(m_WaitSemaphore, 0, m_WaitStageMask);
         info.setWaitSemaphoreInfos(waitInfo);
-    }
 
-    m_Queue.submit2(info, waitFence);
+    {
+        auto lock = m_Queue.GetLock();
+        m_Queue.Handle.submit2(info, waitFence);
+    }
 
     m_WaitSemaphore = nullptr;
     m_WaitStageMask = vk::PipelineStageFlags2();

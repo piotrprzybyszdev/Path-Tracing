@@ -58,9 +58,7 @@ void Renderer::Init(const Swapchain *swapchain)
 {
     s_Swapchain = swapchain;
 
-    s_MainCommandBuffer = std::make_unique<CommandBuffer>(
-        DeviceContext::GetGraphicsQueueFamilyIndex(), DeviceContext::GetGraphicsQueue()
-    );
+    s_MainCommandBuffer = std::make_unique<CommandBuffer>(DeviceContext::GetGraphicsQueue());
 
     s_StagingImage = ImageBuilder()
                          .SetUsageFlags(
@@ -133,6 +131,8 @@ void Renderer::Init(const Swapchain *swapchain)
 
 void Renderer::Shutdown()
 {
+    DeviceContext::GetGraphicsQueue().WaitIdle();
+
     s_TextureUploader.reset();
 
     for (RenderingResources &res : s_RenderingResources)
@@ -168,7 +168,7 @@ void Renderer::Shutdown()
 
 void Renderer::SetScene(const Scene &scene)
 {
-    DeviceContext::GetLogical().waitIdle();
+    DeviceContext::GetGraphicsQueue().WaitIdle();
 
     {
         Timer timer("Mesh Upload");
@@ -349,11 +349,9 @@ uint32_t Renderer::AddDefaultTexture(glm::u8vec4 value, std::string &&name)
 
 void Renderer::AddSkybox(const Skybox2D &skybox)
 {
-    Texture texture = AssetManager::LoadTexture(skybox.Path);
-
     // TOOD: HDR
     vk::Format format = vk::Format::eR8G8B8A8Unorm;
-    vk::Extent2D extent(texture.Width, texture.Height);
+    vk::Extent2D extent(skybox.Content.Width, skybox.Content.Height);
 
     assert(std::has_single_bit(extent.width) && std::has_single_bit(extent.height));
 
@@ -367,7 +365,8 @@ void Renderer::AddSkybox(const Skybox2D &skybox)
             .EnableMips()
             .CreateImageUnique(extent);
 
-    s_StagingBuffer->Upload(std::span(texture.Data, Image::GetByteSize(extent, format)));
+    std::byte *data = AssetManager::LoadTextureData(skybox.Content);
+    s_StagingBuffer->Upload(std::span(data, Image::GetByteSize(extent, format)));
 
     s_MainCommandBuffer->Begin();
     s_StaticSceneData.Skybox->UploadStaging(
@@ -376,22 +375,18 @@ void Renderer::AddSkybox(const Skybox2D &skybox)
     );
     s_MainCommandBuffer->SubmitBlocking();
 
-    AssetManager::ReleaseTexture(texture);
+    AssetManager::ReleaseTextureData(data);
     s_MissFlags = Shaders::MissFlagsSkybox2D;
 }
 
 void Renderer::AddSkybox(const SkyboxCube &skybox)
 {
-    std::array<std::filesystem::path, 6> paths = { skybox.Front, skybox.Back, skybox.Up,
-                                                   skybox.Down,  skybox.Left, skybox.Right };
-
-    std::array<Texture, 6> textures = {};
-    for (int i = 0; i < paths.size(); i++)
-        textures[i] = AssetManager::LoadTexture(paths[i]);
+    std::array<const TextureInfo *, 6> textureInfos = { &skybox.Front, &skybox.Back, &skybox.Up,
+                                                        &skybox.Down,  &skybox.Left, &skybox.Right };
 
     // TOOD: HDR
     vk::Format format = vk::Format::eR8G8B8A8Unorm;
-    vk::Extent2D extent(textures[0].Width, textures[0].Height);
+    vk::Extent2D extent(textureInfos[0]->Width, textureInfos[0]->Height);
 
     assert(std::has_single_bit(extent.width) && std::has_single_bit(extent.height));
 
@@ -406,11 +401,16 @@ void Renderer::AddSkybox(const SkyboxCube &skybox)
             .EnableCube()
             .CreateImageUnique(extent);
 
-    for (int i = 0; i < textures.size(); i++)
+    for (int i = 0; i < textureInfos.size(); i++)
     {
-        assert(textures[i].Width == extent.width && textures[i].Height == extent.height);
+        assert(textureInfos[i]->Width == extent.width && textureInfos[i]->Height == extent.height);
+
+        std::byte *data = AssetManager::LoadTextureData(*textureInfos[i]);
+        
         const vk::DeviceSize layerSize = Image::GetByteSize(extent, format);
-        s_StagingBuffer->Upload(std::span(textures[i].Data, layerSize), i * layerSize);
+        s_StagingBuffer->Upload(std::span(data, layerSize), i * layerSize);
+
+        AssetManager::ReleaseTextureData(data);
     }
 
     s_MainCommandBuffer->Begin();
@@ -419,9 +419,6 @@ void Renderer::AddSkybox(const SkyboxCube &skybox)
         vk::ImageLayout::eShaderReadOnlyOptimal
     );
     s_MainCommandBuffer->SubmitBlocking();
-
-    for (const auto &texture : textures)
-        AssetManager::ReleaseTexture(texture);
 
     s_MissFlags = Shaders::MissFlagsSkyboxCube;
 }
@@ -475,7 +472,7 @@ bool Renderer::SetupPipeline()
 
 void Renderer::ReloadShaders()
 {
-    DeviceContext::GetLogical().waitIdle();
+    DeviceContext::GetGraphicsQueue().WaitIdle();
     DeviceContext::GetLogical().destroyPipeline(s_Pipeline);
     s_Pipeline = s_ShaderLibrary->CreatePipeline(s_PipelineLayout);
 
@@ -588,7 +585,7 @@ void Renderer::OnInFlightCountChange()
         RenderingResources res;
 
         vk::CommandPoolCreateInfo commandPoolCreateInfo(
-            vk::CommandPoolCreateFlagBits::eResetCommandBuffer, DeviceContext::GetGraphicsQueueFamilyIndex()
+            vk::CommandPoolCreateFlagBits::eResetCommandBuffer, DeviceContext::GetGraphicsQueue().FamilyIndex
         );
         res.CommandPool = DeviceContext::GetLogical().createCommandPool(commandPoolCreateInfo);
 
@@ -622,7 +619,7 @@ void Renderer::OnInFlightCountChange()
 
 void Renderer::RecreateDescriptorSet()
 {
-    DeviceContext::GetLogical().waitIdle();
+    DeviceContext::GetGraphicsQueue().WaitIdle();
 
     std::lock_guard lock(s_DescriptorSetMutex);
     s_DescriptorSet = s_DescriptorSetBuilder->CreateSetUnique(s_RenderingResources.size());
@@ -694,7 +691,10 @@ void Renderer::Render(const Camera &camera)
     vk::SemaphoreSubmitInfo signalInfo(sync.RenderCompleteSemaphore);
     vk::SubmitInfo2 submitInfo(vk::SubmitFlags(), waitInfo, cmdInfo, signalInfo);
 
-    DeviceContext::GetGraphicsQueue().submit2({ submitInfo }, sync.InFlightFence);
+    {
+        auto lock = DeviceContext::GetGraphicsQueue().GetLock();
+        DeviceContext::GetGraphicsQueue().Handle.submit2({ submitInfo }, sync.InFlightFence);
+    }
 }
 
 }

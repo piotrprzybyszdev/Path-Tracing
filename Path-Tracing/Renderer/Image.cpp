@@ -147,7 +147,7 @@ void Image::UploadStaging(
 ) const
 {
     assert(buffer.GetSize() >= GetByteSize(m_Extent, m_Format, layerCount));
-    auto createBlitInfo = [=, &temporary](vk::ImageBlit2 imageBlit) {
+    auto createBlitInfo = [this, &temporary](vk::ImageBlit2 &imageBlit) {
         return vk::BlitImageInfo2(
             temporary.GetHandle(), vk::ImageLayout::eTransferSrcOptimal, m_Handle,
             vk::ImageLayout::eTransferDstOptimal, imageBlit, vk::Filter::eLinear
@@ -160,12 +160,15 @@ void Image::UploadStaging(
         assert(temporary.GetExtent() >= extent);
 
         const uint32_t destMip = temporary.GetMip(m_Extent) - 1;
+        const vk::Extent2D destExtent(m_Extent.width * 2, m_Extent.height * 2);
         temporary.Scale(mipBuffer, transferBuffer, buffer, extent, destMip);
 
-        TransitionMip(mipBuffer, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, 0, layer);
+        TransitionMip(
+            mipBuffer, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, 0, layer, layerCount
+        );
 
         vk::ImageBlit2 imageBlit(
-            temporary.GetMipLayer(destMip), temporary.GetMipLevelArea(destMip), GetMipLayer(0, layer),
+            temporary.GetMipLayer(destMip), temporary.GetMipLevelArea(destExtent), GetMipLayer(0, layer),
             GetMipLevelArea(0)
         );
 
@@ -344,9 +347,12 @@ void Image::Transition(
 
 std::array<vk::Offset3D, 2> Image::GetMipLevelArea(uint32_t level) const
 {
-    return { { {},
-               { static_cast<int32_t>(m_Extent.width >> level),
-                 static_cast<int32_t>(m_Extent.height >> level), 1 } } };
+    return GetMipLevelArea(vk::Extent2D(m_Extent.width >> level, m_Extent.height >> level));
+}
+
+std::array<vk::Offset3D, 2> Image::GetMipLevelArea(vk::Extent2D extent) const
+{
+    return { vk::Offset3D(), vk::Offset3D(extent.width, extent.height, 1) };
 }
 
 vk::ImageSubresourceLayers Image::GetMipLayer(uint32_t level, uint32_t layer, uint32_t layerCount) const
@@ -384,6 +390,7 @@ ImageBuilder &ImageBuilder::SetLayers(uint32_t layers)
         m_Cube = false;
     return *this;
 }
+
 
 ImageBuilder &ImageBuilder::EnableCube()
 {

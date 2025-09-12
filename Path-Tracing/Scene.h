@@ -4,10 +4,8 @@
 
 #include <filesystem>
 #include <map>
-#include <optional>
 #include <span>
 #include <string>
-#include <string_view>
 #include <unordered_map>
 #include <variant>
 #include <vector>
@@ -24,21 +22,16 @@ enum class TextureType : uint8_t
     Color,
     Normal,
     Roughness,
-    Metalic
+    Metalic,
+    Skybox
 };
 
 struct TextureInfo
 {
     TextureType Type;
+    uint8_t Channels;
+    uint32_t Width, Height;
     std::filesystem::path Path;
-};
-
-struct Material
-{
-    std::optional<std::filesystem::path> Color;
-    std::optional<std::filesystem::path> Normal;
-    std::optional<std::filesystem::path> Roughness;
-    std::optional<std::filesystem::path> Metalic;
 };
 
 struct Geometry
@@ -82,17 +75,17 @@ struct SkyboxClearColor
 
 struct Skybox2D
 {
-    std::filesystem::path Path;
+    TextureInfo Content;
 };
 
 struct SkyboxCube
 {
-    std::filesystem::path Front;
-    std::filesystem::path Back;
-    std::filesystem::path Up;
-    std::filesystem::path Down;
-    std::filesystem::path Left;
-    std::filesystem::path Right;
+    TextureInfo Front;
+    TextureInfo Back;
+    TextureInfo Up;
+    TextureInfo Down;
+    TextureInfo Left;
+    TextureInfo Right;
 };
 
 class Scene
@@ -107,7 +100,8 @@ public:
     uint32_t AddModel(std::span<const MeshInfo> meshInfos);
     uint32_t AddModelInstance(uint32_t modelIndex, glm::mat4 transform);
 
-    uint32_t AddMaterial(std::string name, Material material);
+    uint32_t AddTexture(TextureInfo &&texture);
+    uint32_t AddMaterial(std::string name, Shaders::Material material);
 
     void SetVertices(std::vector<Shaders::Vertex> &&vertices);
     void SetIndices(std::vector<uint32_t> &&indices);
@@ -162,9 +156,6 @@ public:
         MeshNames;
     Registry<uint32_t, std::string, g_DefaultModelName, g_EnableNameRegistries> ModelNames;
     Registry<uint32_t, std::string, g_DefaultModelInstanceName, g_EnableNameRegistries> ModelInstanceNames;
-
-private:
-    uint32_t AddTexture(TextureType type, const std::filesystem::path &path);
 };
 
 }

@@ -1,9 +1,9 @@
+#include "Core/Core.h"
+
 #include "Swapchain.h"
 #include "Application.h"
 #include "DeviceContext.h"
 #include "Utils.h"
-
-#include "Core/Core.h"
 
 namespace PathTracing
 {
@@ -234,7 +234,11 @@ bool Swapchain::Present()
     vk::PresentInfoKHR presentInfo({ sync.RenderCompleteSemaphore }, { m_Handle }, { m_CurrentFrameIndex });
     try
     {
-        vk::Result res = DeviceContext::GetPresentQueue().presentKHR(presentInfo);
+        vk::Result res;
+        {
+            auto lock = DeviceContext::GetPresentQueue().GetLock();
+            res = DeviceContext::GetPresentQueue().Handle.presentKHR(presentInfo);
+        }
         if (res == vk::Result::eSuboptimalKHR)
         {
             logger::warn("Swapchain Present: {}", vk::to_string(res));

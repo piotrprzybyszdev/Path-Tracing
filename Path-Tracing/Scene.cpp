@@ -56,21 +56,28 @@ uint32_t Scene::AddModelInstance(uint32_t modelIndex, glm::mat4 transform)
     return m_ModelInstances.size() - 1;
 }
 
-uint32_t Scene::AddMaterial(std::string name, Material material)
+uint32_t Scene::AddTexture(TextureInfo &&texture)
+{
+    const std::string name = texture.Path.string();
+
+    if (m_TextureIndices.contains(name))
+        return m_TextureIndices[name];
+
+    m_Textures.push_back(std::move(texture));
+    const uint32_t textureIndex = Shaders::GetSceneTextureIndex(m_Textures.size() - 1);
+
+    m_TextureIndices[name] = textureIndex;
+    logger::trace("Added texture {} to Scene", name);
+
+    return textureIndex;
+}
+
+uint32_t Scene::AddMaterial(std::string name, Shaders::Material material)
 {
     if (m_MaterialIndices.contains(name))
         return m_MaterialIndices[name];
 
-    m_Materials.emplace_back(
-        material.Color.has_value() ? AddTexture(TextureType::Color, material.Color.value())
-                                   : Shaders::DefaultColorTextureIndex,
-        material.Normal.has_value() ? AddTexture(TextureType::Normal, material.Normal.value())
-                                    : Shaders::DefaultNormalTextureIndex,
-        material.Roughness.has_value() ? AddTexture(TextureType::Roughness, material.Roughness.value())
-                                       : Shaders::DefaultRoughnessTextureIndex,
-        material.Metalic.has_value() ? AddTexture(TextureType::Metalic, material.Metalic.value())
-                                     : Shaders::DefaultMetalicTextureIndex
-    );
+    m_Materials.push_back(material);
 
     m_MaterialIndices[std::move(name)] = m_Materials.size() - 1;
 
@@ -97,22 +104,6 @@ void Scene::SetSkybox(Skybox2D &&skybox)
 void Scene::SetSkybox(SkyboxCube &&skybox)
 {
     m_Skybox = skybox;
-}
-
-uint32_t Scene::AddTexture(TextureType type, const std::filesystem::path &path)
-{
-    const std::string name = path.string();
-
-    if (m_TextureIndices.contains(name))
-        return m_TextureIndices[name];
-
-    m_Textures.emplace_back(type, path);
-    const uint32_t textureIndex = Shaders::SceneTextureOffset + m_Textures.size() - 1;
-
-    m_TextureIndices[name] = textureIndex;
-    logger::trace("Added texture {} to Scene", name);
-
-    return textureIndex;
 }
 
 std::span<const Shaders::Vertex> Scene::GetVertices() const

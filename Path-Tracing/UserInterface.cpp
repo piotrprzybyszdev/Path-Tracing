@@ -49,20 +49,20 @@ void UserInterface::Init(vk::Instance instance, vk::Format format, uint32_t swap
     ImGui::StyleColorsDark();
 
     ImGui_ImplGlfw_InitForVulkan(Window::GetHandle(), true);
-    ImGui_ImplVulkan_InitInfo init_info = {};
-    init_info.Instance = instance;
-    init_info.PhysicalDevice = DeviceContext::GetPhysical();
-    init_info.Device = DeviceContext::GetLogical();
-    init_info.QueueFamily = DeviceContext::GetGraphicsQueueFamilyIndex();
-    init_info.Queue = DeviceContext::GetGraphicsQueue();
-    init_info.DescriptorPoolSize = swapchainImageCount;
-    init_info.MinImageCount = swapchainImageCount;
-    init_info.ImageCount = swapchainImageCount;
-    init_info.CheckVkResultFn = CheckVkResult;
-    init_info.UseDynamicRendering = true;
+    ImGui_ImplVulkan_InitInfo initInfo = {};
+    initInfo.Instance = instance;
+    initInfo.PhysicalDevice = DeviceContext::GetPhysical();
+    initInfo.Device = DeviceContext::GetLogical();
+    initInfo.QueueFamily = DeviceContext::GetGraphicsQueue().FamilyIndex;
+    initInfo.Queue = DeviceContext::GetGraphicsQueue().Handle;
+    initInfo.DescriptorPoolSize = swapchainImageCount;
+    initInfo.MinImageCount = swapchainImageCount;
+    initInfo.ImageCount = swapchainImageCount;
+    initInfo.CheckVkResultFn = CheckVkResult;
+    initInfo.UseDynamicRendering = true;
     std::array<vk::Format, 1> formats = { format };
-    init_info.PipelineRenderingCreateInfo = vk::PipelineRenderingCreateInfoKHR(0, formats);
-    ImGui_ImplVulkan_Init(&init_info);
+    initInfo.PipelineRenderingCreateInfo = vk::PipelineRenderingCreateInfoKHR(0, formats);
+    ImGui_ImplVulkan_Init(&initInfo);
 }
 
 void UserInterface::Shutdown()
