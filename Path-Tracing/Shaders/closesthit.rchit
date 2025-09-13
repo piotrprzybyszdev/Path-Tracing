@@ -172,5 +172,14 @@ void main()
 	case RenderModeMips:
 		hitValue = vec3(floor(lod) / textureQueryLevels(textures[GetColorTextureIndex(mainUniform.u_EnabledTextures, material)]));
 		break;
+	case RenderModeGeometry:
+		hitValue = getRandomColor(gl_GeometryIndexEXT);
+		break;
+	case RenderModePrimitive:
+		hitValue = getRandomColor(gl_PrimitiveID);
+		break;
+	case RenderModeInstance:
+		hitValue = getRandomColor(gl_InstanceID);
+		break;
 	}
 }

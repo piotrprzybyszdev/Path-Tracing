@@ -208,14 +208,15 @@ void UserInterface::DefineUI()
 
     static constexpr Shaders::RenderModeFlags renderModes[] = {
         Shaders::RenderModeColor,         Shaders::RenderModeWorldPosition, Shaders::RenderModeNormal,
-        Shaders::RenderModeTextureCoords, Shaders::RenderModeMips,
+        Shaders::RenderModeTextureCoords, Shaders::RenderModeMips,          Shaders::RenderModeGeometry,
+        Shaders::RenderModePrimitive,     Shaders::RenderModeInstance,
     };
 
     static constexpr const char *renderModeNames[] = {
-        "Color", "World Position", "Normal", "TextureCoords", "Mips",
+        "Color", "World Position", "Normal", "TextureCoords", "Mips", "Geometry", "Primitive", "Instance",
     };
 
-    for (int i = 0; i < 5; i++)
+    for (int i = 0; i < 8; i++)
     {
         ImGui::PushID(i);
         if (ImGui::RadioButton(renderModeNames[i], s_RenderMode == renderModes[i]))
