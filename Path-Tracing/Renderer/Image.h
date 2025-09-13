@@ -17,11 +17,11 @@ public:
     Image() = default;
     Image(
         vk::Format format, vk::Extent2D extent, vk::ImageUsageFlags usageFlags, uint32_t layers,
-        uint32_t mipLevels, bool isCube
+        uint32_t mipLevels, bool isCube, const std::string &name
     );
     Image(
         vk::Format format, vk::Extent2D extent, vk::ImageUsageFlags usageFlags, uint32_t layers, bool mips,
-        bool isCube
+        bool isCube, const std::string &name
     );
 
     ~Image();
@@ -32,6 +32,7 @@ public:
     Image &operator=(Image &&image) noexcept;
     Image &operator=(const Image &image) = delete;
 
+    [[nodiscard]] bool IsDevice() const;
     [[nodiscard]] vk::Extent2D GetExtent() const;
     [[nodiscard]] vk::Image GetHandle() const;
     [[nodiscard]] vk::ImageView GetView() const;
@@ -81,6 +82,7 @@ private:
     uint32_t m_MipLevels = 1;
     uint32_t m_Layers = 1;
 
+    bool m_IsDevice = true;
     bool m_IsMoved = false;
 
 private:
@@ -122,11 +124,10 @@ public:
 
     ImageBuilder &ResetFlags();
 
-    [[nodiscard]] Image CreateImage(vk::Extent2D extent) const;
-    [[nodiscard]] Image CreateImage(vk::Extent2D extent, const std::string &name) const;
-    [[nodiscard]] std::unique_ptr<Image> CreateImageUnique(vk::Extent2D extent) const;
-    [[nodiscard]] std::unique_ptr<Image> CreateImageUnique(vk::Extent2D extent, const std::string &name)
-        const;
+    [[nodiscard]] Image CreateImage(vk::Extent2D extent, const std::string &name = s_DefaultImageName) const;
+    [[nodiscard]] std::unique_ptr<Image> CreateImageUnique(
+        vk::Extent2D extent, const std::string &name = s_DefaultImageName
+    ) const;
 
 private:
     vk::Format m_Format = vk::Format::eUndefined;
@@ -134,6 +135,9 @@ private:
     uint32_t m_Layers = 1;
     bool m_Mips = false;
     bool m_Cube = false;
+
+private:
+    static inline const std::string s_DefaultImageName = "Unnamed Image";
 };
 
 }

@@ -18,7 +18,7 @@ static uint32_t ComputeMipLevels(vk::Extent2D extent)
 
 Image::Image(
     vk::Format format, vk::Extent2D extent, vk::ImageUsageFlags usageFlags, uint32_t layers,
-    uint32_t mipLevels, bool isCube
+    uint32_t mipLevels, bool isCube, const std::string &name
 )
     : m_Format(format), m_Extent(extent), m_Layers(layers), m_MipLevels(mipLevels)
 {
@@ -42,6 +42,21 @@ Image::Image(
     assert(result == VkResult::VK_SUCCESS);
     m_Handle = image;
 
+#ifndef NDEBUG
+    VmaAllocationInfo info;
+    vmaGetAllocationInfo(DeviceContext::GetAllocator(), m_Allocation, &info);
+    assert(result == VkResult::VK_SUCCESS);
+
+    VkMemoryPropertyFlags memoryProperties;
+    vmaGetMemoryTypeProperties(DeviceContext::GetAllocator(), info.memoryType, &memoryProperties);
+
+    if (!(memoryProperties & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT))
+    {
+        logger::warn("Buffer `{}` was allocated in RAM instead of VRAM", name);
+        m_IsDevice = false;
+    }
+#endif
+
     vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, 0, mipLevels, 0, layers);
     vk::ImageViewType viewType = isCube ? vk::ImageViewType::eCube : vk::ImageViewType::e2D;
     vk::ImageViewCreateInfo viewCreateInfo =
@@ -49,13 +64,15 @@ Image::Image(
             .setSubresourceRange(range);
 
     m_View = DeviceContext::GetLogical().createImageView(viewCreateInfo);
+
+    SetDebugName(name);
 }
 
 Image::Image(
     vk::Format format, vk::Extent2D extent, vk::ImageUsageFlags usageFlags, uint32_t layers, bool mips,
-    bool isCube
+    bool isCube, const std::string &name
 )
-    : Image(format, extent, usageFlags, layers, mips ? ComputeMipLevels(extent) : 1, isCube)
+    : Image(format, extent, usageFlags, layers, mips ? ComputeMipLevels(extent) : 1, isCube, name)
 {
 }
 
@@ -372,6 +389,11 @@ vk::DeviceSize Image::GetByteSize(vk::Extent2D extent, vk::Format format, uint32
     return static_cast<vk::DeviceSize>(layers) * extent.width * extent.height * vk::blockSize(format);
 }
 
+bool Image::IsDevice() const
+{
+    return m_IsDevice;
+}
+
 ImageBuilder &ImageBuilder::SetFormat(vk::Format format)
 {
     m_Format = format;
@@ -398,7 +420,6 @@ ImageBuilder &ImageBuilder::SetLayers(uint32_t layers)
     return *this;
 }
 
-
 ImageBuilder &ImageBuilder::EnableCube()
 {
     m_Cube = true;
@@ -413,28 +434,14 @@ ImageBuilder &ImageBuilder::ResetFlags()
     return *this;
 }
 
-Image ImageBuilder::CreateImage(vk::Extent2D extent) const
-{
-    return Image(m_Format, extent, m_UsageFlags, m_Layers, m_Mips, m_Cube);
-}
-
 Image ImageBuilder::CreateImage(vk::Extent2D extent, const std::string &name) const
 {
-    Image image = CreateImage(extent);
-    image.SetDebugName(name);
-    return image;
-}
-
-std::unique_ptr<Image> ImageBuilder::CreateImageUnique(vk::Extent2D extent) const
-{
-    return std::make_unique<Image>(m_Format, extent, m_UsageFlags, m_Layers, m_Mips, m_Cube);
+    return Image(m_Format, extent, m_UsageFlags, m_Layers, m_Mips, m_Cube, name);
 }
 
 std::unique_ptr<Image> ImageBuilder::CreateImageUnique(vk::Extent2D extent, const std::string &name) const
 {
-    auto image = CreateImageUnique(extent);
-    image->SetDebugName(name);
-    return image;
+    return std::make_unique<Image>(m_Format, extent, m_UsageFlags, m_Layers, m_Mips, m_Cube, name);
 }
 
 }

@@ -29,7 +29,7 @@ public:
     Buffer() = default;
     Buffer(
         vk::BufferCreateFlags createFlags, vk::DeviceSize size, bool isDevice,
-        vk::BufferUsageFlags usageFlags, vk::DeviceSize alignment
+        vk::BufferUsageFlags usageFlags, vk::DeviceSize alignment, const std::string &name
     );
     ~Buffer();
 
@@ -45,6 +45,7 @@ public:
     void UploadStaging(vk::CommandBuffer commandBuffer, const Buffer &staging) const;
     void UploadStaging(vk::CommandBuffer commandBuffer, const Buffer &staging, vk::DeviceSize size) const;
 
+    [[nodiscard]] bool IsDevice() const;
     [[nodiscard]] vk::Buffer GetHandle() const;
     [[nodiscard]] vk::DeviceAddress GetDeviceAddress() const;
     [[nodiscard]] vk::DeviceSize GetSize() const;
@@ -70,39 +71,38 @@ public:
 
     BufferBuilder &ResetFlags();
 
-    [[nodiscard]] Buffer CreateHostBuffer(vk::DeviceSize size) const;
-    [[nodiscard]] Buffer CreateDeviceBuffer(vk::DeviceSize size) const;
-    [[nodiscard]] Buffer CreateHostBuffer(vk::DeviceSize size, const std::string &name) const;
-    [[nodiscard]] Buffer CreateDeviceBuffer(vk::DeviceSize size, const std::string &name) const;
-    [[nodiscard]] std::unique_ptr<Buffer> CreateHostBufferUnique(vk::DeviceSize size) const;
-    [[nodiscard]] std::unique_ptr<Buffer> CreateDeviceBufferUnique(vk::DeviceSize size) const;
-    [[nodiscard]] std::unique_ptr<Buffer> CreateHostBufferUnique(vk::DeviceSize size, const std::string &name)
+    [[nodiscard]] Buffer CreateHostBuffer(vk::DeviceSize size, const std::string &name = s_DefaultBufferName)
         const;
-    [[nodiscard]] std::unique_ptr<Buffer> CreateDeviceBufferUnique(
-        vk::DeviceSize size, const std::string &name
-    ) const;
-
-    [[nodiscard]] Buffer CreateHostBuffer(BufferContent content) const;
-    [[nodiscard]] Buffer CreateDeviceBuffer(vk::CommandBuffer commandBuffer, const Buffer &staging) const;
-    [[nodiscard]] Buffer CreateHostBuffer(BufferContent content, const std::string &name) const;
     [[nodiscard]] Buffer CreateDeviceBuffer(
-        vk::CommandBuffer commandBuffer, const Buffer &staging, const std::string &name
-    ) const;
-    [[nodiscard]] std::unique_ptr<Buffer> CreateHostBufferUnique(BufferContent content) const;
-    [[nodiscard]] std::unique_ptr<Buffer> CreateDeviceBufferUnique(
-        vk::CommandBuffer commandBuffer, const Buffer &staging
+        vk::DeviceSize size, const std::string &name = s_DefaultBufferName
     ) const;
     [[nodiscard]] std::unique_ptr<Buffer> CreateHostBufferUnique(
-        BufferContent content, const std::string &name
+        vk::DeviceSize size, const std::string &name = s_DefaultBufferName
     ) const;
     [[nodiscard]] std::unique_ptr<Buffer> CreateDeviceBufferUnique(
-        vk::CommandBuffer commandBuffer, const Buffer &staging, const std::string &name
+        vk::DeviceSize size, const std::string &name = s_DefaultBufferName
+    ) const;
+
+    [[nodiscard]] Buffer CreateHostBuffer(
+        BufferContent content, const std::string &name = s_DefaultBufferName
+    ) const;
+    [[nodiscard]] Buffer CreateDeviceBuffer(
+        vk::CommandBuffer commandBuffer, const Buffer &staging, const std::string &name = s_DefaultBufferName
+    ) const;
+    [[nodiscard]] std::unique_ptr<Buffer> CreateHostBufferUnique(
+        BufferContent content, const std::string &name = s_DefaultBufferName
+    ) const;
+    [[nodiscard]] std::unique_ptr<Buffer> CreateDeviceBufferUnique(
+        vk::CommandBuffer commandBuffer, const Buffer &staging, const std::string &name = s_DefaultBufferName
     ) const;
 
 private:
     vk::BufferCreateFlags m_CreateFlags;
     vk::BufferUsageFlags m_UsageFlags;
     vk::DeviceSize m_Alignment = 0;
+
+private:
+    static inline const std::string s_DefaultBufferName = "Unnamed Buffer";
 };
 
 }

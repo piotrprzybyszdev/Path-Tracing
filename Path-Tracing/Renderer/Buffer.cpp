@@ -10,7 +10,7 @@ namespace PathTracing
 
 Buffer::Buffer(
     vk::BufferCreateFlags createFlags, vk::DeviceSize size, bool isDevice, vk::BufferUsageFlags usageFlags,
-    vk::DeviceSize alignment
+    vk::DeviceSize alignment, const std::string &name
 )
     : m_Size(size), m_IsDevice(isDevice)
 {
@@ -30,6 +30,26 @@ Buffer::Buffer(
 
     assert(result == VkResult::VK_SUCCESS);
     m_Handle = handle;
+
+#ifndef NDEBUG
+    if (isDevice)
+    {
+        VmaAllocationInfo info;
+        vmaGetAllocationInfo(DeviceContext::GetAllocator(), m_Allocation, &info);
+        assert(result == VkResult::VK_SUCCESS);
+
+        VkMemoryPropertyFlags memoryProperties;
+        vmaGetMemoryTypeProperties(DeviceContext::GetAllocator(), info.memoryType, &memoryProperties);
+
+        if (!(memoryProperties & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT))
+        {
+            logger::warn("Buffer `{}` was allocated in RAM instead of VRAM", name);
+            m_IsDevice = false;
+        }
+    }
+#endif
+
+    SetDebugName(name);
 }
 
 Buffer::~Buffer()
@@ -106,6 +126,11 @@ void Buffer::SetDebugName(const std::string &name) const
     Utils::SetDebugName(m_Handle, name);
 }
 
+bool Buffer::IsDevice() const
+{
+    return m_IsDevice;
+}
+
 BufferBuilder &BufferBuilder::SetCreateFlags(vk::BufferCreateFlags createFlags)
 {
     m_CreateFlags = createFlags;
@@ -132,68 +157,26 @@ BufferBuilder &BufferBuilder::ResetFlags()
     return *this;
 }
 
-Buffer BufferBuilder::CreateHostBuffer(vk::DeviceSize size) const
-{
-    return Buffer(m_CreateFlags, size, false, m_UsageFlags, m_Alignment);
-}
-
-Buffer BufferBuilder::CreateDeviceBuffer(vk::DeviceSize size) const
-{
-    return Buffer(m_CreateFlags, size, true, m_UsageFlags, m_Alignment);
-}
-
 Buffer BufferBuilder::CreateHostBuffer(vk::DeviceSize size, const std::string &name) const
 {
-    Buffer buffer = CreateHostBuffer(size);
-    buffer.SetDebugName(name);
-    return buffer;
+    return Buffer(m_CreateFlags, size, false, m_UsageFlags, m_Alignment, name);
 }
 
 Buffer BufferBuilder::CreateDeviceBuffer(vk::DeviceSize size, const std::string &name) const
 {
-    Buffer buffer = CreateDeviceBuffer(size);
-    buffer.SetDebugName(name);
-    return buffer;
-}
-
-std::unique_ptr<Buffer> BufferBuilder::CreateHostBufferUnique(vk::DeviceSize size) const
-{
-    return std::make_unique<Buffer>(m_CreateFlags, size, false, m_UsageFlags, m_Alignment);
-}
-
-std::unique_ptr<Buffer> BufferBuilder::CreateDeviceBufferUnique(vk::DeviceSize size) const
-{
-    return std::make_unique<Buffer>(m_CreateFlags, size, true, m_UsageFlags, m_Alignment);
+    return Buffer(m_CreateFlags, size, true, m_UsageFlags, m_Alignment, name);
 }
 
 std::unique_ptr<Buffer> BufferBuilder::CreateHostBufferUnique(vk::DeviceSize size, const std::string &name)
     const
 {
-    auto buffer = CreateHostBufferUnique(size);
-    buffer->SetDebugName(name);
-    return buffer;
+    return std::make_unique<Buffer>(m_CreateFlags, size, false, m_UsageFlags, m_Alignment, name);
 }
 
 std::unique_ptr<Buffer> BufferBuilder::CreateDeviceBufferUnique(vk::DeviceSize size, const std::string &name)
     const
 {
-    auto buffer = CreateDeviceBufferUnique(size);
-    buffer->SetDebugName(name);
-    return buffer;
-}
-
-Buffer BufferBuilder::CreateHostBuffer(BufferContent content) const
-{
-    Buffer buffer = CreateHostBuffer(content.Size);
-    buffer.Upload(content.Data);
-    return buffer;
-}
-
-Buffer BufferBuilder::CreateDeviceBuffer(vk::CommandBuffer commandBuffer, const Buffer &staging) const
-{
-    Buffer buffer = CreateDeviceBuffer(staging.GetSize());
-    buffer.UploadStaging(commandBuffer, staging);
-    return buffer;
+    return std::make_unique<Buffer>(m_CreateFlags, size, true, m_UsageFlags, m_Alignment, name);
 }
 
 Buffer BufferBuilder::CreateHostBuffer(BufferContent content, const std::string &name) const
@@ -207,24 +190,8 @@ Buffer BufferBuilder::CreateDeviceBuffer(
     vk::CommandBuffer commandBuffer, const Buffer &staging, const std::string &name
 ) const
 {
-    Buffer buffer = CreateDeviceBuffer(commandBuffer, staging);
-    buffer.SetDebugName(name);
-    return buffer;
-}
-
-std::unique_ptr<Buffer> BufferBuilder::CreateHostBufferUnique(BufferContent content) const
-{
-    auto buffer = CreateHostBufferUnique(content.Size);
-    buffer->Upload(content.Data);
-    return buffer;
-}
-
-std::unique_ptr<Buffer> BufferBuilder::CreateDeviceBufferUnique(
-    vk::CommandBuffer commandBuffer, const Buffer &staging
-) const
-{
-    auto buffer = CreateDeviceBufferUnique(staging.GetSize());
-    buffer->UploadStaging(commandBuffer, staging);
+    Buffer buffer = CreateDeviceBuffer(staging.GetSize(), name);
+    buffer.UploadStaging(commandBuffer, staging);
     return buffer;
 }
 
@@ -240,8 +207,8 @@ std::unique_ptr<Buffer> BufferBuilder::CreateDeviceBufferUnique(
     vk::CommandBuffer commandBuffer, const Buffer &staging, const std::string &name
 ) const
 {
-    auto buffer = CreateDeviceBufferUnique(commandBuffer, staging);
-    buffer->SetDebugName(name);
+    auto buffer = CreateDeviceBufferUnique(staging.GetSize(), name);
+    buffer->UploadStaging(commandBuffer, staging);
     return buffer;
 }
 
