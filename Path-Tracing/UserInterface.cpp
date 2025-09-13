@@ -55,7 +55,7 @@ void UserInterface::Init(vk::Instance instance, vk::Format format, uint32_t swap
     initInfo.Device = DeviceContext::GetLogical();
     initInfo.QueueFamily = DeviceContext::GetGraphicsQueue().FamilyIndex;
     initInfo.Queue = DeviceContext::GetGraphicsQueue().Handle;
-    initInfo.DescriptorPoolSize = swapchainImageCount;
+    initInfo.DescriptorPoolSize = IMGUI_IMPL_VULKAN_MINIMUM_IMAGE_SAMPLER_POOL_SIZE;
     initInfo.MinImageCount = swapchainImageCount;
     initInfo.ImageCount = swapchainImageCount;
     initInfo.CheckVkResultFn = CheckVkResult;
