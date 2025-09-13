@@ -32,6 +32,7 @@ public:
     Image &operator=(Image &&image) noexcept;
     Image &operator=(const Image &image) = delete;
 
+    [[nodiscard]] bool IsDevice() const;
     [[nodiscard]] vk::Extent2D GetExtent() const;
     [[nodiscard]] vk::Image GetHandle() const;
     [[nodiscard]] vk::ImageView GetView() const;
@@ -78,6 +79,7 @@ private:
     uint32_t m_MipLevels = 1;
     uint32_t m_Layers = 1;
 
+    bool m_IsDevice = true;
     bool m_IsMoved = false;
 
 private:

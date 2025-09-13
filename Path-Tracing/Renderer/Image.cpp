@@ -42,6 +42,16 @@ Image::Image(
     assert(result == VkResult::VK_SUCCESS);
     m_Handle = image;
 
+    VmaAllocationInfo info;
+    vmaGetAllocationInfo(DeviceContext::GetAllocator(), m_Allocation, &info);
+    assert(result == VkResult::VK_SUCCESS);
+
+    VkMemoryPropertyFlags memoryProperties;
+    vmaGetMemoryTypeProperties(DeviceContext::GetAllocator(), info.memoryType, &memoryProperties);
+
+    if (!(memoryProperties & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT))
+        m_IsDevice = false;
+
     vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, 0, mipLevels, 0, layers);
     vk::ImageViewType viewType = isCube ? vk::ImageViewType::eCube : vk::ImageViewType::e2D;
     vk::ImageViewCreateInfo viewCreateInfo =
@@ -365,6 +375,11 @@ vk::DeviceSize Image::GetByteSize(vk::Extent2D extent, vk::Format format, uint32
     return static_cast<vk::DeviceSize>(layers) * extent.width * extent.height * vk::blockSize(format);
 }
 
+bool Image::IsDevice() const
+{
+    return m_IsDevice;
+}
+
 ImageBuilder &ImageBuilder::SetFormat(vk::Format format)
 {
     m_Format = format;
@@ -408,25 +423,37 @@ ImageBuilder &ImageBuilder::ResetFlags()
 
 Image ImageBuilder::CreateImage(vk::Extent2D extent) const
 {
-    return Image(m_Format, extent, m_UsageFlags, m_Layers, m_Mips, m_Cube);
+    auto image = Image(m_Format, extent, m_UsageFlags, m_Layers, m_Mips, m_Cube);
+
+    if (!image.IsDevice())
+        logger::warn("Unnamed image was allocated in RAM instead of VRAM");
+
+    return image;
 }
 
 Image ImageBuilder::CreateImage(vk::Extent2D extent, const std::string &name) const
 {
     Image image = CreateImage(extent);
     image.SetDebugName(name);
+    if (!image.IsDevice())
+        logger::warn("Image {} was allocated in RAM instead of VRAM", name);
     return image;
 }
 
 std::unique_ptr<Image> ImageBuilder::CreateImageUnique(vk::Extent2D extent) const
 {
-    return std::make_unique<Image>(m_Format, extent, m_UsageFlags, m_Layers, m_Mips, m_Cube);
+    auto image = std::make_unique<Image>(m_Format, extent, m_UsageFlags, m_Layers, m_Mips, m_Cube);
+    if (!image->IsDevice())
+        logger::warn("Unnamed image was allocated in RAM instead of VRAM");
+    return std::move(image);
 }
 
 std::unique_ptr<Image> ImageBuilder::CreateImageUnique(vk::Extent2D extent, const std::string &name) const
 {
     auto image = CreateImageUnique(extent);
     image->SetDebugName(name);
+    if (!image->IsDevice())
+        logger::warn("Image {} was allocated in RAM instead of VRAM", name);
     return image;
 }
 

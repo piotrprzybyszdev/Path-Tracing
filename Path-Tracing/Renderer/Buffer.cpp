@@ -30,6 +30,16 @@ Buffer::Buffer(
 
     assert(result == VkResult::VK_SUCCESS);
     m_Handle = handle;
+
+    VmaAllocationInfo info;
+    vmaGetAllocationInfo(DeviceContext::GetAllocator(), m_Allocation, &info);
+    assert(result == VkResult::VK_SUCCESS);
+
+    VkMemoryPropertyFlags memoryProperties;
+    vmaGetMemoryTypeProperties(DeviceContext::GetAllocator(), info.memoryType, &memoryProperties);
+
+    if (!(memoryProperties & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT))
+        m_IsDevice = false;
 }
 
 Buffer::~Buffer()
@@ -105,6 +115,11 @@ void Buffer::SetDebugName(const std::string &name) const
     Utils::SetDebugName(m_Handle, name);
 }
 
+bool Buffer::IsDevice() const
+{
+    return m_IsDevice;
+}
+
 BufferBuilder &BufferBuilder::SetCreateFlags(vk::BufferCreateFlags createFlags)
 {
     m_CreateFlags = createFlags;
@@ -138,7 +153,10 @@ Buffer BufferBuilder::CreateHostBuffer(vk::DeviceSize size) const
 
 Buffer BufferBuilder::CreateDeviceBuffer(vk::DeviceSize size) const
 {
-    return Buffer(m_CreateFlags, size, true, m_UsageFlags, m_Alignment);
+    auto buffer = Buffer(m_CreateFlags, size, true, m_UsageFlags, m_Alignment);
+    if (!buffer.IsDevice())
+        logger::warn("Unnamed buffer was allocated in RAM instead of VRAM");
+    return buffer;
 }
 
 Buffer BufferBuilder::CreateHostBuffer(vk::DeviceSize size, const std::string &name) const
@@ -152,6 +170,8 @@ Buffer BufferBuilder::CreateDeviceBuffer(vk::DeviceSize size, const std::string 
 {
     Buffer buffer = CreateDeviceBuffer(size);
     buffer.SetDebugName(name);
+    if (!buffer.IsDevice())
+        logger::warn("Buffer {} was allocated in RAM instead of VRAM", name);
     return buffer;
 }
 
@@ -162,7 +182,10 @@ std::unique_ptr<Buffer> BufferBuilder::CreateHostBufferUnique(vk::DeviceSize siz
 
 std::unique_ptr<Buffer> BufferBuilder::CreateDeviceBufferUnique(vk::DeviceSize size) const
 {
-    return std::make_unique<Buffer>(m_CreateFlags, size, true, m_UsageFlags, m_Alignment);
+    auto buffer = std::make_unique<Buffer>(m_CreateFlags, size, true, m_UsageFlags, m_Alignment);
+    if (!buffer->IsDevice())
+        logger::warn("Unnamed buffer was allocated in RAM instead of VRAM");
+    return std::move(buffer);
 }
 
 std::unique_ptr<Buffer> BufferBuilder::CreateHostBufferUnique(vk::DeviceSize size, const std::string &name)
@@ -178,6 +201,8 @@ std::unique_ptr<Buffer> BufferBuilder::CreateDeviceBufferUnique(vk::DeviceSize s
 {
     auto buffer = CreateDeviceBufferUnique(size);
     buffer->SetDebugName(name);
+    if (!buffer->IsDevice())
+        logger::warn("Buffer {} was allocated in RAM instead of VRAM", name);
     return buffer;
 }
 
@@ -192,6 +217,8 @@ Buffer BufferBuilder::CreateDeviceBuffer(vk::CommandBuffer commandBuffer, const 
 {
     Buffer buffer = CreateDeviceBuffer(staging.GetSize());
     buffer.UploadStaging(commandBuffer, staging);
+    if (!buffer.IsDevice())
+        logger::warn("Unnamed buffer was allocated in RAM instead of VRAM");
     return buffer;
 }
 
@@ -208,6 +235,8 @@ Buffer BufferBuilder::CreateDeviceBuffer(
 {
     Buffer buffer = CreateDeviceBuffer(commandBuffer, staging);
     buffer.SetDebugName(name);
+    if (!buffer.IsDevice())
+        logger::warn("Buffer {} was allocated in RAM instead of VRAM", name);
     return buffer;
 }
 
@@ -224,6 +253,8 @@ std::unique_ptr<Buffer> BufferBuilder::CreateDeviceBufferUnique(
 {
     auto buffer = CreateDeviceBufferUnique(staging.GetSize());
     buffer->UploadStaging(commandBuffer, staging);
+    if (!buffer->IsDevice())
+        logger::warn("Unnamed buffer was allocated in RAM instead of VRAM");
     return buffer;
 }
 
@@ -241,6 +272,8 @@ std::unique_ptr<Buffer> BufferBuilder::CreateDeviceBufferUnique(
 {
     auto buffer = CreateDeviceBufferUnique(commandBuffer, staging);
     buffer->SetDebugName(name);
+    if (!buffer->IsDevice())
+        logger::warn("Buffer {} was allocated in RAM instead of VRAM", name);
     return buffer;
 }
 
