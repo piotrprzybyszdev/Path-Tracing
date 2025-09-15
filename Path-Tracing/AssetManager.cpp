@@ -259,12 +259,18 @@ void LoadLights(Scene &outScene, const aiScene *scene)
 
         logger::info("Light {} ({})", light->mName.C_Str(), static_cast<uint32_t>(light->mType));
         logger::info("Light Color ({}, {}, {})", light->mColorDiffuse.r, light->mColorDiffuse.g, light->mColorDiffuse.b);
+        logger::info(
+            "Light Attenuation ({}, {}, {})", light->mAttenuationConstant, light->mAttenuationLinear, light->mAttenuationQuadratic
+        );
 
         outScene.AddLight({
             .Color = light->mColorDiffuse.IsBlack()
                          ? glm::vec3(1.0f)
                          : TrivialCopyUnsafe<aiColor3D, glm::vec3>(light->mColorDiffuse),
             .Position = TrivialCopy<aiVector3D, glm::vec3>(light->mPosition),
+            .AttenuationConstant = light->mAttenuationConstant,
+            .AttenuationLinear = light->mAttenuationLinear,
+            .AttenuationQuadratic = light->mAttenuationQuadratic
         });
     }
 }
