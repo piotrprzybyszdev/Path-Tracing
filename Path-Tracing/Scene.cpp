@@ -96,6 +96,11 @@ void Scene::SetIndices(std::vector<uint32_t> &&indices)
     m_Indices = std::move(indices);
 }
 
+void Scene::AddLight(Shaders::Light &&light)
+{
+    m_Lights.push_back(std::move(light));
+}
+
 void Scene::SetSkybox(Skybox2D &&skybox)
 {
     m_Skybox = skybox;
@@ -144,6 +149,13 @@ std::span<const Model> Scene::GetModels() const
 std::span<const ModelInstance> Scene::GetModelInstances() const
 {
     return m_ModelInstances;
+}
+
+std::span<const Shaders::Light> Scene::GetLights() const
+{
+    if (m_Lights.empty())
+        return std::span(&m_DefaultLight, 1);
+    return m_Lights;
 }
 
 const Scene::SkyboxVariant &Scene::GetSkybox() const

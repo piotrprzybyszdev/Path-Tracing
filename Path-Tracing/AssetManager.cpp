@@ -248,6 +248,27 @@ std::vector<uint32_t> LoadMeshes(Scene &outScene, const aiScene *scene)
     return meshToGeometry;
 }
 
+void LoadLights(Scene &outScene, const aiScene *scene)
+{
+    for (int i = 0; i < scene->mNumLights; i++)
+    {
+        const aiLight *light = scene->mLights[i];
+
+        assert(light->mType == aiLightSource_POINT);
+        assert(light->mColorAmbient == light->mColorDiffuse && light->mColorDiffuse == light->mColorSpecular);
+
+        logger::info("Light {} ({})", light->mName.C_Str(), static_cast<uint32_t>(light->mType));
+        logger::info("Light Color ({}, {}, {})", light->mColorDiffuse.r, light->mColorDiffuse.g, light->mColorDiffuse.b);
+
+        outScene.AddLight({
+            .Color = light->mColorDiffuse.IsBlack()
+                         ? glm::vec3(1.0f)
+                         : TrivialCopyUnsafe<aiColor3D, glm::vec3>(light->mColorDiffuse),
+            .Position = TrivialCopy<aiVector3D, glm::vec3>(light->mPosition),
+        });
+    }
+}
+
 }
 
 void AssetManager::LoadScene(const std::string &name, const std::filesystem::path &path)
@@ -271,7 +292,7 @@ void AssetManager::LoadScene(const std::string &name, const std::filesystem::pat
     assert((scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) == false);
     assert(scene->mRootNode != nullptr);
 
-    // TODO: Add support for lights and cameras
+    // TODO: Add support for cameras
     logger::info("Number of meshes in the scene: {}", scene->mNumMeshes);
     logger::info("Number of materials in the scene: {}", scene->mNumMaterials);
     logger::info("Number of lights in the scene: {}", scene->mNumLights);
@@ -281,6 +302,8 @@ void AssetManager::LoadScene(const std::string &name, const std::filesystem::pat
     assert(scene->HasTextures() == false);
 
     Scene outScene;
+
+    LoadLights(outScene, scene);
 
     std::vector<uint32_t> materialIndexMap = LoadMaterials(path, outScene, scene);
     std::vector<uint32_t> meshToGeometry = LoadMeshes(outScene, scene);

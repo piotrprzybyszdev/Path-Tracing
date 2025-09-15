@@ -106,6 +106,8 @@ public:
     void SetVertices(std::vector<Shaders::Vertex> &&vertices);
     void SetIndices(std::vector<uint32_t> &&indices);
 
+    void AddLight(Shaders::Light &&light);
+
     void SetSkybox(Skybox2D &&skybox);
     void SetSkybox(SkyboxCube &&skybox);
 
@@ -118,6 +120,8 @@ public:
 
     [[nodiscard]] std::span<const Model> GetModels() const;
     [[nodiscard]] std::span<const ModelInstance> GetModelInstances() const;
+
+    [[nodiscard]] std::span<const Shaders::Light> GetLights() const;
 
     [[nodiscard]] const SkyboxVariant &GetSkybox() const;
 
@@ -138,6 +142,9 @@ private:
 
     std::vector<Model> m_Models;
     std::vector<ModelInstance> m_ModelInstances;
+
+    Shaders::Light m_DefaultLight = { glm::vec3(1.0f), glm::vec3(3.0f, 15.0f, 7.0f) };
+    std::vector<Shaders::Light> m_Lights;
 
     SkyboxVariant m_Skybox = SkyboxClearColor {};
 

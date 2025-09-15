@@ -16,15 +16,17 @@ void CreateReuseMeshCubesScene();
 void CreateSponzaScene();
 void CreateChessGameScene();
 void CreateVirtualCity();
+void CreateLampLightScene();
 
 void CreateScenes()
 {
     // TODO: Only load them on demand
-    CreateTexturedCubesScene();
-    CreateReuseMeshCubesScene();
-    CreateSponzaScene();
-    CreateChessGameScene();
-    CreateVirtualCity();
+    // CreateTexturedCubesScene();
+    // CreateReuseMeshCubesScene();
+    // CreateSponzaScene();
+    // CreateChessGameScene();
+    // CreateVirtualCity();
+    CreateLampLightScene();
 }
 
 void CreateTexturedCubesScene()
@@ -280,6 +282,14 @@ void CreateVirtualCity()
     const std::filesystem::path path =
         base / "KhronosScenes" / "glTF-Sample-Models-main" / "2.0" / "VC" / "glTF" / "VC.gltf";
     AssetManager::LoadScene("Virtual City", path);
+}
+
+void CreateLampLightScene()
+{
+    const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets" / "scenes";
+    const std::filesystem::path path = base / "KhronosScenes" / "glTF-Sample-Models-main" / "2.0" /
+                                       "LightsPunctualLamp" / "glTF" / "LightsPunctualLamp.gltf";
+    AssetManager::LoadScene("Lamp", path);
 }
 
 }

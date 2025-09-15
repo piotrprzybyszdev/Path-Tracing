@@ -204,7 +204,7 @@ void Application::Run()
     float lastFrameTime = 0.0f;
     vk::Extent2D previousSize = {};
 
-    Renderer::SetScene(AssetManager::GetScene("Sponza"));
+    Renderer::SetScene(AssetManager::GetScene("Lamp"));
 
     while (!Window::ShouldClose())
     {

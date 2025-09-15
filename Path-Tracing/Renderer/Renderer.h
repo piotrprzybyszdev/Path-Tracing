@@ -74,11 +74,13 @@ private:
 
         std::unique_ptr<Buffer> GeometryBuffer = nullptr;
         std::unique_ptr<Buffer> MaterialBuffer = nullptr;
+        std::unique_ptr<Buffer> LightsBuffer = nullptr;
 
         std::vector<Image> Textures;
         std::vector<uint32_t> TextureMap;
 
         std::unique_ptr<Image> Skybox = nullptr;
+        uint32_t LightCount = 0;
 
         std::unique_ptr<ShaderBindingTable> SceneShaderBindingTable = nullptr;
         std::unique_ptr<AccelerationStructure> SceneAccelerationStructure = nullptr;
