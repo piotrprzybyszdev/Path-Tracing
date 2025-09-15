@@ -290,4 +290,12 @@ std::shared_ptr<Scene> CreateBoxAnimatedScene()
     return AssetImporter::LoadScene("Box Animated", path);
 }
 
+std::shared_ptr<Scene> CreateLampLightScene()
+{
+    const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets" / "scenes";
+    const std::filesystem::path path = base / "KhronosScenes" / "glTF-Sample-Models-main" / "2.0" /
+                                       "LightsPunctualLamp" / "glTF" / "LightsPunctualLamp.gltf";
+    return AssetImporter::LoadScene("Lamp", path);
+}
+
 }

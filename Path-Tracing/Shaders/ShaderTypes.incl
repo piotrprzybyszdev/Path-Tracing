@@ -73,6 +73,14 @@ struct Material
     uint MetalicIdx;
 };
 
+struct Light
+{
+    vec3 Color;
+    float pad0;
+    vec3 Position;
+    float pad1;
+};
+
 
 #ifndef GL_core_profile
 

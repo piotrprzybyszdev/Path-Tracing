@@ -15,12 +15,13 @@ Scene::Scene(
     std::vector<glm::mat4> &&transforms, std::vector<Geometry> &&geometries,
     std::vector<Shaders::Material> &&materials, std::vector<TextureInfo> &&textures,
     std::vector<Model> &&models, std::vector<ModelInstance> &&modelInstances, SceneGraph &&sceneGraph,
-    SkyboxVariant &&skybox
+    std::vector<Shaders::Light> &&lights, SkyboxVariant &&skybox
 )
     : m_Name(std::move(name)), m_Vertices(std::move(vertices)), m_Indices(std::move(indices)),
       m_Transforms(std::move(transforms)), m_Geometries(std::move(geometries)),
       m_Materials(std::move(materials)), m_Textures(std::move(textures)), m_Models(std::move(models)),
-      m_ModelInstances(std::move(modelInstances)), m_Graph(std::move(sceneGraph)), m_Skybox(std::move(skybox))
+      m_ModelInstances(std::move(modelInstances)), m_Graph(std::move(sceneGraph)), m_Lights(lights),
+      m_Skybox(std::move(skybox))
 {
 }
 
@@ -131,6 +132,11 @@ void SceneBuilder::SetIndices(std::vector<uint32_t> &&indices)
     m_Indices = std::move(indices);
 }
 
+void SceneBuilder::AddLight(Shaders::Light &&light)
+{
+    m_Lights.push_back(std::move(light));
+}
+
 void SceneBuilder::SetSkybox(Skybox2D &&skybox)
 {
     m_Skybox = skybox;
@@ -147,11 +153,14 @@ std::shared_ptr<Scene> SceneBuilder::CreateSceneShared(std::string name)
     for (const auto &info : m_ModelInstanceInfos)
         m_ModelInstances.emplace_back(info.first, info.second, m_SceneNodes[info.second].Transform);
 
+    if (m_Lights.empty())
+        m_Lights.push_back(s_DefaultLight);
+
     auto scene = std::make_shared<Scene>(
         std::move(name), std::move(m_Vertices), std::move(m_Indices), std::move(m_Transforms),
         std::move(m_Geometries), std::move(m_Materials), std::move(m_Textures), std::move(m_Models),
         std::move(m_ModelInstances), SceneGraph(std::move(m_SceneNodes), std::move(m_Animations)),
-        std::move(m_Skybox)
+        std::move(m_Lights), std::move(m_Skybox)
     );
 
     m_Vertices.clear();
@@ -167,6 +176,7 @@ std::shared_ptr<Scene> SceneBuilder::CreateSceneShared(std::string name)
     m_ModelInstanceInfos.clear();
     m_SceneNodes.clear();
     m_Animations.clear();
+    m_Lights.clear();
     m_Skybox = SkyboxClearColor {};
 
     return scene;
@@ -215,6 +225,11 @@ std::span<const ModelInstance> Scene::GetModelInstances() const
 bool Scene::HasAnimations() const
 {
     return m_Graph.HasAnimations();
+}
+
+std::span<const Shaders::Light> Scene::GetLights() const
+{
+    return m_Lights;
 }
 
 const SkyboxVariant &Scene::GetSkybox() const

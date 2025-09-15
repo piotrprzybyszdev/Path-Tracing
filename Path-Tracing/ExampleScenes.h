@@ -18,6 +18,7 @@ std::shared_ptr<Scene> CreateCesiumManScene();
 std::shared_ptr<Scene> CreateCesiumMilkTruckScene();
 std::shared_ptr<Scene> CreateBrainStemScene();
 std::shared_ptr<Scene> CreateBoxAnimatedScene();
+std::shared_ptr<Scene> CreateLampLightScene();
 
 static inline std::map<std::string, std::function<std::shared_ptr<Scene>()>> Scenes = {
     { "Textured Cubes", CreateTexturedCubesScene },
@@ -29,6 +30,7 @@ static inline std::map<std::string, std::function<std::shared_ptr<Scene>()>> Sce
     { "Cesium Milk Truck", CreateCesiumMilkTruckScene },
     { "Brain Stem", CreateBrainStemScene },
     { "Box Animated", CreateBoxAnimatedScene },
+    { "Lamp", CreateLampLightScene },
 };
 
 }

@@ -37,6 +37,7 @@ struct ClosestHitUniformData
     uint u_RenderMode;          // enum
     uint u_EnabledTextures;     // enum
     uint u_Flags;               // enum
+    uint u_LightCount;
 };
 
 struct Geometry

@@ -99,7 +99,7 @@ public:
         std::vector<glm::mat4> &&transforms, std::vector<Geometry> &&geometries,
         std::vector<Shaders::Material> &&materials, std::vector<TextureInfo> &&textures,
         std::vector<Model> &&models, std::vector<ModelInstance> &&modelInstances, SceneGraph &&sceneGraph,
-        SkyboxVariant &&skybox
+        std::vector<Shaders::Light> &&lights, SkyboxVariant &&skybox
     );
 
     [[nodiscard]] const std::string &GetName() const;
@@ -118,6 +118,8 @@ public:
 
     [[nodiscard]] bool HasAnimations() const;
 
+    [[nodiscard]] std::span<const Shaders::Light> GetLights() const;
+
     [[nodiscard]] const SkyboxVariant &GetSkybox() const;
 
 private:
@@ -130,15 +132,15 @@ private:
     std::vector<Geometry> m_Geometries;
 
     std::vector<Shaders::Material> m_Materials;
-    std::unordered_map<std::string, uint32_t> m_MaterialIndices;
 
     std::vector<TextureInfo> m_Textures;
-    std::unordered_map<std::string, uint32_t> m_TextureIndices;
 
     std::vector<Model> m_Models;
     std::vector<ModelInstance> m_ModelInstances;
 
     SceneGraph m_Graph;
+
+    std::vector<Shaders::Light> m_Lights;
 
     SkyboxVariant m_Skybox = SkyboxClearColor {};
 };
@@ -159,6 +161,8 @@ public:
 
     void SetVertices(std::vector<Shaders::Vertex> &&vertices);
     void SetIndices(std::vector<uint32_t> &&indices);
+
+    void AddLight(Shaders::Light &&light);
 
     void SetSkybox(Skybox2D &&skybox);
     void SetSkybox(SkyboxCube &&skybox);
@@ -188,7 +192,15 @@ private:
     std::vector<SceneNode> m_SceneNodes;
     std::vector<Animation> m_Animations;
 
+    std::vector<Shaders::Light> m_Lights;
+
     SkyboxVariant m_Skybox = SkyboxClearColor {};
+
+private:
+    static inline const Shaders::Light s_DefaultLight = {
+        .Color = glm::vec3(1.0f),
+        .Position = glm::vec3(3.0f, 15.0f, 7.0f),
+    };
 };
 
 }

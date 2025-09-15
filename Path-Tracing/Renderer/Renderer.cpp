@@ -150,6 +150,7 @@ void Renderer::Shutdown()
     s_StaticSceneData.SceneShaderBindingTable.reset();
     s_StaticSceneData.Skybox.reset();
     s_StaticSceneData.Textures.clear();
+    s_StaticSceneData.LightsBuffer.reset();
     s_StaticSceneData.MaterialBuffer.reset();
     s_StaticSceneData.GeometryBuffer.reset();
     s_StaticSceneData.TransformBuffer.reset();
@@ -238,6 +239,15 @@ void Renderer::UpdateSceneData()
         s_StagingBuffer->Upload(materials);
         s_StaticSceneData.MaterialBuffer = s_BufferBuilder->CreateDeviceBufferUnique(
             s_MainCommandBuffer->Buffer, *s_StagingBuffer, "Material Buffer"
+        );
+        s_MainCommandBuffer->SubmitBlocking();
+        
+        const auto &lights = scene->GetLights();
+        s_StaticSceneData.LightCount = lights.size();
+        s_MainCommandBuffer->Begin();
+        s_StagingBuffer->Upload(lights);
+        s_StaticSceneData.LightsBuffer = s_BufferBuilder->CreateDeviceBufferUnique(
+            s_MainCommandBuffer->Buffer, *s_StagingBuffer, "Lights Buffer"
         );
         s_MainCommandBuffer->SubmitBlocking();
     }
@@ -444,12 +454,13 @@ bool Renderer::SetupPipeline()
                          vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eAnyHitKHR })
         .SetDescriptor({ 7, vk::DescriptorType::eStorageBuffer, 1,
                          vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eAnyHitKHR })
-        .SetDescriptor({ 8, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eMissKHR })
-        .SetDescriptor(
-            { 9, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eMissKHR }, true
-        )
+        .SetDescriptor({ 8, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eClosestHitKHR })
+        .SetDescriptor({ 9, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eMissKHR })
         .SetDescriptor(
             { 10, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eMissKHR }, true
+        )
+        .SetDescriptor(
+            { 11, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eMissKHR }, true
         );
 
     bool isRecreated = s_PipelineLayout != nullptr;
@@ -648,15 +659,16 @@ void Renderer::RecreateDescriptorSet()
         s_DescriptorSet->UpdateBuffer(5, frameIndex, *s_StaticSceneData.TransformBuffer);
         s_DescriptorSet->UpdateBuffer(6, frameIndex, *s_StaticSceneData.GeometryBuffer);
         s_DescriptorSet->UpdateBuffer(7, frameIndex, *s_StaticSceneData.MaterialBuffer);
-        s_DescriptorSet->UpdateBuffer(8, frameIndex, res.MissUniformBuffer);
+        s_DescriptorSet->UpdateBuffer(8, frameIndex, *s_StaticSceneData.LightsBuffer);
+        s_DescriptorSet->UpdateBuffer(9, frameIndex, res.MissUniformBuffer);
         if ((s_MissFlags & Shaders::MissFlagsSkybox2D) != Shaders::MissFlagsNone)
             s_DescriptorSet->UpdateImage(
-                9, frameIndex, *s_StaticSceneData.Skybox, s_TextureSampler,
+                10, frameIndex, *s_StaticSceneData.Skybox, s_TextureSampler,
                 vk::ImageLayout::eShaderReadOnlyOptimal
             );
         if ((s_MissFlags & Shaders::MissFlagsSkyboxCube) != Shaders::MissFlagsNone)
             s_DescriptorSet->UpdateImage(
-                10, frameIndex, *s_StaticSceneData.Skybox, s_TextureSampler,
+                11, frameIndex, *s_StaticSceneData.Skybox, s_TextureSampler,
                 vk::ImageLayout::eShaderReadOnlyOptimal
             );
     }
@@ -680,7 +692,8 @@ void Renderer::Render(const Camera &camera)
 {
     Shaders::RaygenUniformData rgenData = { camera.GetInvViewMatrix(), camera.GetInvProjectionMatrix(),
                                             s_RaygenFlags };
-    Shaders::ClosestHitUniformData rchitData = { s_RenderMode, s_EnabledTextures, s_ClosestHitFlags };
+    Shaders::ClosestHitUniformData rchitData = { s_RenderMode, s_EnabledTextures, s_ClosestHitFlags,
+                                                 s_StaticSceneData.LightCount };
     Shaders::MissUniformData missData = { s_MissFlags };
 
     const Swapchain::SynchronizationObjects &sync = s_Swapchain->GetCurrentSyncObjects();
