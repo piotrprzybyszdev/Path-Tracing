@@ -364,7 +364,7 @@ void LoadAnimations(
         const aiAnimation *animation = scene->mAnimations[i];
         Animation outAnimation = {
             .TickPerSecond = static_cast<float>(animation->mTicksPerSecond),
-            .TickDuration = static_cast<float>(animation->mDuration),
+            .Duration = static_cast<float>(animation->mDuration),
         };
 
         for (int j = 0; j < animation->mNumChannels; j++)
@@ -445,6 +445,74 @@ void LoadAnimations(
     }
 }
 
+void LoadLights(
+    SceneBuilder &sceneBuilder, const aiScene *scene,
+    const std::unordered_map<const aiNode *, uint32_t> &sceneNodeIndices
+)
+{
+    for (int i = 0; i < scene->mNumLights; i++)
+    {
+        const aiLight *light = scene->mLights[i];
+
+        // assert(light->mType == aiLightSource_POINT);
+        assert(light->mColorAmbient == light->mColorDiffuse && light->mColorDiffuse == light->mColorSpecular);
+
+        logger::info("Light {} ({})", light->mName.C_Str(), static_cast<uint32_t>(light->mType));
+        logger::info(
+            "Light Color ({}, {}, {})", light->mColorDiffuse.r, light->mColorDiffuse.g, light->mColorDiffuse.b
+        );
+        logger::info(
+            "Light Attenuation ({}, {}, {})", light->mAttenuationConstant, light->mAttenuationLinear,
+            light->mAttenuationQuadratic
+        );
+
+        const aiNode *node = scene->mRootNode->FindNode(light->mName);
+        const uint32_t nodeIndex = sceneNodeIndices.at(node);
+
+        sceneBuilder.AddLight(
+            {
+                .Color = light->mColorDiffuse.IsBlack()
+                             ? glm::vec3(1.0f)
+                             : TrivialCopyUnsafe<aiColor3D, glm::vec3>(light->mColorDiffuse),
+                .Position = TrivialCopy<aiVector3D, glm::vec3>(light->mPosition),
+                .AttenuationConstant = light->mAttenuationConstant,
+                .AttenuationLinear = light->mAttenuationLinear,
+                .AttenuationQuadratic = light->mAttenuationQuadratic,
+            },
+            nodeIndex
+        );
+    }
+}
+
+void LoadCameras(
+    SceneBuilder &sceneBuilder, const aiScene *scene,
+    const std::unordered_map<const aiNode *, uint32_t> &sceneNodeIndices
+)
+{
+    for (int i = 0; i < scene->mNumCameras; i++)
+    {
+        const aiCamera *camera = scene->mCameras[i];
+
+        const aiNode *node = scene->mRootNode->FindNode(camera->mName);
+        const uint32_t nodeIndex = sceneNodeIndices.at(node);
+
+        const float aspect = camera->mAspect == 0.0f ? 16.0f / 9.0f : camera->mAspect;
+        const float verticalFov = 2.0f * glm::atan(glm::tan(camera->mHorizontalFOV / 2.0f) / aspect);
+        glm::vec3 up = TrivialCopy<aiVector3D, glm::vec3>(camera->mUp);
+        up.y *= -1;
+
+        sceneBuilder.AddCamera(CameraInfo {
+            .VerticalFOV = glm::degrees(verticalFov),
+            .NearClip = camera->mClipPlaneNear,
+            .FarClip = camera->mClipPlaneFar,
+            .Position = TrivialCopy<aiVector3D, glm::vec3>(camera->mPosition),
+            .Direction = TrivialCopy<aiVector3D, glm::vec3>(camera->mLookAt),
+            .UpDirection = up,
+            .SceneNodeIndex = nodeIndex,
+        });
+    }
+}
+
 }
 
 std::shared_ptr<Scene> AssetImporter::LoadScene(const std::string &name, const std::filesystem::path &path)
@@ -469,7 +537,6 @@ std::shared_ptr<Scene> AssetImporter::LoadScene(const std::string &name, const s
     assert((scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) == false);
     assert(scene->mRootNode != nullptr);
 
-    // TODO: Add support for lights and cameras
     logger::info("Number of meshes in the scene: {}", scene->mNumMeshes);
     logger::info("Number of materials in the scene: {}", scene->mNumMaterials);
     logger::info("Number of lights in the scene: {}", scene->mNumLights);
@@ -486,8 +553,10 @@ std::shared_ptr<Scene> AssetImporter::LoadScene(const std::string &name, const s
     std::unordered_map<const aiNode *, uint32_t> sceneNodeIndices =
         LoadSceneHierarchy(sceneBuilder, scene, meshToGeometry, materialIndexMap, dynamicNodes);
 
-    if (scene->HasAnimations())
-        LoadAnimations(sceneBuilder, scene, sceneNodeIndices);
+    LoadAnimations(sceneBuilder, scene, sceneNodeIndices);
+    
+    LoadLights(sceneBuilder, scene, sceneNodeIndices);
+    LoadCameras(sceneBuilder, scene, sceneNodeIndices);
 
     return sceneBuilder.CreateSceneShared(name);
 }

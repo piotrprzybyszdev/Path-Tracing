@@ -24,6 +24,10 @@ layout(binding = 7, set = 0) readonly buffer MaterialBuffer {
 	Material[] materials;
 };
 
+layout(binding = 8, set = 0) uniform LightsBuffer {
+	Light[MaxLightCount] lights;
+};
+
 layout(shaderRecordEXT, std430) buffer SBT {
 	SBTBuffer sbt;
 };
@@ -41,6 +45,23 @@ Vertex transform(Vertex vertex, uint transformIndex)
     vertex.Normal = normalize((vec4(vertex.Normal, 0.0f) * transpose(inverse(mat4(transform)))).xyz);  // TODO: Calculate inverse on the CPU
 
     return vertex;
+}
+
+vec3 computeLightContribution(Light light, vec3 position, vec3 V, vec3 N, mat3 TBN, vec3 color, vec3 roughness, vec3 metalness)
+{
+	const vec3 lightDir = position - light.Position;
+
+	const vec3 L = -normalize(lightDir);
+
+	const vec3 R = 2.0f * dot(L, N) * N - L;
+
+	const float diffuse = 1.0f * max(dot(L, N), 0.0f);
+	const float specular = 1.0f * max(pow(dot(R, V), 50.0f), 0.0f);
+
+	const float dist = length(lightDir);
+	const float attenuation = 1.0f / (light.AttenuationConstant + dist * light.AttenuationLinear + dist * dist * light.AttenuationQuadratic);
+
+	return (diffuse + specular) * light.Color * color * attenuation;
 }
 
 void main()
@@ -62,27 +83,23 @@ void main()
 	const vec3 roughness = texture(textures[GetRoughnessTextureIndex(mainUniform.u_EnabledTextures, material)], vertex.TexCoords).xyz;
 	const vec3 metalness = texture(textures[GetMetalicTextureIndex(mainUniform.u_EnabledTextures, material)], vertex.TexCoords).xyz;
 
-	const vec3 lightColor = vec3(1.0f);
 	const vec3 viewDir = gl_WorldRayDirectionEXT;
-	const vec3 lightPos = vec3(3.0f, 15.0f, 7.0f);
-	const vec3 lightDir = vertex.Position - lightPos;
-
+	const vec3 V = -normalize(viewDir);
 	const mat3 TBN = mat3(vertex.Tangent, vertex.Bitangent, vertex.Normal);
 	const vec3 N = normalize(vertex.Normal + TBN * (2.0f * normal - 1.0f));
 
-	const vec3 L = -normalize(lightDir);
-	const vec3 V = -normalize(viewDir);
-
-	const vec3 R = 2.0f * dot(L, N) * N - L;
-
 	const float ambient = 0.1f;
-	const float diffuse = 1.0f * max(dot(L, N), 0.0f);
-	const float specular = 1.0f * max(pow(dot(R, V), 50.0f), 0.0f);
+	vec3 totalLight = ambient * color;
+	for (uint lightIndex = 0; lightIndex < mainUniform.u_LightCount; lightIndex++)
+	{
+		const vec3 lightContribution = computeLightContribution(lights[lightIndex], vertex.Position, V, N, TBN, color, roughness, metalness);
+		totalLight += lightContribution;
+	}
 
 	switch (mainUniform.u_RenderMode)
 	{
 	case RenderModeColor:
-		hitValue = ambient * color + (diffuse + specular) * lightColor * color;
+		hitValue = totalLight;
 		break;
 	case RenderModeWorldPosition:
 		hitValue = vertex.Position.xyz;

@@ -129,6 +129,33 @@ std::shared_ptr<Scene> CreateTexturedCubesScene()
     const uint32_t cube1inst2 = sceneBuilder.AddModelInstance(cube1, cube1inst2node);
     const uint32_t cube2inst = sceneBuilder.AddModelInstance(cube2, cube2node);
 
+    const uint32_t lightNode = sceneBuilder.AddSceneNode(
+        { rootNode, glm::transpose(glm::translate(glm::mat4(1.0f), glm::vec3(-1.0f, 2.0f, 0.0f))),
+          glm::mat4(1.0f) }
+    );
+
+    sceneBuilder.AddLight(
+        {
+            .Color = glm::vec3(1.0f),
+            .Position = glm::vec3(0.0f),
+            .AttenuationConstant = 0.0f,
+            .AttenuationLinear = 0.0f,
+            .AttenuationQuadratic = 1.0f,
+        },
+        lightNode
+    );
+
+    AnimationNode animNode = { .SceneNodeIndex = lightNode };
+    animNode.Positions.Keys = {
+        { glm::vec3(-1.0f, 2.0f, 0.0f), 0.0f },
+        { glm::vec3(1.0f, 2.0f, 0.0f), 90.0f },
+        { glm::vec3(-1.0f, 2.0f, 0.0f), 180.0f },
+    };
+    animNode.Rotations.Keys = { { glm::quat(), 0.0f } };
+    animNode.Scales.Keys = { { glm::vec3(1.0f), 0.0f } };
+
+    sceneBuilder.AddAnimation(Animation({ animNode }, 30.0f, 180.0f));
+
     sceneBuilder.SetSkybox(
         Skybox2D(AssetImporter::GetTextureInfo(base / "skybox" / "sky_42_2k.png", TextureType::Skybox))
     );
@@ -288,6 +315,21 @@ std::shared_ptr<Scene> CreateBoxAnimatedScene()
     const std::filesystem::path path = base / "KhronosScenes" / "glTF-Sample-Models-main" / "2.0" /
                                        "BoxAnimated" / "glTF" / "BoxAnimated.gltf";
     return AssetImporter::LoadScene("Box Animated", path);
+}
+
+std::shared_ptr<Scene> CreateLampLightScene()
+{
+    const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets" / "scenes";
+    const std::filesystem::path path = base / "KhronosScenes" / "glTF-Sample-Models-main" / "2.0" /
+                                       "LightsPunctualLamp" / "glTF" / "LightsPunctualLamp.gltf";
+    return AssetImporter::LoadScene("Lamp", path);
+}
+
+std::shared_ptr<Scene> CreateBigSponzaScene()
+{
+    const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets" / "scenes";
+    const std::filesystem::path path = base / "main_sponza" / "NewSponza_Main_glTF_003.gltf";
+    return AssetImporter::LoadScene("Big Sponza", path);
 }
 
 }

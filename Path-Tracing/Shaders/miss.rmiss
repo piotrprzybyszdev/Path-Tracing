@@ -5,13 +5,13 @@
 #include "ShaderRendererTypes.incl"
 #include "common.glsl"
 
-layout(binding = 8, set = 0) uniform MainBlock {
+layout(binding = 9, set = 0) uniform MainBlock {
 	MissUniformData mainUniform;
 };
 
-layout(binding = 9, set = 0) uniform sampler2D skybox2D;
+layout(binding = 10, set = 0) uniform sampler2D skybox2D;
 
-layout(binding = 10, set = 0) uniform samplerCube skyboxCube;
+layout(binding = 11, set = 0) uniform samplerCube skyboxCube;
 
 layout(location = 0) rayPayloadInEXT vec3 hitValue;
 

@@ -109,12 +109,17 @@ struct Assert
 namespace
 {
 
-template<typename T1, typename T2>
-T2 TrivialCopy(const T1 &in) requires std::is_trivially_copyable_v<T1> && std::is_trivially_copyable_v<T2>
+template<typename T1, typename T2> T2 TrivialCopyUnsafe(const T1 &in)
 {
     T2 out;
     memcpy(reinterpret_cast<void *>(&out), reinterpret_cast<const void *>(&in), sizeof(T2));
     return out;
+}
+
+template<typename T1, typename T2>
+T2 TrivialCopy(const T1 &in) requires std::is_trivially_copyable_v<T1> && std::is_trivially_copyable_v<T2>
+{
+    return TrivialCopyUnsafe<T1, T2>(in);
 }
 
 template<typename T>

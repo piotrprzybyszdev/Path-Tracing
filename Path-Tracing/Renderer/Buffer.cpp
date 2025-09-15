@@ -63,6 +63,7 @@ void Buffer::Upload(BufferContent content, vk::DeviceSize offset) const
 {
     assert(m_IsDevice == false);
     assert(m_Size >= content.Size);
+    assert(content.Data != nullptr);
 
     VkResult result = vmaCopyMemoryToAllocation(
         DeviceContext::GetAllocator(), content.Data, m_Allocation, offset, content.Size
@@ -72,7 +73,7 @@ void Buffer::Upload(BufferContent content, vk::DeviceSize offset) const
 
 void Buffer::UploadStaging(vk::CommandBuffer commandBuffer, const Buffer &staging) const
 {
-    UploadStaging(commandBuffer, staging, staging.GetSize());
+    UploadStaging(commandBuffer, staging, m_Size);
 }
 
 void Buffer::UploadStaging(vk::CommandBuffer commandBuffer, const Buffer &staging, vk::DeviceSize size) const

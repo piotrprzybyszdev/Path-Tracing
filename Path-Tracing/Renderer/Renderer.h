@@ -42,6 +42,7 @@ public:
     static Shaders::RaygenFlags s_RaygenFlags;
     static Shaders::MissFlags s_MissFlags;
     static Shaders::ClosestHitFlags s_ClosestHitFlags;
+    static float s_Exposure;
 
     static std::unique_ptr<CommandBuffer> s_MainCommandBuffer;
 
@@ -63,6 +64,9 @@ private:
         Buffer MissUniformBuffer;
         Buffer ClosestHitUniformBuffer;
 
+        uint32_t LightCount = 0;
+        Buffer LightUniformBuffer;
+
         std::unique_ptr<AccelerationStructure> SceneAccelerationStructure = nullptr;
     };
 
@@ -70,6 +74,8 @@ private:
 
     static struct SceneData
     {
+        std::shared_ptr<Scene> Scene = nullptr;
+
         std::unique_ptr<Buffer> VertexBuffer = nullptr;
         std::unique_ptr<Buffer> IndexBuffer = nullptr;
         std::unique_ptr<Buffer> TransformBuffer = nullptr;
@@ -83,7 +89,7 @@ private:
         std::unique_ptr<Image> Skybox = nullptr;
 
         std::unique_ptr<ShaderBindingTable> SceneShaderBindingTable = nullptr;
-    } s_StaticSceneData;
+    } s_SceneData;
 
     static std::unique_ptr<DescriptorSetBuilder> s_DescriptorSetBuilder;
     static std::unique_ptr<DescriptorSet> s_DescriptorSet;
@@ -97,6 +103,8 @@ private:
     static std::unique_ptr<ShaderLibrary> s_ShaderLibrary;
 
 private:
+    static std::unique_ptr<Buffer> CreateDeviceBufferUnique(BufferContent content, std::string &&name);
+
     static uint32_t AddDefaultTexture(glm::u8vec4 value, std::string &&name);
 
     static void AddSkybox(const Skybox2D &skybox);

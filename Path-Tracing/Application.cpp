@@ -199,8 +199,6 @@ void Application::Run()
 {
     s_State = State::Running;
 
-    Camera camera(45.0f, 100.0f, 0.1f);
-
     float lastFrameTime = 0.0f;
     vk::Extent2D previousSize = {};
 
@@ -236,7 +234,7 @@ void Application::Run()
             DeviceContext::GetGraphicsQueue().WaitIdle();
             s_Swapchain->Recreate(windowSize);
 
-            camera.OnResize(windowSize.width, windowSize.height);
+            SceneManager::GetActiveScene()->GetActiveCamera().OnResize(windowSize.width, windowSize.height);
             Renderer::OnResize(windowSize);
 
             previousSize = windowSize;
@@ -254,15 +252,19 @@ void Application::Run()
                     if (newScene)
                     {
                         SceneManager::SetActiveScene(std::string(newScene));
+                        SceneManager::GetActiveScene()->GetActiveCamera().OnResize(
+                            windowSize.width, windowSize.height
+                        );
                         Renderer::UpdateSceneData();
                     }
                 }
-                camera.OnUpdate(timeStep);
+
                 SceneManager::GetActiveScene()->Update(timeStep);
                 Renderer::s_EnabledTextures = UserInterface::GetEnabledTextures();
                 Renderer::s_RenderMode = UserInterface::GetRenderMode();
                 Renderer::s_RaygenFlags = UserInterface::GetRaygenFlags();
                 Renderer::s_ClosestHitFlags = UserInterface::GetClosestHitFlags();
+                Renderer::s_Exposure = UserInterface::GetExposure();
                 Renderer::OnUpdate(timeStep);
             }
 
@@ -272,7 +274,7 @@ void Application::Run()
                 if (!s_Swapchain->AcquireImage())
                     continue;
 
-                Renderer::Render(camera);
+                Renderer::Render(SceneManager::GetActiveScene()->GetActiveCamera());
 
                 if (!s_Swapchain->Present())
                     continue;

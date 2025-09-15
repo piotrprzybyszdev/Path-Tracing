@@ -10,6 +10,8 @@
 #include <variant>
 #include <vector>
 
+#include "Core/Camera.h"
+
 #include "Shaders/ShaderTypes.incl"
 
 #include "SceneGraph.h"
@@ -70,6 +72,12 @@ struct ModelInstance
     glm::mat4 Transform;
 };
 
+struct LightInfo
+{
+    uint32_t SceneNodeIndex;
+    glm::vec3 Position;
+};
+
 struct SkyboxClearColor
 {
 };
@@ -89,7 +97,19 @@ struct SkyboxCube
     TextureInfo Right;
 };
 
+struct CameraInfo
+{
+    float VerticalFOV;
+    float NearClip;
+    float FarClip;
+    glm::vec3 Position;
+    glm::vec3 Direction;
+    glm::vec3 UpDirection;
+    uint32_t SceneNodeIndex;
+};
+
 using SkyboxVariant = std::variant<SkyboxClearColor, Skybox2D, SkyboxCube>;
+using CameraId = int32_t;
 
 class Scene
 {
@@ -99,7 +119,8 @@ public:
         std::vector<glm::mat4> &&transforms, std::vector<Geometry> &&geometries,
         std::vector<Shaders::Material> &&materials, std::vector<TextureInfo> &&textures,
         std::vector<Model> &&models, std::vector<ModelInstance> &&modelInstances, SceneGraph &&sceneGraph,
-        SkyboxVariant &&skybox
+        std::vector<LightInfo> &&lightInfos, std::vector<Shaders::Light> &&lights, SkyboxVariant &&skybox,
+        const std::vector<CameraInfo> &cameraInfos
     );
 
     [[nodiscard]] const std::string &GetName() const;
@@ -118,7 +139,16 @@ public:
 
     [[nodiscard]] bool HasAnimations() const;
 
+    [[nodiscard]] std::span<const Shaders::Light> GetLights() const;
+
     [[nodiscard]] const SkyboxVariant &GetSkybox() const;
+
+    [[nodiscard]] uint32_t GetSceneCamerasCount() const;
+    [[nodiscard]] CameraId GetActiveCameraId() const;
+    [[nodiscard]] Camera &GetActiveCamera();
+    void SetActiveCamera(CameraId id);
+
+    inline static const CameraId g_InputCameraId = -1;
 
 private:
     std::string m_Name;
@@ -130,17 +160,23 @@ private:
     std::vector<Geometry> m_Geometries;
 
     std::vector<Shaders::Material> m_Materials;
-    std::unordered_map<std::string, uint32_t> m_MaterialIndices;
 
     std::vector<TextureInfo> m_Textures;
-    std::unordered_map<std::string, uint32_t> m_TextureIndices;
 
     std::vector<Model> m_Models;
     std::vector<ModelInstance> m_ModelInstances;
 
     SceneGraph m_Graph;
+    
+    std::vector<LightInfo> m_LightInfos;
+    std::vector<Shaders::Light> m_Lights;
 
     SkyboxVariant m_Skybox = SkyboxClearColor {};
+
+    InputCamera m_InputCamera =
+        InputCamera(45.0f, 100.0f, 0.1f, glm::vec3(0.0f, 0.0f, 3.0f), glm::vec3(0.0f, 0.0f, -1.0f));
+    std::vector<AnimatedCamera> m_SceneCameras;
+    CameraId m_ActiveCameraId = g_InputCameraId;
 };
 
 class SceneBuilder
@@ -160,8 +196,12 @@ public:
     void SetVertices(std::vector<Shaders::Vertex> &&vertices);
     void SetIndices(std::vector<uint32_t> &&indices);
 
+    void AddLight(Shaders::Light &&light, uint32_t sceneNodeIndex);
+
     void SetSkybox(Skybox2D &&skybox);
     void SetSkybox(SkyboxCube &&skybox);
+
+    void AddCamera(CameraInfo &&camera);
 
     [[nodiscard]] std::shared_ptr<Scene> CreateSceneShared(std::string name);
 
@@ -183,12 +223,23 @@ private:
 
     std::vector<Model> m_Models;
     std::vector<std::pair<uint32_t, uint32_t>> m_ModelInstanceInfos;
-    std::vector<ModelInstance> m_ModelInstances;
 
     std::vector<SceneNode> m_SceneNodes;
     std::vector<Animation> m_Animations;
 
+    std::vector<Shaders::Light> m_Lights;
+    std::vector<LightInfo> m_LightInfos;
+
     SkyboxVariant m_Skybox = SkyboxClearColor {};
+
+    std::vector<CameraInfo> m_CameraInfos;
+
+private:
+    static inline const Shaders::Light g_DefaultLight = {
+        .Color = glm::vec3(1.0f),
+        .Position = glm::vec3(3.0f, 15.0f, 7.0f),
+        .AttenuationConstant = 1.0f,
+    };
 };
 
 }
