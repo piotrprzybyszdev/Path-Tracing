@@ -200,6 +200,7 @@ private:
     static inline const Shaders::Light s_DefaultLight = {
         .Color = glm::vec3(1.0f),
         .Position = glm::vec3(3.0f, 15.0f, 7.0f),
+        .AttenuationConstant = 1.0f,
     };
 };
 

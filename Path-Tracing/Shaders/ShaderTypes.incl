@@ -79,6 +79,10 @@ struct Light
     float pad0;
     vec3 Position;
     float pad1;
+    float AttenuationConstant;
+    float AttenuationLinear;
+    float AttenuationQuadratic;
+    float pad2;
 };
 
 
