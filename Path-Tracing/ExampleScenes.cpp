@@ -298,4 +298,11 @@ std::shared_ptr<Scene> CreateLampLightScene()
     return AssetImporter::LoadScene("Lamp", path);
 }
 
+std::shared_ptr<Scene> CreateBigSponzaScene()
+{
+    const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets" / "scenes";
+    const std::filesystem::path path = base / "main_sponza" / "NewSponza_Main_glTF_003.gltf";
+    return AssetImporter::LoadScene("Big Sponza", path);
+}
+
 }

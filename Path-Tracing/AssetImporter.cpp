@@ -475,6 +475,40 @@ void LoadLights(SceneBuilder &sceneBuilder, const aiScene *scene)
     }
 }
 
+void LoadCameras(SceneBuilder &sceneBuilder, const aiScene *scene)
+{
+    for (int i = 0; i < scene->mNumCameras; i++)
+    {
+        const aiCamera *camera = scene->mCameras[i];
+
+        // find the transformation matrix corresponding to the camera node
+        aiNode *rootNode = scene->mRootNode;
+        aiNode *cameraNode = rootNode->FindNode(camera->mName);
+        aiMatrix4x4 cameraTransformationMatrix = cameraNode->mTransformation;
+        aiQuaternion rotation;
+        aiVector3D position;
+        cameraTransformationMatrix.DecomposeNoScaling(rotation, position);
+
+        glm::quat rotation2 = { rotation.w, rotation.x, rotation.y, rotation.z };
+        float yaw = glm::degrees(glm::yaw(rotation2));
+        float pitch = glm::degrees(glm::pitch(rotation2));
+
+        glm::vec3 position2 = TrivialCopyUnsafe<aiVector3D, glm::vec3>(position);
+
+        Camera sceneCamera(
+            glm::degrees(camera->mHorizontalFOV), camera->mClipPlaneNear, camera->mClipPlaneFar,
+            std::move(position2), yaw, pitch
+        );
+
+        logger::info(
+            "Camera {} Position ({}, {}, {})", camera->mName.C_Str(), position2.x, position2.y, position2.z
+        );
+        logger::info("Camera {} Yaw ({}) Pitch ({})", camera->mName.C_Str(), yaw, pitch);
+
+        sceneBuilder.AddCamera(std::move(sceneCamera));
+    }
+}
+
 }
 
 std::shared_ptr<Scene> AssetImporter::LoadScene(const std::string &name, const std::filesystem::path &path)
@@ -499,7 +533,6 @@ std::shared_ptr<Scene> AssetImporter::LoadScene(const std::string &name, const s
     assert((scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) == false);
     assert(scene->mRootNode != nullptr);
 
-    // TODO: Add support for cameras
     logger::info("Number of meshes in the scene: {}", scene->mNumMeshes);
     logger::info("Number of materials in the scene: {}", scene->mNumMaterials);
     logger::info("Number of lights in the scene: {}", scene->mNumLights);
@@ -516,10 +549,10 @@ std::shared_ptr<Scene> AssetImporter::LoadScene(const std::string &name, const s
     std::unordered_map<const aiNode *, uint32_t> sceneNodeIndices =
         LoadSceneHierarchy(sceneBuilder, scene, meshToGeometry, materialIndexMap, dynamicNodes);
 
-    if (scene->HasAnimations())
-        LoadAnimations(sceneBuilder, scene, sceneNodeIndices);
-
+    LoadAnimations(sceneBuilder, scene, sceneNodeIndices);
+    
     LoadLights(sceneBuilder, scene);
+    LoadCameras(sceneBuilder, scene);
 
     return sceneBuilder.CreateSceneShared(name);
 }

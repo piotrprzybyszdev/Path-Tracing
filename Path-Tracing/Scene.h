@@ -10,6 +10,8 @@
 #include <variant>
 #include <vector>
 
+#include "Core/Camera.h"
+
 #include "Shaders/ShaderTypes.incl"
 
 #include "SceneGraph.h"
@@ -99,7 +101,7 @@ public:
         std::vector<glm::mat4> &&transforms, std::vector<Geometry> &&geometries,
         std::vector<Shaders::Material> &&materials, std::vector<TextureInfo> &&textures,
         std::vector<Model> &&models, std::vector<ModelInstance> &&modelInstances, SceneGraph &&sceneGraph,
-        std::vector<Shaders::Light> &&lights, SkyboxVariant &&skybox
+        std::vector<Shaders::Light> &&lights, SkyboxVariant &&skybox, std::vector<Camera> &&cameras
     );
 
     [[nodiscard]] const std::string &GetName() const;
@@ -122,6 +124,10 @@ public:
 
     [[nodiscard]] const SkyboxVariant &GetSkybox() const;
 
+    [[nodiscard]] uint32_t GetCameraCount() const;
+    [[nodiscard]] void SetActiveCamera(uint32_t index);
+    [[nodiscard]] Camera &GetActiveCamera();
+
 private:
     std::string m_Name;
 
@@ -143,6 +149,9 @@ private:
     std::vector<Shaders::Light> m_Lights;
 
     SkyboxVariant m_Skybox = SkyboxClearColor {};
+
+    std::vector<Camera> m_Cameras;
+    uint32_t m_ActiveCameraIndex = 0;
 };
 
 class SceneBuilder
@@ -163,6 +172,7 @@ public:
     void SetIndices(std::vector<uint32_t> &&indices);
 
     void AddLight(Shaders::Light &&light);
+    void AddCamera(Camera &&camera);
 
     void SetSkybox(Skybox2D &&skybox);
     void SetSkybox(SkyboxCube &&skybox);
@@ -195,6 +205,8 @@ private:
     std::vector<Shaders::Light> m_Lights;
 
     SkyboxVariant m_Skybox = SkyboxClearColor {};
+
+    std::vector<Camera> m_Cameras = { Camera(45.0f, 100.0f, 0.1f) };
 
 private:
     static inline const Shaders::Light s_DefaultLight = {
