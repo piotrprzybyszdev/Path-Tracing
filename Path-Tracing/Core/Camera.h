@@ -11,6 +11,7 @@ class Camera
 {
 public:
     Camera(float verticalFOV, float nearClip, float farClip);
+    Camera(float verticalFOV, float nearClip, float farClip, glm::vec3 position, float yaw, float pitch);
     ~Camera();
 
     void OnUpdate(float timeStep);

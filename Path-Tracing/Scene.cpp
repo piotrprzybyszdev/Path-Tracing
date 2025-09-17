@@ -101,6 +101,11 @@ void Scene::AddLight(Shaders::Light &&light)
     m_Lights.push_back(std::move(light));
 }
 
+void Scene::AddCamera(Camera &&camera)
+{
+    m_Cameras.push_back(std::move(camera));
+}
+
 void Scene::SetSkybox(Skybox2D &&skybox)
 {
     m_Skybox = skybox;
@@ -156,6 +161,12 @@ std::span<const Shaders::Light> Scene::GetLights() const
     if (m_Lights.empty())
         return std::span(&m_DefaultLight, 1);
     return m_Lights;
+}
+
+std::span<const Camera> Scene::GetCameras() const
+{
+    assert(!m_Cameras.empty());
+    return m_Cameras;
 }
 
 const Scene::SkyboxVariant &Scene::GetSkybox() const

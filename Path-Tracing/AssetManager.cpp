@@ -1,6 +1,7 @@
 #include <assimp/Importer.hpp>
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
+#include <glm/gtc/quaternion.hpp>
 #include <stb_image.h>
 
 #include <stack>
@@ -254,7 +255,7 @@ void LoadLights(Scene &outScene, const aiScene *scene)
     {
         const aiLight *light = scene->mLights[i];
 
-        assert(light->mType == aiLightSource_POINT);
+        // assert(light->mType == aiLightSource_POINT);
         assert(light->mColorAmbient == light->mColorDiffuse && light->mColorDiffuse == light->mColorSpecular);
 
         logger::info("Light {} ({})", light->mName.C_Str(), static_cast<uint32_t>(light->mType));
@@ -265,13 +266,48 @@ void LoadLights(Scene &outScene, const aiScene *scene)
 
         outScene.AddLight({
             .Color = light->mColorDiffuse.IsBlack()
-                         ? glm::vec3(1.0f)
-                         : TrivialCopyUnsafe<aiColor3D, glm::vec3>(light->mColorDiffuse),
-            .Position = TrivialCopy<aiVector3D, glm::vec3>(light->mPosition),
-            .AttenuationConstant = light->mAttenuationConstant,
-            .AttenuationLinear = light->mAttenuationLinear,
+                                         ? glm::vec3(1.0f)
+                                         : TrivialCopyUnsafe<aiColor3D, glm::vec3>(light->mColorDiffuse),
+                            .Position = TrivialCopy<aiVector3D, glm::vec3>(light->mPosition),
+                            .AttenuationConstant = light->mAttenuationConstant,
+                            .AttenuationLinear = light->mAttenuationLinear,
             .AttenuationQuadratic = light->mAttenuationQuadratic
         });
+    }
+}
+
+void LoadCameras(Scene &outScene, const aiScene *scene)
+{
+    for (int i = 0; i < scene->mNumCameras; i++)
+    {
+        const aiCamera *camera = scene->mCameras[i];
+
+        // find the transformation matrix corresponding to the camera node
+        aiNode *rootNode = scene->mRootNode;
+        aiNode *cameraNode = rootNode->FindNode(camera->mName);
+        aiMatrix4x4 cameraTransformationMatrix = cameraNode->mTransformation;
+        aiQuaternion rotation;
+        aiVector3D position;
+        cameraTransformationMatrix.DecomposeNoScaling(rotation, position);
+
+        glm::quat rotation2 = { rotation.w, rotation.x, rotation.y, rotation.z };
+        float yaw = glm::degrees(glm::yaw(rotation2));
+        float pitch = glm::degrees(glm::pitch(rotation2));
+
+        glm::vec3 position2 = TrivialCopyUnsafe<aiVector3D, glm::vec3>(position);
+
+        Camera sceneCamera(
+            glm::degrees(camera->mHorizontalFOV), camera->mClipPlaneNear, camera->mClipPlaneFar, std::move(position2),
+            std::move(yaw), std::move(pitch)
+        );
+
+        logger::info(
+            "Camera {} Position ({}, {}, {})", camera->mName.C_Str(), position2.x, position2.y, position2.z
+        );
+        logger::info("Camera {} Yaw ({}) Pitch ({})", camera->mName.C_Str(), yaw, pitch);
+
+
+        outScene.AddCamera(std::move(sceneCamera));
     }
 }
 
@@ -310,6 +346,7 @@ void AssetManager::LoadScene(const std::string &name, const std::filesystem::pat
     Scene outScene;
 
     LoadLights(outScene, scene);
+    LoadCameras(outScene, scene);
 
     std::vector<uint32_t> materialIndexMap = LoadMaterials(path, outScene, scene);
     std::vector<uint32_t> meshToGeometry = LoadMeshes(outScene, scene);

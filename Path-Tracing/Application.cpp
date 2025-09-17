@@ -199,12 +199,16 @@ void Application::Run()
 {
     s_State = State::Running;
 
-    Camera camera(45.0f, 100.0f, 0.1f);
-
     float lastFrameTime = 0.0f;
     vk::Extent2D previousSize = {};
 
-    Renderer::SetScene(AssetManager::GetScene("Lamp"));
+    auto scene = AssetManager::GetScene("BigSponza");
+
+    auto cameras = scene.GetCameras();
+
+    Camera camera = cameras.size() > 0 ? cameras.front() : Camera(45.0f, 100.0f, 0.1f);
+
+    Renderer::SetScene(scene);
 
     while (!Window::ShouldClose())
     {

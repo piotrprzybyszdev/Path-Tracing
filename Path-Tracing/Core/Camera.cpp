@@ -21,6 +21,14 @@ Camera::Camera(float verticalFOV, float nearClip, float farClip)
     m_InvProjection = glm::mat4();
 }
 
+Camera::Camera(float verticalFOV, float nearClip, float farClip, glm::vec3 position, float yaw, float pitch)
+    : Camera(verticalFOV, nearClip, farClip)
+{
+    m_Position = position;
+    m_Yaw = yaw;
+    m_Pitch = pitch;
+}
+
 Camera::~Camera()
 {
 }

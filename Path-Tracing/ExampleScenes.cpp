@@ -17,6 +17,7 @@ void CreateSponzaScene();
 void CreateChessGameScene();
 void CreateVirtualCity();
 void CreateLampLightScene();
+void CreateBigSponzaScene();
 
 void CreateScenes()
 {
@@ -26,7 +27,8 @@ void CreateScenes()
     // CreateSponzaScene();
     // CreateChessGameScene();
     // CreateVirtualCity();
-    CreateLampLightScene();
+    // CreateLampLightScene();
+    CreateBigSponzaScene();
 }
 
 void CreateTexturedCubesScene()
@@ -290,6 +292,13 @@ void CreateLampLightScene()
     const std::filesystem::path path = base / "KhronosScenes" / "glTF-Sample-Models-main" / "2.0" /
                                        "LightsPunctualLamp" / "glTF" / "LightsPunctualLamp.gltf";
     AssetManager::LoadScene("Lamp", path);
+}
+
+void CreateBigSponzaScene()
+{
+    const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets" / "scenes";
+    const std::filesystem::path path = base / "main_sponza" / "NewSponza_Main_glTF_003.gltf";
+    AssetManager::LoadScene("BigSponza", path);
 }
 
 }

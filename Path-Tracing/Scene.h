@@ -10,6 +10,7 @@
 #include <variant>
 #include <vector>
 
+#include "Core/Camera.h"
 #include "Core/Registry.h"
 
 #include "Shaders/ShaderTypes.incl"
@@ -107,6 +108,7 @@ public:
     void SetIndices(std::vector<uint32_t> &&indices);
 
     void AddLight(Shaders::Light &&light);
+    void AddCamera(Camera &&camera);
 
     void SetSkybox(Skybox2D &&skybox);
     void SetSkybox(SkyboxCube &&skybox);
@@ -122,6 +124,7 @@ public:
     [[nodiscard]] std::span<const ModelInstance> GetModelInstances() const;
 
     [[nodiscard]] std::span<const Shaders::Light> GetLights() const;
+    [[nodiscard]] std::span<const Camera> GetCameras() const;
 
     [[nodiscard]] const SkyboxVariant &GetSkybox() const;
 
@@ -145,6 +148,7 @@ private:
 
     Shaders::Light m_DefaultLight = { glm::vec3(1.0f), glm::vec3(3.0f, 15.0f, 7.0f) };
     std::vector<Shaders::Light> m_Lights;
+    std::vector<Camera> m_Cameras;
 
     SkyboxVariant m_Skybox = SkyboxClearColor {};
 
