@@ -10,37 +10,109 @@ namespace PathTracing
 {
 
 AccelerationStructure::AccelerationStructure(
-    const Buffer &vertexBuffer, const Buffer &indexBuffer, const Buffer &transformBuffer, const Scene &scene
+    const Buffer &vertexBuffer, const Buffer &indexBuffer, const Buffer &transformBuffer,
+    std::shared_ptr<const Scene> scene
 )
     : m_VertexBuffer(vertexBuffer), m_IndexBuffer(indexBuffer), m_TransformBuffer(transformBuffer),
-      m_Scene(scene),
+      m_Scene(std::move(scene)),
       m_ScratchOffsetAlignment(
           DeviceContext::GetAccelerationStructureProperties().minAccelerationStructureScratchOffsetAlignment
       )
 {
+    Timer timer("Acceleration Structure Update");
+
+    BuildBlases();
+    CreateTlas();
+    BuildTlas(vk::BuildAccelerationStructureModeKHR::eBuild);
 }
 
 AccelerationStructure::~AccelerationStructure()
 {
-    for (vk::AccelerationStructureKHR blas : m_Blases)
+    for (const auto &blas : m_Blases)
         DeviceContext::GetLogical().destroyAccelerationStructureKHR(
-            blas, nullptr, Application::GetDispatchLoader()
+            blas.Handle, nullptr, Application::GetDispatchLoader()
         );
     DeviceContext::GetLogical().destroyAccelerationStructureKHR(
         m_Tlas, nullptr, Application::GetDispatchLoader()
     );
 }
 
-void AccelerationStructure::Build()
+void AccelerationStructure::Update()
 {
-    Timer timer("Acceleration Structure Build");
-    BuildBlases();
+    if (!m_Scene->HasAnimations())
+        return;
+
+    Timer timer("Acceleration Structure Update");
     BuildTlas();
 }
 
 vk::AccelerationStructureKHR AccelerationStructure::GetTlas() const
 {
     return m_Tlas;
+}
+
+void AccelerationStructure::CreateTlas()
+{
+    const uint32_t instanceCount = m_Scene->GetModelInstances().size();
+    const vk::DeviceSize instancesSize = instanceCount * sizeof(vk::AccelerationStructureInstanceKHR);
+    
+    m_InstanceBuffer = BufferBuilder()
+                           .SetUsageFlags(
+                               vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR |
+                               vk::BufferUsageFlagBits::eShaderDeviceAddress
+                           )
+                           .CreateHostBuffer(instancesSize, "Instance Buffer");
+
+    vk::AccelerationStructureGeometryInstancesDataKHR instancesData(
+        vk::False, m_InstanceBuffer.GetDeviceAddress()
+    );
+
+    vk::AccelerationStructureGeometryKHR geometry(
+        vk::GeometryTypeKHR::eInstances, instancesData, vk::GeometryFlagBitsKHR::eNoDuplicateAnyHitInvocation
+    );
+
+    vk::AccelerationStructureBuildGeometryInfoKHR buildInfo(
+        vk::AccelerationStructureTypeKHR::eTopLevel, GetFlags()
+    );
+    buildInfo.setGeometries({ geometry });
+
+    const uint32_t primitiveCount[] = { instanceCount };
+    vk::AccelerationStructureBuildSizesInfoKHR buildSizesInfo =
+        DeviceContext::GetLogical().getAccelerationStructureBuildSizesKHR(
+            vk::AccelerationStructureBuildTypeKHR::eDevice, buildInfo, primitiveCount,
+            Application::GetDispatchLoader()
+        );
+
+    m_TlasBuffer = BufferBuilder()
+                       .SetUsageFlags(
+                           vk::BufferUsageFlagBits::eStorageBuffer |
+                           vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR |
+                           vk::BufferUsageFlagBits::eShaderDeviceAddress
+                       )
+                       .CreateDeviceBuffer(
+                           buildSizesInfo.accelerationStructureSize, "Top Level Acceleration Structure Buffer"
+                       );
+
+    vk::AccelerationStructureCreateInfoKHR createInfo(
+        vk::AccelerationStructureCreateFlagsKHR(), m_TlasBuffer.GetHandle(), 0,
+        buildSizesInfo.accelerationStructureSize
+    );
+    m_Tlas = DeviceContext::GetLogical().createAccelerationStructureKHR(
+        createInfo, nullptr, Application::GetDispatchLoader()
+    );
+    Utils::SetDebugName(m_Tlas, "Top Level Acceleration Structure");
+
+    const vk::DeviceSize scratchSize =
+        std::max(buildSizesInfo.buildScratchSize, buildSizesInfo.updateScratchSize);
+
+    m_TlasScratchBuffer = BufferBuilder()
+                              .SetAlignment(m_ScratchOffsetAlignment)
+                              .SetUsageFlags(
+                                  vk::BufferUsageFlagBits::eStorageBuffer |
+                                  vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR |
+                                  vk::BufferUsageFlagBits::eShaderDeviceAddress
+                              )
+                              .CreateDeviceBuffer(scratchSize, "Scratch Buffer (TLAS)");
 }
 
 void AccelerationStructure::BuildBlases()
@@ -62,7 +134,7 @@ void AccelerationStructure::BuildBlases()
     vk::DeviceSize totalBlasScratchBufferSize = 0;
 
     // Gather info about the BLASes
-    for (const auto &model : m_Scene.GetModels())
+    for (const auto &model : m_Scene->GetModels())
     {
         std::vector<uint32_t> primitiveCounts = {};
 
@@ -72,8 +144,8 @@ void AccelerationStructure::BuildBlases()
 
         for (const auto &mesh : model.Meshes)
         {
-            const Geometry geometry = m_Scene.GetGeometries()[mesh.GeometryIndex];
-            const bool hasTransform = mesh.TransformBufferOffset != Scene::IdentityTransformIndex;
+            const Geometry geometry = m_Scene->GetGeometries()[mesh.GeometryIndex];
+            const bool hasTransform = mesh.TransformBufferOffset != SceneBuilder::IdentityTransformIndex;
 
             vk::AccelerationStructureGeometryTrianglesDataKHR geometryData(
                 vk::Format::eR32G32B32Sfloat, m_VertexBuffer.GetDeviceAddress(), sizeof(Shaders::Vertex),
@@ -87,6 +159,7 @@ void AccelerationStructure::BuildBlases()
                                   : vk::GeometryFlagBitsKHR::eNoDuplicateAnyHitInvocation
             );
 
+            m_IsOpaque &= geometry.IsOpaque;
             primitiveCounts.push_back(geometry.IndexLength / 3);
 
             blasInfo.Ranges.emplace_back(
@@ -99,10 +172,10 @@ void AccelerationStructure::BuildBlases()
         }
 
         blasInfo.BuildInfo = vk::AccelerationStructureBuildGeometryInfoKHR(
-                                 vk::AccelerationStructureTypeKHR::eBottomLevel,
-                                 vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace
-        )
-                                 .setGeometries(blasInfo.Geometries);
+            vk::AccelerationStructureTypeKHR::eBottomLevel,
+            vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace
+        );
+        blasInfo.BuildInfo.setGeometries(blasInfo.Geometries);
 
         vk::AccelerationStructureBuildSizesInfoKHR buildSizesInfo =
             DeviceContext::GetLogical().getAccelerationStructureBuildSizesKHR(
@@ -122,10 +195,11 @@ void AccelerationStructure::BuildBlases()
         vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR |
         vk::BufferUsageFlagBits::eShaderDeviceAddress
     );
-    m_BlasBuffer = builder.CreateDeviceBufferUnique(totalBlasBufferSize, "BLAS Buffer");
 
-    builder.SetAlignment(m_ScratchOffsetAlignment);
-    Buffer blasScratchBuffer = builder.CreateDeviceBuffer(totalBlasScratchBufferSize, "BLAS Scratch Buffer");
+    m_BlasBuffer = builder.CreateDeviceBuffer(totalBlasBufferSize, "BLAS Buffer");
+
+    m_BlasScratchBuffer = builder.SetAlignment(m_ScratchOffsetAlignment)
+                              .CreateDeviceBuffer(totalBlasScratchBufferSize, "BLAS Scratch Buffer");
 
     // Create the BLASes
     for (uint32_t i = 0; i < blasInfos.size(); i++)
@@ -133,7 +207,7 @@ void AccelerationStructure::BuildBlases()
         BlasInfo &blasInfo = blasInfos[i];
 
         vk::AccelerationStructureCreateInfoKHR createInfo(
-            vk::AccelerationStructureCreateFlagsKHR(), m_BlasBuffer->GetHandle(), blasInfo.BlasBufferOffset,
+            vk::AccelerationStructureCreateFlagsKHR(), m_BlasBuffer.GetHandle(), blasInfo.BlasBufferOffset,
             blasInfo.BlasBufferSize, vk::AccelerationStructureTypeKHR::eBottomLevel
         );
 
@@ -141,11 +215,15 @@ void AccelerationStructure::BuildBlases()
             createInfo, nullptr, Application::GetDispatchLoader()
         );
         blasInfo.BuildInfo.setDstAccelerationStructure(blas).setScratchData(
-            blasScratchBuffer.GetDeviceAddress() + blasInfo.BlasScratchBufferOffset
+            m_BlasScratchBuffer.GetDeviceAddress() + blasInfo.BlasScratchBufferOffset
         );
-        m_Blases.push_back(blas);
+        vk::DeviceAddress address = DeviceContext::GetLogical().getAccelerationStructureAddressKHR(
+            { blas }, Application::GetDispatchLoader()
+        );
 
-        Utils::SetDebugName(blas, std::format("BLAS: {}", m_Scene.ModelNames.Get(i)));
+        m_Blases.emplace_back(blas, address);
+
+        Utils::SetDebugName(blas, std::format("BLAS {}", i));
     }
 
     // Build all BLASes at once
@@ -169,84 +247,37 @@ void AccelerationStructure::BuildBlases()
     }
 }
 
-void AccelerationStructure::BuildTlas()
+void AccelerationStructure::BuildTlas(vk::BuildAccelerationStructureModeKHR mode)
 {
     std::vector<vk::AccelerationStructureInstanceKHR> instances = {};
-    for (const auto &instance : m_Scene.GetModelInstances())
+    for (int i = 0; i < m_Scene->GetModelInstances().size(); i++)
     {
-        vk::DeviceAddress address = DeviceContext::GetLogical().getAccelerationStructureAddressKHR(
-            { m_Blases[instance.ModelIndex] }, Application::GetDispatchLoader()
-        );
-
+        const auto &instance = m_Scene->GetModelInstances()[i];
+        
         instances.emplace_back(
             TrivialCopy<glm::mat3x4, vk::TransformMatrixKHR>(instance.Transform), 0, 0xff,
-            m_Scene.GetModels()[instance.ModelIndex].SbtOffset, vk::GeometryInstanceFlagsKHR(), address
+            m_Scene->GetModels()[instance.ModelIndex].SbtOffset, vk::GeometryInstanceFlagsKHR(),
+            m_Blases[instance.ModelIndex].Address
         );
     }
 
-    auto builder = BufferBuilder().SetUsageFlags(
-        vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR |
-        vk::BufferUsageFlagBits::eShaderDeviceAddress
-    );
-
-    Buffer instanceBuffer = builder.CreateHostBuffer(std::span(instances), "Instance Buffer");
+    m_InstanceBuffer.Upload(instances.data());
 
     vk::AccelerationStructureGeometryInstancesDataKHR instancesData(
-        vk::False, instanceBuffer.GetDeviceAddress()
+        vk::False, m_InstanceBuffer.GetDeviceAddress()
     );
 
     vk::AccelerationStructureGeometryKHR geometry(
-        vk::GeometryTypeKHR::eInstances, instancesData, vk::GeometryFlagBitsKHR::eNoDuplicateAnyHitInvocation
+        vk::GeometryTypeKHR::eInstances, instancesData,
+        m_IsOpaque ? vk::GeometryFlagBitsKHR::eOpaque : vk::GeometryFlagBitsKHR::eNoDuplicateAnyHitInvocation
     );
 
-    vk::AccelerationStructureBuildGeometryInfoKHR buildInfo =
-        vk::AccelerationStructureBuildGeometryInfoKHR(
-            vk::AccelerationStructureTypeKHR::eTopLevel,
-            vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace
-        )
-            .setGeometries({ geometry });
-
-    const uint32_t primitiveCount[] = { static_cast<uint32_t>(instances.size()) };
-    vk::AccelerationStructureBuildSizesInfoKHR buildSizesInfo =
-        DeviceContext::GetLogical().getAccelerationStructureBuildSizesKHR(
-            vk::AccelerationStructureBuildTypeKHR::eDevice, buildInfo, primitiveCount,
-            Application::GetDispatchLoader()
-        );
-
-    m_TlasBuffer = builder.ResetFlags()
-                       .SetUsageFlags(
-                           vk::BufferUsageFlagBits::eStorageBuffer |
-                           vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR |
-                           vk::BufferUsageFlagBits::eShaderDeviceAddress
-                       )
-                       .CreateDeviceBufferUnique(
-                           buildSizesInfo.accelerationStructureSize, "Top Level Acceleration Structure Buffer"
-                       );
-
-    vk::AccelerationStructureCreateInfoKHR createInfo(
-        vk::AccelerationStructureCreateFlagsKHR(), m_TlasBuffer->GetHandle(), 0,
-        buildSizesInfo.accelerationStructureSize
+    vk::AccelerationStructureBuildGeometryInfoKHR geometryInfo(
+        vk::AccelerationStructureTypeKHR::eTopLevel, GetFlags(), mode, m_Tlas, m_Tlas, geometry, {},
+        m_TlasScratchBuffer.GetDeviceAddress()
     );
 
-    m_Tlas = DeviceContext::GetLogical().createAccelerationStructureKHR(
-        createInfo, nullptr, Application::GetDispatchLoader()
-    );
-    Utils::SetDebugName(m_Tlas, "Top Level Acceleration Structure");
-
-    builder.SetAlignment(m_ScratchOffsetAlignment);
-    Buffer scratchBuffer =
-        builder.CreateDeviceBuffer(buildSizesInfo.buildScratchSize, "Scratch Buffer (TLAS)");
-
-    vk::AccelerationStructureBuildGeometryInfoKHR geometryInfo =
-        vk::AccelerationStructureBuildGeometryInfoKHR(
-            vk::AccelerationStructureTypeKHR::eTopLevel,
-            vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace
-        )
-            .setGeometries({ geometry })
-            .setDstAccelerationStructure(m_Tlas)
-            .setScratchData(scratchBuffer.GetDeviceAddress());
-
-    vk::AccelerationStructureBuildRangeInfoKHR rangeInfo(instances.size(), 0, 0, 0);
+    vk::AccelerationStructureBuildRangeInfoKHR rangeInfo(m_Scene->GetModelInstances().size(), 0, 0, 0);
 
     {
         Renderer::s_MainCommandBuffer->Begin();
@@ -258,6 +289,13 @@ void AccelerationStructure::BuildTlas()
         );
         Renderer::s_MainCommandBuffer->SubmitBlocking();
     }
+}
+
+vk::BuildAccelerationStructureFlagsKHR AccelerationStructure::GetFlags() const
+{
+    return m_Scene->HasAnimations() ? vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastBuild |
+                                          vk::BuildAccelerationStructureFlagBitsKHR::eAllowUpdate
+                                    : vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace;
 }
 
 }

@@ -31,6 +31,8 @@ public:
     static Shaders::RaygenFlags GetRaygenFlags();
     static Shaders::ClosestHitFlags GetClosestHitFlags();
 
+    static const char *SceneChange();
+
 private:
     static bool s_IsVisible;
     static bool s_IsFocused;

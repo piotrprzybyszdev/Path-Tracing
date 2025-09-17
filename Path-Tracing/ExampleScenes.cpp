@@ -5,31 +5,15 @@
 #include <array>
 #include <string>
 
-#include "AssetManager.h"
+#include "AssetImporter.h"
 #include "ExampleScenes.h"
 
 namespace PathTracing::ExampleScenes
 {
 
-void CreateTexturedCubesScene();
-void CreateReuseMeshCubesScene();
-void CreateSponzaScene();
-void CreateChessGameScene();
-void CreateVirtualCity();
-
-void CreateScenes()
+std::shared_ptr<Scene> CreateTexturedCubesScene()
 {
-    // TODO: Only load them on demand
-    CreateTexturedCubesScene();
-    CreateReuseMeshCubesScene();
-    CreateSponzaScene();
-    CreateChessGameScene();
-    CreateVirtualCity();
-}
-
-void CreateTexturedCubesScene()
-{
-    Scene scene;
+    SceneBuilder sceneBuilder;
 
     const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets" / "textures";
     const std::array<std::string, 3> assetNames = { "Metal", "PavingStones", "Logs" };
@@ -43,19 +27,19 @@ void CreateTexturedCubesScene()
     {
         const std::filesystem::path materialPath = base / assetNames[i];
         const std::string &material = materials[i];
-        scene.AddMaterial(
+        sceneBuilder.AddMaterial(
             assetNames[i],
             Shaders::Material {
-                scene.AddTexture(
-                    AssetManager::GetTextureInfo(materialPath / (material + "_Color.jpg"), TextureType::Color)
+                sceneBuilder.AddTexture(
+                    AssetImporter::GetTextureInfo(materialPath / (material + "_Color.jpg"), TextureType::Color)
                 ),
-                scene.AddTexture(AssetManager::GetTextureInfo(
+                sceneBuilder.AddTexture(AssetImporter::GetTextureInfo(
                     materialPath / (material + "_NormalGL.jpg"), TextureType::Normal
                 )),
-                scene.AddTexture(AssetManager::GetTextureInfo(
+                sceneBuilder.AddTexture(AssetImporter::GetTextureInfo(
                     materialPath / (material + "_Roughness.jpg"), TextureType::Roughness
                 )),
-                scene.AddTexture(AssetManager::GetTextureInfo(
+                sceneBuilder.AddTexture(AssetImporter::GetTextureInfo(
                     materialPath / (material + "_Roughness.jpg"), TextureType::Metalic
                 )),
             }
@@ -98,13 +82,13 @@ void CreateTexturedCubesScene()
     for (int i = 0; i < 6; i++)
         std::ranges::copy(std::vector<uint32_t> { 0, 1, 2, 2, 3, 0 }, std::back_inserter(indices));
 
-    scene.SetVertices(std::move(vertices));
-    scene.SetIndices(std::move(indices));
+    sceneBuilder.SetVertices(std::move(vertices));
+    sceneBuilder.SetIndices(std::move(indices));
 
     uint32_t vertexOffset = 0, indexOffset = 0;
     for (uint32_t i = 0; i < 6; i++)
     {
-        scene.AddGeometry({ vertexOffset, 4, indexOffset, 6, true });
+        sceneBuilder.AddGeometry({ vertexOffset, 4, indexOffset, 6, true });
         vertexOffset += 4;
         indexOffset += 6;
     }
@@ -127,36 +111,34 @@ void CreateTexturedCubesScene()
         { 5, 0, glm::mat4(1.0f) },
     } };
 
-    const uint32_t cube1 = scene.AddModel(m1);
-    scene.ModelNames.Set(cube1, "Cube different materials (ver 1)");
-    scene.MeshNames.Set({ cube1, 5 }, "Bottom Square");
-    scene.MeshNames.Set({ cube1, 6 }, "Top Square");
+    const uint32_t cube1 = sceneBuilder.AddModel(m1);
+    const uint32_t cube2 = sceneBuilder.AddModel(m2);
 
-    const uint32_t cube2 = scene.AddModel(m2);
-    scene.ModelNames.Set(cube2, "Cube one material (ver 2)");
+    const glm::mat4 cube1inst1transform = glm::transpose(glm::translate(glm::mat4(1.0f), glm::vec3(1.0f)));
+    const glm::mat4 cube1inst2transform = glm::transpose(glm::translate(glm::mat4(1.0f), glm::vec3(-1.0f)));
+    const glm::mat4 cube2transform = glm::transpose(glm::scale(
+        glm::translate(glm::mat4(1.0f), glm::vec3(0.5f, -1.0f, -3.0f)), glm::vec3(2.0f, 1.0f, 0.3f)
+    ));
 
-    const uint32_t cube1inst1 =
-        scene.AddModelInstance(cube1, glm::transpose(glm::translate(glm::mat4(1.0f), glm::vec3(1.0f))));
-    scene.ModelInstanceNames.Set(cube1inst1, "Cube Instance (ver 1) (inst 1)");
-    const uint32_t cube1inst2 =
-        scene.AddModelInstance(cube1, glm::transpose(glm::translate(glm::mat4(1.0f), glm::vec3(-1.0f))));
-    scene.ModelInstanceNames.Set(cube1inst2, "Cube Instance (ver 1) (inst 2)");
-    scene.AddModelInstance(
-        cube2, glm::transpose(glm::scale(
-                   glm::translate(glm::mat4(1.0f), glm::vec3(0.5f, -1.0f, -3.0f)), glm::vec3(2.0f, 1.0f, 0.3f)
-               ))
+    const uint32_t rootNode = sceneBuilder.AddSceneNode({ 0u, glm::mat4(1.0f), glm::mat4(1.0f) });
+    const uint32_t cube1inst1node = sceneBuilder.AddSceneNode({ rootNode, cube1inst1transform, glm::mat4(1.0f) });
+    const uint32_t cube1inst2node = sceneBuilder.AddSceneNode({ rootNode, cube1inst2transform, glm::mat4(1.0f) });
+    const uint32_t cube2node = sceneBuilder.AddSceneNode({ rootNode, cube2transform, glm::mat4(1.0f) });
+
+    const uint32_t cube1inst1 = sceneBuilder.AddModelInstance(cube1, cube1inst1node);
+    const uint32_t cube1inst2 = sceneBuilder.AddModelInstance(cube1, cube1inst2node);
+    const uint32_t cube2inst = sceneBuilder.AddModelInstance(cube2, cube2node);
+
+    sceneBuilder.SetSkybox(
+        Skybox2D(AssetImporter::GetTextureInfo(base / "skybox" / "sky_42_2k.png", TextureType::Skybox))
     );
 
-    scene.SetSkybox(
-        Skybox2D(AssetManager::GetTextureInfo(base / "skybox" / "sky_42_2k.png", TextureType::Skybox))
-    );
-
-    AssetManager::AddScene("Textured Cubes", std::move(scene));
+    return sceneBuilder.CreateSceneShared("Textured Cubes");
 }
 
-void CreateReuseMeshCubesScene()
+std::shared_ptr<Scene> CreateReuseMeshCubesScene()
 {
-    Scene scene;
+    SceneBuilder sceneBuilder;
 
     const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets" / "textures";
     const std::array<std::string, 3> assetNames = { "Metal", "PavingStones", "Logs" };
@@ -170,19 +152,19 @@ void CreateReuseMeshCubesScene()
     {
         const std::filesystem::path materialPath = base / assetNames[i];
         const std::string &material = materials[i];
-        scene.AddMaterial(
+        sceneBuilder.AddMaterial(
             assetNames[i],
             Shaders::Material {
-                scene.AddTexture(
-                    AssetManager::GetTextureInfo(materialPath / (material + "_Color.jpg"), TextureType::Color)
+                sceneBuilder.AddTexture(
+                    AssetImporter::GetTextureInfo(materialPath / (material + "_Color.jpg"), TextureType::Color)
                 ),
-                scene.AddTexture(AssetManager::GetTextureInfo(
+                sceneBuilder.AddTexture(AssetImporter::GetTextureInfo(
                     materialPath / (material + "_NormalGL.jpg"), TextureType::Normal
                 )),
-                scene.AddTexture(AssetManager::GetTextureInfo(
+                sceneBuilder.AddTexture(AssetImporter::GetTextureInfo(
                     materialPath / (material + "_Roughness.jpg"), TextureType::Roughness
                 )),
-                scene.AddTexture(AssetManager::GetTextureInfo(
+                sceneBuilder.AddTexture(AssetImporter::GetTextureInfo(
                     materialPath / (material + "_Roughness.jpg"), TextureType::Metalic
                 )),
             }
@@ -210,13 +192,13 @@ void CreateReuseMeshCubesScene()
     for (int i = 0; i < 3; i++)
         std::ranges::copy(std::vector<uint32_t> { 0, 1, 2, 2, 3, 0 }, std::back_inserter(indices));
 
-    scene.SetVertices(std::move(vertices));
-    scene.SetIndices(std::move(indices));
+    sceneBuilder.SetVertices(std::move(vertices));
+    sceneBuilder.SetIndices(std::move(indices));
 
     uint32_t vertexOffset = 0, indexOffset = 0;
     for (uint32_t i = 0; i < 3; i++)
     {
-        scene.AddGeometry({ vertexOffset, 4, indexOffset, 6, true });
+        sceneBuilder.AddGeometry({ vertexOffset, 4, indexOffset, 6, true });
         vertexOffset += 4;
         indexOffset += 6;
     }
@@ -233,53 +215,79 @@ void CreateReuseMeshCubesScene()
           glm::transpose(glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(0.0f, 0.0f, 1.0f))) },
     } };
 
-    const uint32_t cube = scene.AddModel(m);
-    scene.ModelNames.Set(cube, "Cube Model");
-    scene.MeshNames.Set({ cube, 0 }, "z-axis plane (+) (mat 1)");
-    scene.MeshNames.Set({ cube, 1 }, "z-axis plane (-) (mat 1)");
-    scene.MeshNames.Set({ cube, 2 }, "x-axis plane (-) (mat 1)");
-    scene.MeshNames.Set({ cube, 3 }, "x-axis plane (+) (mat 2)");
-    scene.MeshNames.Set({ cube, 4 }, "y-axis plane (+) (mat 2)");
-    scene.MeshNames.Set({ cube, 5 }, "y-axis plane (-) (mat 2)");
+    const uint32_t cube = sceneBuilder.AddModel(m);
 
-    const uint32_t cube1inst1 = scene.AddModelInstance(cube, glm::mat4(1.0f));
-    scene.ModelInstanceNames.Set(cube1inst1, "Cube Instance");
+    const uint32_t rootNode = sceneBuilder.AddSceneNode({ 0u, glm::mat4(1.0f), glm::mat4(1.0f) });
+    const uint32_t cube1node = sceneBuilder.AddSceneNode({ rootNode, glm::mat4(1.0f), glm::mat4(1.0f) });
+    const uint32_t cube1inst = sceneBuilder.AddModelInstance(cube, cube1node);
 
     const auto skyboxPath = base / "skybox" / "sky_42_cubemap_(roblox)_2k";
-    scene.SetSkybox(SkyboxCube(
-        AssetManager::GetTextureInfo(skyboxPath / "px.png", TextureType::Skybox),
-        AssetManager::GetTextureInfo(skyboxPath / "nx.png", TextureType::Skybox),
-        AssetManager::GetTextureInfo(skyboxPath / "py.png", TextureType::Skybox),
-        AssetManager::GetTextureInfo(skyboxPath / "ny.png", TextureType::Skybox),
-        AssetManager::GetTextureInfo(skyboxPath / "pz.png", TextureType::Skybox),
-        AssetManager::GetTextureInfo(skyboxPath / "nz.png", TextureType::Skybox)
+    sceneBuilder.SetSkybox(SkyboxCube(
+        AssetImporter::GetTextureInfo(skyboxPath / "px.png", TextureType::Skybox),
+        AssetImporter::GetTextureInfo(skyboxPath / "nx.png", TextureType::Skybox),
+        AssetImporter::GetTextureInfo(skyboxPath / "py.png", TextureType::Skybox),
+        AssetImporter::GetTextureInfo(skyboxPath / "ny.png", TextureType::Skybox),
+        AssetImporter::GetTextureInfo(skyboxPath / "pz.png", TextureType::Skybox),
+        AssetImporter::GetTextureInfo(skyboxPath / "nz.png", TextureType::Skybox)
     ));
 
-    AssetManager::AddScene("Reuse Mesh", std::move(scene));
+    return sceneBuilder.CreateSceneShared("Reuse Mesh");
 }
 
-void CreateSponzaScene()
+std::shared_ptr<Scene> CreateSponzaScene()
 {
     const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets" / "scenes";
     const std::filesystem::path path =
         base / "KhronosScenes" / "glTF-Sample-Models-main" / "2.0" / "Sponza" / "glTF" / "Sponza.gltf";
-    AssetManager::LoadScene("Sponza", path);
+    return AssetImporter::LoadScene("Sponza", path);
 }
 
-void CreateChessGameScene()
+std::shared_ptr<Scene> CreateChessGameScene()
 {
     const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets" / "scenes";
     const std::filesystem::path path = base / "KhronosScenes" / "glTF-Sample-Models-main" / "2.0" /
                                        "ABeautifulGame" / "glTF" / "ABeautifulGame.gltf";
-    AssetManager::LoadScene("Chess Game", path);
+    return AssetImporter::LoadScene("Chess Game", path);
 }
 
-void CreateVirtualCity()
+std::shared_ptr<Scene> CreateVirtualCityScene()
 {
     const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets" / "scenes";
     const std::filesystem::path path =
         base / "KhronosScenes" / "glTF-Sample-Models-main" / "2.0" / "VC" / "glTF" / "VC.gltf";
-    AssetManager::LoadScene("Virtual City", path);
+    return AssetImporter::LoadScene("Virtual City", path);
+}
+
+std::shared_ptr<Scene> CreateCesiumManScene()
+{
+    const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets" / "scenes";
+    const std::filesystem::path path =
+        base / "KhronosScenes" / "glTF-Sample-Models-main" / "2.0" / "CesiumMan" / "glTF" / "CesiumMan.gltf";
+    return AssetImporter::LoadScene("Cesium Man", path);
+}
+
+std::shared_ptr<Scene> CreateCesiumMilkTruckScene()
+{
+    const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets" / "scenes";
+    const std::filesystem::path path =
+        base / "KhronosScenes" / "glTF-Sample-Models-main" / "2.0" / "CesiumMilkTruck" / "glTF" / "CesiumMilkTruck.gltf";
+    return AssetImporter::LoadScene("Cesium Milk Truck", path);
+}
+
+std::shared_ptr<Scene> CreateBrainStemScene()
+{
+    const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets" / "scenes";
+    const std::filesystem::path path = base / "KhronosScenes" / "glTF-Sample-Models-main" / "2.0" /
+                                       "BrainStem" / "glTF" / "BrainStem.gltf";
+    return AssetImporter::LoadScene("Brain Stem", path);
+}
+
+std::shared_ptr<Scene> CreateBoxAnimatedScene()
+{
+    const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets" / "scenes";
+    const std::filesystem::path path = base / "KhronosScenes" / "glTF-Sample-Models-main" / "2.0" /
+                                       "BoxAnimated" / "glTF" / "BoxAnimated.gltf";
+    return AssetImporter::LoadScene("Box Animated", path);
 }
 
 }

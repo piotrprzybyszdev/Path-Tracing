@@ -29,7 +29,7 @@ public:
     static void Init(const Swapchain *swapchain);
     static void Shutdown();
 
-    static void SetScene(const Scene &scene);
+    static void UpdateSceneData();
 
     static void OnResize(vk::Extent2D extent);
     static void OnUpdate(float timeStep);
@@ -62,6 +62,8 @@ private:
         Buffer RaygenUniformBuffer;
         Buffer MissUniformBuffer;
         Buffer ClosestHitUniformBuffer;
+
+        std::unique_ptr<AccelerationStructure> SceneAccelerationStructure = nullptr;
     };
 
     static std::vector<RenderingResources> s_RenderingResources;
@@ -81,7 +83,6 @@ private:
         std::unique_ptr<Image> Skybox = nullptr;
 
         std::unique_ptr<ShaderBindingTable> SceneShaderBindingTable = nullptr;
-        std::unique_ptr<AccelerationStructure> SceneAccelerationStructure = nullptr;
     } s_StaticSceneData;
 
     static std::unique_ptr<DescriptorSetBuilder> s_DescriptorSetBuilder;

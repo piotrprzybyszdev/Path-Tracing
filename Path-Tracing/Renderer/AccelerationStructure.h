@@ -2,6 +2,7 @@
 
 #include <vulkan/vulkan.hpp>
 
+#include <memory>
 #include <span>
 #include <vector>
 
@@ -17,11 +18,14 @@ class AccelerationStructure
 public:
     AccelerationStructure(
         const Buffer &vertexBuffer, const Buffer &indexBuffer, const Buffer &transformBuffer,
-        const Scene &scene
+        std::shared_ptr<const Scene> scene
     );
     ~AccelerationStructure();
 
-    void Build();
+    AccelerationStructure(const AccelerationStructure &) = delete;
+    AccelerationStructure &operator=(const AccelerationStructure &) = delete;
+
+    void Update();
 
     [[nodiscard]] vk::AccelerationStructureKHR GetTlas() const;
 
@@ -32,17 +36,35 @@ private:
     const Buffer &m_IndexBuffer;
     const Buffer &m_TransformBuffer;
 
-    const Scene &m_Scene;
+    std::shared_ptr<const Scene> m_Scene;
 
-    std::unique_ptr<Buffer> m_BlasBuffer;
-    std::vector<vk::AccelerationStructureKHR> m_Blases;
+    Buffer m_InstanceBuffer;
 
-    std::unique_ptr<Buffer> m_TlasBuffer;
+    Buffer m_BlasBuffer;
+    Buffer m_BlasScratchBuffer;
+    
+    struct Blas
+    {
+        vk::AccelerationStructureKHR Handle;
+        vk::DeviceAddress Address;
+    };
+
+    std::vector<Blas> m_Blases;
+
+    bool m_IsOpaque = true;
+    Buffer m_TlasBuffer;
+    Buffer m_TlasScratchBuffer;
     vk::AccelerationStructureKHR m_Tlas;
 
 private:
+    void CreateTlas();
+
     void BuildBlases();
-    void BuildTlas();
+    void BuildTlas(
+        vk::BuildAccelerationStructureModeKHR mode = vk::BuildAccelerationStructureModeKHR::eUpdate
+    );
+
+    [[nodiscard]] vk::BuildAccelerationStructureFlagsKHR GetFlags() const;
 };
 
 }

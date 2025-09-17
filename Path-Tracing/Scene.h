@@ -10,9 +10,9 @@
 #include <variant>
 #include <vector>
 
-#include "Core/Registry.h"
-
 #include "Shaders/ShaderTypes.incl"
+
+#include "SceneGraph.h"
 
 namespace PathTracing
 {
@@ -66,6 +66,7 @@ struct Model
 struct ModelInstance
 {
     uint32_t ModelIndex;
+    uint32_t SceneNodeIndex;
     glm::mat4 Transform;
 };
 
@@ -88,26 +89,22 @@ struct SkyboxCube
     TextureInfo Right;
 };
 
+using SkyboxVariant = std::variant<SkyboxClearColor, Skybox2D, SkyboxCube>;
+
 class Scene
 {
 public:
-    using SkyboxVariant = std::variant<SkyboxClearColor, Skybox2D, SkyboxCube>;
+    Scene(
+        std::string name, std::vector<Shaders::Vertex> &&vertices, std::vector<uint32_t> &&indices,
+        std::vector<glm::mat4> &&transforms, std::vector<Geometry> &&geometries,
+        std::vector<Shaders::Material> &&materials, std::vector<TextureInfo> &&textures,
+        std::vector<Model> &&models, std::vector<ModelInstance> &&modelInstances, SceneGraph &&sceneGraph,
+        SkyboxVariant &&skybox
+    );
 
-public:
-    Scene();
+    [[nodiscard]] const std::string &GetName() const;
 
-    uint32_t AddGeometry(Geometry &&geometry);
-    uint32_t AddModel(std::span<const MeshInfo> meshInfos);
-    uint32_t AddModelInstance(uint32_t modelIndex, glm::mat4 transform);
-
-    uint32_t AddTexture(TextureInfo &&texture);
-    uint32_t AddMaterial(std::string name, Shaders::Material material);
-
-    void SetVertices(std::vector<Shaders::Vertex> &&vertices);
-    void SetIndices(std::vector<uint32_t> &&indices);
-
-    void SetSkybox(Skybox2D &&skybox);
-    void SetSkybox(SkyboxCube &&skybox);
+    void Update(float timeStep);
 
     [[nodiscard]] std::span<const Shaders::Vertex> GetVertices() const;
     [[nodiscard]] std::span<const uint32_t> GetIndices() const;
@@ -119,11 +116,13 @@ public:
     [[nodiscard]] std::span<const Model> GetModels() const;
     [[nodiscard]] std::span<const ModelInstance> GetModelInstances() const;
 
+    [[nodiscard]] bool HasAnimations() const;
+
     [[nodiscard]] const SkyboxVariant &GetSkybox() const;
 
-    static inline constexpr uint32_t IdentityTransformIndex = 0;
-
 private:
+    std::string m_Name;
+
     std::vector<Shaders::Vertex> m_Vertices;
     std::vector<uint32_t> m_Indices;
     std::vector<glm::mat4> m_Transforms;
@@ -139,23 +138,57 @@ private:
     std::vector<Model> m_Models;
     std::vector<ModelInstance> m_ModelInstances;
 
+    SceneGraph m_Graph;
+
     SkyboxVariant m_Skybox = SkyboxClearColor {};
+};
 
-#ifndef NDEBUG
-    static inline constexpr bool g_EnableNameRegistries = true;
-#else
-    static inline constexpr bool g_EnableNameRegistries = false;
-#endif
+class SceneBuilder
+{
+public:
+    /* SceneNodes have to be added in pre-order sequence */
+    uint32_t AddSceneNode(SceneNode &&node);
+    void AddAnimation(Animation &&animation);
 
-    static inline const std::string g_DefaultGeometryName = "Unnamed Geometry";
-    static inline const std::string g_DefaultModelName = "Unnamed Model";
-    static inline const std::string g_DefaultModelInstanceName = "Unnamed Model Instance";
+    uint32_t AddGeometry(Geometry &&geometry);
+    uint32_t AddModel(std::span<const MeshInfo> meshInfos);
+    uint32_t AddModelInstance(uint32_t modelIndex, uint32_t sceneNodeIndex);
+
+    uint32_t AddTexture(TextureInfo &&texture);
+    uint32_t AddMaterial(std::string name, Shaders::Material material);
+
+    void SetVertices(std::vector<Shaders::Vertex> &&vertices);
+    void SetIndices(std::vector<uint32_t> &&indices);
+
+    void SetSkybox(Skybox2D &&skybox);
+    void SetSkybox(SkyboxCube &&skybox);
+
+    [[nodiscard]] std::shared_ptr<Scene> CreateSceneShared(std::string name);
 
 public:
-    Registry<std::pair<uint32_t, uint32_t>, std::string, g_DefaultGeometryName, g_EnableNameRegistries>
-        MeshNames;
-    Registry<uint32_t, std::string, g_DefaultModelName, g_EnableNameRegistries> ModelNames;
-    Registry<uint32_t, std::string, g_DefaultModelInstanceName, g_EnableNameRegistries> ModelInstanceNames;
+    static inline constexpr uint32_t IdentityTransformIndex = 0;
+
+private:
+    std::vector<Shaders::Vertex> m_Vertices;
+    std::vector<uint32_t> m_Indices;
+    std::vector<glm::mat4> m_Transforms = { glm::mat4(1.0f) };
+
+    std::vector<Geometry> m_Geometries;
+
+    std::vector<Shaders::Material> m_Materials;
+    std::unordered_map<std::string, uint32_t> m_MaterialIndices;
+
+    std::vector<TextureInfo> m_Textures;
+    std::unordered_map<std::string, uint32_t> m_TextureIndices;
+
+    std::vector<Model> m_Models;
+    std::vector<std::pair<uint32_t, uint32_t>> m_ModelInstanceInfos;
+    std::vector<ModelInstance> m_ModelInstances;
+
+    std::vector<SceneNode> m_SceneNodes;
+    std::vector<Animation> m_Animations;
+
+    SkyboxVariant m_Skybox = SkyboxClearColor {};
 };
 
 }

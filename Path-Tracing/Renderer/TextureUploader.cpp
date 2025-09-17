@@ -2,7 +2,7 @@
 
 #include "Core/Core.h"
 
-#include "AssetManager.h"
+#include "AssetImporter.h"
 
 #include "Renderer.h"
 #include "TextureUploader.h"
@@ -94,7 +94,7 @@ void TextureUploader::UploadTexturesBlocking(const Scene &scene)
     }
 }
 
-void TextureUploader::UploadTextures(const Scene &scene)
+void TextureUploader::UploadTextures(const std::shared_ptr<const Scene> &scene)
 {
     Cancel();
 
@@ -129,12 +129,12 @@ void TextureUploader::Cancel()
         thread.join();
 }
 
-void TextureUploader::StartLoaderThreads(const Scene &scene)
+void TextureUploader::StartLoaderThreads(const std::shared_ptr<const Scene> &scene)
 {
     for (auto &thread : m_LoaderThreads)
     {
-        thread = std::jthread([=, this](std::stop_token stopToken) {
-            auto textures = scene.GetTextures();
+        thread = std::jthread([scene, this](std::stop_token stopToken) {
+            auto textures = scene->GetTextures();
             while (!stopToken.stop_requested() && m_TextureIndex < textures.size())
             {
                 const uint32_t textureIndex = m_TextureIndex++;
@@ -175,10 +175,10 @@ void TextureUploader::StartLoaderThreads(const Scene &scene)
     }
 }
 
-void TextureUploader::StartSubmitThread(const Scene &scene)
+void TextureUploader::StartSubmitThread(const std::shared_ptr<const Scene> &scene)
 {
-    m_SubmitThread = std::jthread([=, this](std::stop_token stopToken) {
-        auto textures = scene.GetTextures();
+    m_SubmitThread = std::jthread([scene, this](std::stop_token stopToken) {
+        auto textures = scene->GetTextures();
         uint32_t uploadedCount = 0;
 
         std::vector<Buffer> buffers;
@@ -243,7 +243,7 @@ void TextureUploader::StartSubmitThread(const Scene &scene)
 
 void TextureUploader::UploadToBuffer(const TextureInfo &textureInfo, const Buffer &buffer)
 {
-    std::byte *data = AssetManager::LoadTextureData(textureInfo);
+    std::byte *data = AssetImporter::LoadTextureData(textureInfo);
 
     const vk::Extent2D extent(textureInfo.Width, textureInfo.Height);
     const size_t dataSize = Image::GetByteSize(extent, IntermediateTextureFormat);
@@ -252,7 +252,7 @@ void TextureUploader::UploadToBuffer(const TextureInfo &textureInfo, const Buffe
     assert(dataSize <= StagingBufferSize);
 
     buffer.Upload(std::span(data, dataSize));
-    AssetManager::ReleaseTextureData(data);
+    AssetImporter::ReleaseTextureData(data);
 }
 
 void TextureUploader::UploadTexture(

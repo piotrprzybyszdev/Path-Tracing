@@ -9,7 +9,7 @@
 #include "Renderer/DeviceContext.h"
 #include "Renderer/Renderer.h"
 
-#include "AssetManager.h"
+#include "SceneManager.h"
 #include "UserInterface.h"
 #include "Window.h"
 
@@ -28,7 +28,7 @@ Shaders::EnabledTextureFlags s_EnabledTextures = Shaders::TexturesEnableAll;
 Shaders::RenderModeFlags s_RenderMode = Shaders::RenderModeColor;
 Shaders::RaygenFlags s_RaygenFlags = Shaders::RaygenFlagsNone;
 Shaders::ClosestHitFlags s_ClosestHitFlags = Shaders::ClosestHitFlagsNone;
-char s_SceneName[256] = "Sponza";
+const char *s_SceneChange = nullptr;
 
 void CheckVkResult(VkResult err)
 {
@@ -97,9 +97,6 @@ void UserInterface::OnKeyRelease(Key key)
         if (!s_IsFocused)
             Renderer::ReloadShaders();
         break;
-    case Key::Enter:
-        Renderer::SetScene(AssetManager::GetScene(s_SceneName));
-        break;
     }
 }
 
@@ -131,6 +128,13 @@ Shaders::RaygenFlags UserInterface::GetRaygenFlags()
 Shaders::ClosestHitFlags UserInterface::GetClosestHitFlags()
 {
     return s_ClosestHitFlags;
+}
+
+const char *UserInterface::SceneChange()
+{
+    const char *ret = s_SceneChange;
+    s_SceneChange = nullptr;
+    return ret;
 }
 
 void UserInterface::DefineUI()
@@ -225,8 +229,12 @@ void UserInterface::DefineUI()
     if (ImGui::Checkbox("Disable Mip Maps", &disableMipMaps))
         s_ClosestHitFlags ^= Shaders::ClosestHitFlagsDisableMipMaps;
 
-    char textBuf[256] = {};
-    ImGui::InputText("Scene Name:", s_SceneName, 256);
+    ImGui::BeginListBox("Scene");
+    for (auto &scene : SceneManager::GetSceneNames())
+        if (ImGui::Selectable(scene.c_str()))
+            s_SceneChange = scene.c_str();
+    ImGui::EndListBox();
+
     ImGui::End();
 
     ImGui::Begin("Statistics");

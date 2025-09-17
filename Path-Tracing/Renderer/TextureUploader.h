@@ -29,7 +29,7 @@ public:
     TextureUploader &operator=(const TextureUploader &) = delete;
 
     void UploadTexturesBlocking(const Scene &scene);
-    void UploadTextures(const Scene &scene);
+    void UploadTextures(const std::shared_ptr<const Scene> &scene);
     void Cancel();
 
 public:
@@ -72,8 +72,8 @@ private:
     static inline constexpr vk::Format IntermediateTextureFormat = vk::Format::eR8G8B8A8Unorm;
 
 private:
-    void StartLoaderThreads(const Scene &scene);
-    void StartSubmitThread(const Scene &scene);
+    void StartLoaderThreads(const std::shared_ptr<const Scene> &scene);
+    void StartSubmitThread(const std::shared_ptr<const Scene> &scene);
 
     void UploadToBuffer(const TextureInfo &textureInfo, const Buffer &buffer);
     void UploadTexture(
