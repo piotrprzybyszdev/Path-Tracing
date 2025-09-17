@@ -204,7 +204,9 @@ void Application::Run()
     float lastFrameTime = 0.0f;
     vk::Extent2D previousSize = {};
 
-    Renderer::SetScene(AssetManager::GetScene("Sponza"));
+    // TODO: Fix, this doesn't work if UI changes the scene
+    Scene &scene = AssetManager::GetScene("Virtual City");
+    Renderer::SetScene(scene);
 
     while (!Window::ShouldClose())
     {
@@ -249,6 +251,7 @@ void Application::Run()
 
                 Window::OnUpdate(timeStep);
                 camera.OnUpdate(timeStep);
+                scene.Update(timeStep);
                 Renderer::s_EnabledTextures = UserInterface::GetEnabledTextures();
                 Renderer::s_RenderMode = UserInterface::GetRenderMode();
                 Renderer::s_RaygenFlags = UserInterface::GetRaygenFlags();

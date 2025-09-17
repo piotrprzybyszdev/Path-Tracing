@@ -15,16 +15,24 @@ void CreateTexturedCubesScene();
 void CreateReuseMeshCubesScene();
 void CreateSponzaScene();
 void CreateChessGameScene();
-void CreateVirtualCity();
+void CreateVirtualCityScene();
+void CreateCesiumManScene();
+void CreateCesiumMilkTruckScene();
+void CreateBrainStemScene();
+void CreateBoxAnimatedScene();
 
 void CreateScenes()
 {
     // TODO: Only load them on demand
     CreateTexturedCubesScene();
     CreateReuseMeshCubesScene();
-    CreateSponzaScene();
-    CreateChessGameScene();
-    CreateVirtualCity();
+    // CreateSponzaScene();
+    // CreateChessGameScene();
+    CreateVirtualCityScene();
+    // CreateCesiumManScene();
+    // CreateCesiumMilkTruckScene();
+    // CreateBrainStemScene();
+    CreateBoxAnimatedScene();
 }
 
 void CreateTexturedCubesScene()
@@ -135,17 +143,23 @@ void CreateTexturedCubesScene()
     const uint32_t cube2 = scene.AddModel(m2);
     scene.ModelNames.Set(cube2, "Cube one material (ver 2)");
 
-    const uint32_t cube1inst1 =
-        scene.AddModelInstance(cube1, glm::transpose(glm::translate(glm::mat4(1.0f), glm::vec3(1.0f))));
+    const glm::mat4 cube1inst1transform = glm::transpose(glm::translate(glm::mat4(1.0f), glm::vec3(1.0f)));
+    const glm::mat4 cube1inst2transform = glm::transpose(glm::translate(glm::mat4(1.0f), glm::vec3(-1.0f)));
+    const glm::mat4 cube2transform = glm::transpose(glm::scale(
+        glm::translate(glm::mat4(1.0f), glm::vec3(0.5f, -1.0f, -3.0f)), glm::vec3(2.0f, 1.0f, 0.3f)
+    ));
+
+    const uint32_t rootNode = scene.AddSceneNode({ 0u, glm::mat4(1.0f), glm::mat4(1.0f) });
+    const uint32_t cube1inst1node = scene.AddSceneNode({ rootNode, cube1inst1transform, glm::mat4(1.0f) });
+    const uint32_t cube1inst2node = scene.AddSceneNode({ rootNode, cube1inst2transform, glm::mat4(1.0f) });
+    const uint32_t cube2node = scene.AddSceneNode({ rootNode, cube2transform, glm::mat4(1.0f) });
+
+    const uint32_t cube1inst1 = scene.AddModelInstance({ cube1, cube1inst1node });
     scene.ModelInstanceNames.Set(cube1inst1, "Cube Instance (ver 1) (inst 1)");
-    const uint32_t cube1inst2 =
-        scene.AddModelInstance(cube1, glm::transpose(glm::translate(glm::mat4(1.0f), glm::vec3(-1.0f))));
+    const uint32_t cube1inst2 = scene.AddModelInstance({ cube1, cube1inst2node });
     scene.ModelInstanceNames.Set(cube1inst2, "Cube Instance (ver 1) (inst 2)");
-    scene.AddModelInstance(
-        cube2, glm::transpose(glm::scale(
-                   glm::translate(glm::mat4(1.0f), glm::vec3(0.5f, -1.0f, -3.0f)), glm::vec3(2.0f, 1.0f, 0.3f)
-               ))
-    );
+    const uint32_t cube2inst = scene.AddModelInstance({ cube2, cube2node });
+    scene.ModelInstanceNames.Set(cube2inst, "Cube Instance (ver 2) (inst 1)");
 
     scene.SetSkybox(
         Skybox2D(AssetManager::GetTextureInfo(base / "skybox" / "sky_42_2k.png", TextureType::Skybox))
@@ -242,8 +256,10 @@ void CreateReuseMeshCubesScene()
     scene.MeshNames.Set({ cube, 4 }, "y-axis plane (+) (mat 2)");
     scene.MeshNames.Set({ cube, 5 }, "y-axis plane (-) (mat 2)");
 
-    const uint32_t cube1inst1 = scene.AddModelInstance(cube, glm::mat4(1.0f));
-    scene.ModelInstanceNames.Set(cube1inst1, "Cube Instance");
+    const uint32_t rootNode = scene.AddSceneNode({ 0u, glm::mat4(1.0f), glm::mat4(1.0f) });
+    const uint32_t cube1node = scene.AddSceneNode({ rootNode, glm::mat4(1.0f), glm::mat4(1.0f) });
+    const uint32_t cube1inst = scene.AddModelInstance({ cube, cube1node });
+    scene.ModelInstanceNames.Set(cube1inst, "Cube Instance");
 
     const auto skyboxPath = base / "skybox" / "sky_42_cubemap_(roblox)_2k";
     scene.SetSkybox(SkyboxCube(
@@ -274,12 +290,44 @@ void CreateChessGameScene()
     AssetManager::LoadScene("Chess Game", path);
 }
 
-void CreateVirtualCity()
+void CreateVirtualCityScene()
 {
     const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets" / "scenes";
     const std::filesystem::path path =
         base / "KhronosScenes" / "glTF-Sample-Models-main" / "2.0" / "VC" / "glTF" / "VC.gltf";
     AssetManager::LoadScene("Virtual City", path);
+}
+
+void CreateCesiumManScene()
+{
+    const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets" / "scenes";
+    const std::filesystem::path path =
+        base / "KhronosScenes" / "glTF-Sample-Models-main" / "2.0" / "CesiumMan" / "glTF" / "CesiumMan.gltf";
+    AssetManager::LoadScene("Cesium Man", path);
+}
+
+void CreateCesiumMilkTruckScene()
+{
+    const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets" / "scenes";
+    const std::filesystem::path path =
+        base / "KhronosScenes" / "glTF-Sample-Models-main" / "2.0" / "CesiumMilkTruck" / "glTF" / "CesiumMilkTruck.gltf";
+    AssetManager::LoadScene("Cesium Milk Truck", path);
+}
+
+void CreateBrainStemScene()
+{
+    const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets" / "scenes";
+    const std::filesystem::path path = base / "KhronosScenes" / "glTF-Sample-Models-main" / "2.0" /
+                                       "BrainStem" / "glTF" / "BrainStem.gltf";
+    AssetManager::LoadScene("Brain Stem", path);
+}
+
+void CreateBoxAnimatedScene()
+{
+    const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets" / "scenes";
+    const std::filesystem::path path = base / "KhronosScenes" / "glTF-Sample-Models-main" / "2.0" /
+                                       "BoxAnimated" / "glTF" / "BoxAnimated.gltf";
+    AssetManager::LoadScene("Box Animated", path);
 }
 
 }

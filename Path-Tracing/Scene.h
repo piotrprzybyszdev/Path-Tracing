@@ -1,6 +1,8 @@
 #pragma once
 
+#define GLM_ENABLE_EXPERIMENTAL
 #include <glm/glm.hpp>
+#include <glm/gtx/quaternion.hpp>
 
 #include <filesystem>
 #include <map>
@@ -63,11 +65,92 @@ struct Model
     uint32_t SbtOffset;
 };
 
+struct ModelInstanceInfo
+{
+    uint32_t ModelIndex;
+    uint32_t SceneNodeIndex;
+};
+
 struct ModelInstance
 {
     uint32_t ModelIndex;
     glm::mat4 Transform;
 };
+
+struct SceneNode
+{
+    const uint32_t Parent;
+    glm::mat4 Transform;
+    glm::mat4 CurrentTransform;
+};
+
+struct AnimationNode
+{
+    template<typename T> struct Sequence
+    {
+        struct Key
+        {
+            T Value;
+            float Tick;
+        };
+
+        std::vector<Key> Keys;
+        uint32_t Index = 0;
+
+        T Update(float currentTick);
+        T Interpolate(float ratio);
+    };
+
+    uint32_t SceneNodeIndex;
+
+    Sequence<glm::vec3> Positions;
+    Sequence<glm::quat> Rotations;
+    Sequence<glm::vec3> Scales;
+};
+
+template<typename T> inline T AnimationNode::Sequence<T>::Update(float currentTick)
+{
+    while (Index + 1 < Keys.size() && currentTick > Keys[Index + 1].Tick)
+        Index++;
+
+    if (Index + 1 == Keys.size())
+        return Keys[Index].Value;
+
+    if (Index == 0 && Keys[0].Tick > currentTick)
+        return T();
+
+    const float total = Keys[Index + 1].Tick - Keys[Index].Tick;
+    const float current = currentTick - Keys[Index].Tick;
+
+    return Interpolate(current / total);
+}
+
+template<typename T> inline T AnimationNode::Sequence<T>::Interpolate(float ratio)
+{
+    return glm::mix(Keys[Index].Value, Keys[Index + 1].Value, ratio);
+}
+
+template<> inline glm::quat AnimationNode::Sequence<glm::quat>::Interpolate(float ratio)
+{
+    return glm::slerp(Keys[Index].Value, Keys[Index + 1].Value, ratio);
+}
+
+struct Animation
+{
+    std::vector<AnimationNode> Nodes;
+    const float TickPerSecond;
+    const float TickDuration;
+    float CurrentTick = 0;
+
+    void Update(float timeStep, std::span<SceneNode> nodes);
+};
+
+/*
+* TODO: For bone meshes
+struct ModelInstanceDynamic
+{
+};
+*/
 
 struct SkyboxClearColor
 {
@@ -88,6 +171,24 @@ struct SkyboxCube
     TextureInfo Right;
 };
 
+class SceneGraph
+{
+public:
+    uint32_t AddSceneNode(SceneNode &&node);
+    void AddAnimation(Animation &&animation);
+
+    void Update(float timeStep);
+
+    [[nodiscard]] std::span<const SceneNode> GetSceneNodes() const;
+
+private:
+    std::vector<Animation> m_Animations;
+    std::vector<SceneNode> m_SceneNodes;
+
+private:
+    void UpdateTransforms();
+};
+
 class Scene
 {
 public:
@@ -96,9 +197,15 @@ public:
 public:
     Scene();
 
+    void Update(float timeStep);
+
+    /* Nodes have to be added in pre-order sequence */
+    uint32_t AddSceneNode(SceneNode &&node);
+    void AddAnimation(Animation &&animation);
+
     uint32_t AddGeometry(Geometry &&geometry);
     uint32_t AddModel(std::span<const MeshInfo> meshInfos);
-    uint32_t AddModelInstance(uint32_t modelIndex, glm::mat4 transform);
+    uint32_t AddModelInstance(ModelInstanceInfo &&info);
 
     uint32_t AddTexture(TextureInfo &&texture);
     uint32_t AddMaterial(std::string name, Shaders::Material material);
@@ -137,7 +244,10 @@ private:
     std::unordered_map<std::string, uint32_t> m_TextureIndices;
 
     std::vector<Model> m_Models;
+    std::vector<ModelInstanceInfo> m_ModelInstanceInfos;
     std::vector<ModelInstance> m_ModelInstances;
+
+    SceneGraph m_Graph;
 
     SkyboxVariant m_Skybox = SkyboxClearColor {};
 

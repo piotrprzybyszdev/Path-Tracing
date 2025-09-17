@@ -21,6 +21,9 @@ public:
     );
     ~AccelerationStructure();
 
+    AccelerationStructure(const AccelerationStructure &) = delete;
+    AccelerationStructure &operator=(const AccelerationStructure &) = delete;
+
     void Build();
 
     [[nodiscard]] vk::AccelerationStructureKHR GetTlas() const;
@@ -34,10 +37,16 @@ private:
 
     const Scene &m_Scene;
 
-    std::unique_ptr<Buffer> m_BlasBuffer;
+    bool m_FirstBuild = true;
+
+    Buffer m_InstanceBuffer;
+
+    Buffer m_BlasBuffer;
+    Buffer m_BlasScratchBuffer;
     std::vector<vk::AccelerationStructureKHR> m_Blases;
 
-    std::unique_ptr<Buffer> m_TlasBuffer;
+    Buffer m_TlasBuffer;
+    Buffer m_TlasScratchBuffer;
     vk::AccelerationStructureKHR m_Tlas;
 
 private:

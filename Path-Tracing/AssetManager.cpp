@@ -248,10 +248,172 @@ std::vector<uint32_t> LoadMeshes(Scene &outScene, const aiScene *scene)
     return meshToGeometry;
 }
 
+std::unordered_set<const aiNode *> FindDynamicNodes(const aiScene *scene)
+{
+    std::unordered_set<const aiNode *> dynamicNodes;
+
+    for (int i = 0; i < scene->mNumAnimations; i++)
+    {
+        const aiAnimation *animation = scene->mAnimations[i];
+        if (animation->mNumMorphMeshChannels > 0)
+            logger::warn(
+                "Animation {} contains morph animation channels which are not supported",
+                animation->mName.C_Str()
+            );
+
+        if (animation->mNumMeshChannels > 0)
+            logger::warn(
+                "Animation {} contains mesh animation channels which are not supported",
+                animation->mName.C_Str()
+            );
+
+        logger::info(
+            "Animation {} ({}s)", animation->mName.C_Str(),
+            static_cast<uint32_t>(animation->mDuration / animation->mTicksPerSecond)
+        );
+
+        for (int j = 0; j < animation->mNumChannels; j++)
+        {
+            const aiNodeAnim *animNode = animation->mChannels[j];
+            logger::info("    animates node named: {}", animNode->mNodeName.C_Str());
+
+            const aiNode *node = scene->mRootNode->FindNode(animNode->mNodeName);
+            if (node == nullptr)
+                logger::warn(
+                    "Scene node corresponding to the animation node {} not found", animNode->mNodeName.C_Str()
+                );
+            else
+                dynamicNodes.insert(node);
+        }
+    }
+
+    return dynamicNodes;
+}
+
+std::unordered_map<const aiNode *, uint32_t> LoadSceneHierarchy(
+    Scene &outScene, const aiScene *scene, std::span<const uint32_t> meshToGeometry,
+    std::span<const uint32_t> materialIndexMap, std::unordered_set<const aiNode *> dynamicNodes
+)
+{
+    std::unordered_map<const aiNode *, uint32_t> sceneNodeToIndex;
+
+    const auto toTransformMatrix = TrivialCopy<aiMatrix4x4, glm::mat4>;
+    std::vector<std::vector<MeshInfo>> modelToMeshInfos(1 + dynamicNodes.size());
+    std::vector<uint32_t> sceneNodeIndices(1 + dynamicNodes.size());
+
+    std::stack<std::tuple<const aiNode *, glm::mat4, uint32_t, uint32_t, int>> stack;
+    stack.emplace(scene->mRootNode, glm::mat4(1.0f), 0u, -1u, 0);
+
+    uint32_t nextModelIndex = 0;
+
+    while (!stack.empty())
+    {
+        auto [node, totalTransform, modelIndex, parentNodeIndex, depth] = stack.top();
+        stack.pop();
+
+        logger::info(
+            "{}{}, mesh count: {}", std::string(depth * 4, ' '), node->mName.C_Str(), node->mNumMeshes
+        );
+
+        glm::mat4 nodeTransform = toTransformMatrix(node->mTransformation);
+
+        const uint32_t sceneNodeIndex = outScene.AddSceneNode({
+            .Parent = parentNodeIndex,
+            .Transform = nodeTransform,
+            .CurrentTransform = glm::mat4(1.0f),
+        });
+
+        sceneNodeToIndex.emplace(node, sceneNodeIndex);
+        totalTransform = nodeTransform * totalTransform;
+
+        if (dynamicNodes.contains(node) || node == scene->mRootNode)
+        {
+            modelIndex = nextModelIndex++;
+            sceneNodeIndices[modelIndex] = sceneNodeIndex;
+            totalTransform = glm::mat4(1.0f);
+        }
+
+        for (int i = 0; i < node->mNumMeshes; i++)
+            modelToMeshInfos[modelIndex].emplace_back(
+                meshToGeometry[node->mMeshes[i]],
+                materialIndexMap[scene->mMeshes[node->mMeshes[i]]->mMaterialIndex], totalTransform
+            );
+
+        for (int i = 0; i < node->mNumChildren; i++)
+            stack.emplace(node->mChildren[i], totalTransform, modelIndex, sceneNodeIndex, depth + 1);
+    }
+
+    // TODO: Combine models in to one if their meshInfos are the same
+
+    for (int i = 0; i < modelToMeshInfos.size(); i++)
+        if (!modelToMeshInfos[i].empty())
+            outScene.AddModelInstance({ outScene.AddModel(modelToMeshInfos[i]), sceneNodeIndices[i] });
+
+    return sceneNodeToIndex;
+}
+
+void LoadAnimations(
+    Scene &outScene, const aiScene *scene,
+    const std::unordered_map<const aiNode *, uint32_t> &sceneNodeIndices
+)
+{
+    for (int i = 0; i < scene->mNumAnimations; i++)
+    {
+        const aiAnimation *animation = scene->mAnimations[i];
+        Animation outAnimation = {
+            .TickPerSecond = static_cast<float>(animation->mTicksPerSecond),
+            .TickDuration = static_cast<float>(animation->mDuration),
+        };
+
+        for (int j = 0; j < animation->mNumChannels; j++)
+        {
+            const aiNodeAnim *animNode = animation->mChannels[j];
+            const aiNode *node = scene->mRootNode->FindNode(animNode->mNodeName);
+            const uint32_t nodeIndex = sceneNodeIndices.at(node);
+
+            AnimationNode outAnimNode(nodeIndex);
+
+            outAnimNode.Positions.Keys.reserve(animNode->mNumPositionKeys);
+            outAnimNode.Rotations.Keys.reserve(animNode->mNumRotationKeys);
+            outAnimNode.Scales.Keys.reserve(animNode->mNumScalingKeys);
+
+            for (int k = 0; k < animNode->mNumPositionKeys; k++)
+            {
+                const aiVectorKey *key = &animNode->mPositionKeys[k];
+                outAnimNode.Positions.Keys.emplace_back(
+                    TrivialCopy<aiVector3D, glm::vec3>(key->mValue), static_cast<float>(key->mTime)
+                );
+            }
+
+            for (int k = 0; k < animNode->mNumRotationKeys; k++)
+            {
+                const aiQuatKey *key = &animNode->mRotationKeys[k];
+                outAnimNode.Rotations.Keys.emplace_back(
+                    glm::quat(key->mValue.w, key->mValue.x, key->mValue.y, key->mValue.z),
+                    static_cast<float>(key->mTime)
+                );
+            }
+
+            for (int k = 0; k < animNode->mNumScalingKeys; k++)
+            {
+                const aiVectorKey *key = &animNode->mScalingKeys[k];
+                outAnimNode.Scales.Keys.emplace_back(
+                    TrivialCopy<aiVector3D, glm::vec3>(key->mValue), static_cast<float>(key->mTime)
+                );
+            }
+
+            outAnimation.Nodes.push_back(std::move(outAnimNode));
+        }
+
+        outScene.AddAnimation(std::move(outAnimation));
+    }
+}
+
 }
 
 void AssetManager::LoadScene(const std::string &name, const std::filesystem::path &path)
 {
+    logger::info("Loading Scene {}", name);
     Timer timer("Scene Load");
 
     const aiScene *scene = nullptr;
@@ -284,74 +446,17 @@ void AssetManager::LoadScene(const std::string &name, const std::filesystem::pat
 
     std::vector<uint32_t> materialIndexMap = LoadMaterials(path, outScene, scene);
     std::vector<uint32_t> meshToGeometry = LoadMeshes(outScene, scene);
+    std::unordered_set<const aiNode *> dynamicNodes = FindDynamicNodes(scene);
+    std::unordered_map<const aiNode *, uint32_t> sceneNodeIndices =
+        LoadSceneHierarchy(outScene, scene, meshToGeometry, materialIndexMap, dynamicNodes);
 
-    const auto toTransformMatrix = TrivialCopy<aiMatrix4x4, glm::mat4>;
-
-    {
-        // Meshes of the top level node are considered to be the models
-        std::vector<MeshInfo> meshInfos;
-        for (int j = 0; j < scene->mRootNode->mNumMeshes; j++)
-        {
-            meshInfos.emplace_back(
-                meshToGeometry[scene->mRootNode->mMeshes[j]],
-                materialIndexMap[scene->mMeshes[scene->mRootNode->mMeshes[j]]->mMaterialIndex],
-                glm::mat4(1.0f)
-            );
-            logger::info("{}, mesh count: {}", scene->mRootNode->mName.C_Str(), scene->mRootNode->mNumMeshes);
-        }
-
-        if (!meshInfos.empty())
-        {
-            const uint32_t modelIndex = outScene.AddModel(meshInfos);
-            outScene.AddModelInstance(modelIndex, toTransformMatrix(scene->mRootNode->mTransformation));
-        }
-    }
-
-    // We consider top level nodes to be the models
-    // Meshes of a model are all of the meshes of all nodes of their children
-    for (int i = 0; i < scene->mRootNode->mNumChildren; i++)
-    {
-        const aiNode *startNode = scene->mRootNode->mChildren[i];
-
-        std::vector<MeshInfo> meshInfos;
-        std::stack<std::tuple<const aiNode *, aiMatrix4x4, int>> stack;
-
-        stack.emplace(startNode, aiMatrix4x4(), 0);
-
-        while (!stack.empty())
-        {
-            const auto [node, parentTransform, depth] = stack.top();
-            stack.pop();
-
-            logger::info(
-                "{}{}, mesh count: {}", std::string(depth * 4, ' '), node->mName.C_Str(), node->mNumMeshes
-            );
-
-            const aiMatrix4x4 transform = parentTransform * node->mTransformation;
-            for (int j = 0; j < node->mNumMeshes; j++)
-            {
-                meshInfos.emplace_back(
-                    meshToGeometry[node->mMeshes[j]],
-                    materialIndexMap[scene->mMeshes[node->mMeshes[j]]->mMaterialIndex],
-                    toTransformMatrix(transform)
-                );
-            }
-
-            for (int j = 0; j < node->mNumChildren; j++)
-                stack.emplace(node->mChildren[j], transform, depth + 1);
-        }
-
-        if (!meshInfos.empty())
-        {
-            const uint32_t modelIndex = outScene.AddModel(meshInfos);
-            outScene.AddModelInstance(modelIndex, toTransformMatrix(scene->mRootNode->mTransformation));
-        }
-    }
+    if (scene->HasAnimations())
+        LoadAnimations(outScene, scene, sceneNodeIndices);
 
     s_Scenes[name] = std::move(outScene);
 }
 
-const Scene &AssetManager::GetScene(const std::string &name)
+Scene &AssetManager::GetScene(const std::string &name)
 {
     auto it = s_Scenes.find(name);
     assert(it != s_Scenes.end());

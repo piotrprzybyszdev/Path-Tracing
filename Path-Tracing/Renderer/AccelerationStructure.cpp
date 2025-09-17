@@ -34,7 +34,13 @@ AccelerationStructure::~AccelerationStructure()
 void AccelerationStructure::Build()
 {
     Timer timer("Acceleration Structure Build");
-    BuildBlases();
+
+    if (m_FirstBuild)
+    {
+        BuildBlases();
+        m_FirstBuild = false;
+    }
+
     BuildTlas();
 }
 
@@ -122,10 +128,13 @@ void AccelerationStructure::BuildBlases()
         vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR |
         vk::BufferUsageFlagBits::eShaderDeviceAddress
     );
-    m_BlasBuffer = builder.CreateDeviceBufferUnique(totalBlasBufferSize, "BLAS Buffer");
 
-    builder.SetAlignment(m_ScratchOffsetAlignment);
-    Buffer blasScratchBuffer = builder.CreateDeviceBuffer(totalBlasScratchBufferSize, "BLAS Scratch Buffer");
+    if (m_BlasBuffer.GetSize() < totalBlasBufferSize)
+        m_BlasBuffer = builder.CreateDeviceBuffer(totalBlasBufferSize, "BLAS Buffer");
+
+    if (m_BlasScratchBuffer.GetSize() < totalBlasScratchBufferSize)
+        m_BlasScratchBuffer = builder.SetAlignment(m_ScratchOffsetAlignment)
+                                  .CreateDeviceBuffer(totalBlasScratchBufferSize, "BLAS Scratch Buffer");
 
     // Create the BLASes
     for (uint32_t i = 0; i < blasInfos.size(); i++)
@@ -133,7 +142,7 @@ void AccelerationStructure::BuildBlases()
         BlasInfo &blasInfo = blasInfos[i];
 
         vk::AccelerationStructureCreateInfoKHR createInfo(
-            vk::AccelerationStructureCreateFlagsKHR(), m_BlasBuffer->GetHandle(), blasInfo.BlasBufferOffset,
+            vk::AccelerationStructureCreateFlagsKHR(), m_BlasBuffer.GetHandle(), blasInfo.BlasBufferOffset,
             blasInfo.BlasBufferSize, vk::AccelerationStructureTypeKHR::eBottomLevel
         );
 
@@ -141,7 +150,7 @@ void AccelerationStructure::BuildBlases()
             createInfo, nullptr, Application::GetDispatchLoader()
         );
         blasInfo.BuildInfo.setDstAccelerationStructure(blas).setScratchData(
-            blasScratchBuffer.GetDeviceAddress() + blasInfo.BlasScratchBufferOffset
+            m_BlasScratchBuffer.GetDeviceAddress() + blasInfo.BlasScratchBufferOffset
         );
         m_Blases.push_back(blas);
 
@@ -184,15 +193,19 @@ void AccelerationStructure::BuildTlas()
         );
     }
 
-    auto builder = BufferBuilder().SetUsageFlags(
-        vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR |
-        vk::BufferUsageFlagBits::eShaderDeviceAddress
-    );
+    const vk::DeviceSize instancesSize = std::span(instances).size_bytes();
+    if (m_InstanceBuffer.GetSize() < instancesSize)
+        m_InstanceBuffer = BufferBuilder()
+                               .SetUsageFlags(
+                                   vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR |
+                                   vk::BufferUsageFlagBits::eShaderDeviceAddress
+                               )
+                               .CreateHostBuffer(instancesSize, "Instance Buffer");
 
-    Buffer instanceBuffer = builder.CreateHostBuffer(std::span(instances), "Instance Buffer");
+    m_InstanceBuffer.Upload(instances.data());
 
     vk::AccelerationStructureGeometryInstancesDataKHR instancesData(
-        vk::False, instanceBuffer.GetDeviceAddress()
+        vk::False, m_InstanceBuffer.GetDeviceAddress()
     );
 
     vk::AccelerationStructureGeometryKHR geometry(
@@ -202,7 +215,8 @@ void AccelerationStructure::BuildTlas()
     vk::AccelerationStructureBuildGeometryInfoKHR buildInfo =
         vk::AccelerationStructureBuildGeometryInfoKHR(
             vk::AccelerationStructureTypeKHR::eTopLevel,
-            vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace
+            vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace |
+                vk::BuildAccelerationStructureFlagBitsKHR::eAllowUpdate
         )
             .setGeometries({ geometry });
 
@@ -213,38 +227,53 @@ void AccelerationStructure::BuildTlas()
             Application::GetDispatchLoader()
         );
 
-    m_TlasBuffer = builder.ResetFlags()
-                       .SetUsageFlags(
-                           vk::BufferUsageFlagBits::eStorageBuffer |
-                           vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR |
-                           vk::BufferUsageFlagBits::eShaderDeviceAddress
-                       )
-                       .CreateDeviceBufferUnique(
-                           buildSizesInfo.accelerationStructureSize, "Top Level Acceleration Structure Buffer"
-                       );
+    // TODO: Make sure it's allocated once
+    if (m_TlasBuffer.GetSize() < buildSizesInfo.accelerationStructureSize)
+        m_TlasBuffer =
+            BufferBuilder()
+                .SetUsageFlags(
+                    vk::BufferUsageFlagBits::eStorageBuffer |
+                    vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR |
+                    vk::BufferUsageFlagBits::eShaderDeviceAddress
+                )
+                .CreateDeviceBuffer(
+                    buildSizesInfo.accelerationStructureSize, "Top Level Acceleration Structure Buffer"
+                );
 
-    vk::AccelerationStructureCreateInfoKHR createInfo(
-        vk::AccelerationStructureCreateFlagsKHR(), m_TlasBuffer->GetHandle(), 0,
-        buildSizesInfo.accelerationStructureSize
+    const auto mode = m_Tlas == nullptr ? vk::BuildAccelerationStructureModeKHR::eBuild
+                                        : vk::BuildAccelerationStructureModeKHR::eUpdate;
+
+    const vk::DeviceSize scratchSize =
+        m_Tlas == nullptr ? buildSizesInfo.buildScratchSize : buildSizesInfo.updateScratchSize;
+
+    if (m_Tlas == nullptr)
+    {
+        vk::AccelerationStructureCreateInfoKHR createInfo(
+            vk::AccelerationStructureCreateFlagsKHR(), m_TlasBuffer.GetHandle(), 0,
+            buildSizesInfo.accelerationStructureSize
+        );
+        m_Tlas = DeviceContext::GetLogical().createAccelerationStructureKHR(
+            createInfo, nullptr, Application::GetDispatchLoader()
+        );
+        Utils::SetDebugName(m_Tlas, "Top Level Acceleration Structure");
+    }
+
+    if (m_TlasScratchBuffer.GetSize() < scratchSize)
+        m_TlasScratchBuffer = BufferBuilder()
+                                  .SetAlignment(m_ScratchOffsetAlignment)
+                                  .SetUsageFlags(
+                                      vk::BufferUsageFlagBits::eStorageBuffer |
+                                      vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR |
+                                      vk::BufferUsageFlagBits::eShaderDeviceAddress
+                                  )
+                                  .CreateDeviceBuffer(scratchSize, "Scratch Buffer (TLAS)");
+
+    vk::AccelerationStructureBuildGeometryInfoKHR geometryInfo(
+        vk::AccelerationStructureTypeKHR::eTopLevel,
+        vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace |
+            vk::BuildAccelerationStructureFlagBitsKHR::eAllowUpdate,
+        mode, m_Tlas, m_Tlas, geometry, {}, m_TlasScratchBuffer.GetDeviceAddress()
     );
-
-    m_Tlas = DeviceContext::GetLogical().createAccelerationStructureKHR(
-        createInfo, nullptr, Application::GetDispatchLoader()
-    );
-    Utils::SetDebugName(m_Tlas, "Top Level Acceleration Structure");
-
-    builder.SetAlignment(m_ScratchOffsetAlignment);
-    Buffer scratchBuffer =
-        builder.CreateDeviceBuffer(buildSizesInfo.buildScratchSize, "Scratch Buffer (TLAS)");
-
-    vk::AccelerationStructureBuildGeometryInfoKHR geometryInfo =
-        vk::AccelerationStructureBuildGeometryInfoKHR(
-            vk::AccelerationStructureTypeKHR::eTopLevel,
-            vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace
-        )
-            .setGeometries({ geometry })
-            .setDstAccelerationStructure(m_Tlas)
-            .setScratchData(scratchBuffer.GetDeviceAddress());
 
     vk::AccelerationStructureBuildRangeInfoKHR rangeInfo(instances.size(), 0, 0, 0);
 

@@ -1,7 +1,7 @@
+#include <glm/ext/matrix_relational.hpp>
+
 #include <limits>
 #include <ranges>
-
-#include <glm/ext/matrix_relational.hpp>
 
 #include "Core/Core.h"
 
@@ -10,9 +10,110 @@
 namespace PathTracing
 {
 
+void Animation::Update(float timeStep, std::span<SceneNode> nodes)
+{
+    CurrentTick += timeStep * TickPerSecond;
+    if (CurrentTick >= TickDuration)
+    {
+        for (AnimationNode& node : Nodes)
+        {
+            node.Positions.Index = 0;
+            node.Rotations.Index = 0;
+            node.Scales.Index = 0;
+        }
+    }
+
+    while (CurrentTick >= TickDuration)
+        CurrentTick -= TickDuration;
+
+    for (AnimationNode &node : Nodes)
+    {
+        glm::vec3 position = node.Positions.Update(CurrentTick);
+        glm::quat rotation = node.Rotations.Update(CurrentTick);
+        glm::vec3 scale = node.Scales.Update(CurrentTick);
+      
+        nodes[node.SceneNodeIndex].Transform =
+            glm::transpose(glm::scale(glm::translate(glm::mat4(1.0f), position) * glm::mat4(rotation), scale)
+            );
+    }
+}
+
+uint32_t SceneGraph::AddSceneNode(SceneNode &&node)
+{
+    m_SceneNodes.push_back(std::move(node));
+    return m_SceneNodes.size() - 1;
+}
+
+void SceneGraph::AddAnimation(Animation &&animation)
+{
+    return m_Animations.push_back(std::move(animation));
+}
+
+void SceneGraph::UpdateTransforms()
+{
+#ifndef NDEBUG
+    std::vector<bool> isUpdated(m_SceneNodes.size());
+#endif
+
+    m_SceneNodes[0].CurrentTransform = m_SceneNodes[0].Transform;
+    isUpdated[0] = true;
+
+    for (int i = 1; i < m_SceneNodes.size(); i++)
+    {
+        SceneNode &node = m_SceneNodes[i];
+        SceneNode &parent = m_SceneNodes[node.Parent];
+        assert(isUpdated[node.Parent] == true);  // Nodes are not in pre-order sequence
+        assert(isUpdated[i] == false);  // Two animations have the same SceneNode or it's a DAG not a tree
+
+        node.CurrentTransform = node.Transform * parent.CurrentTransform;
+#ifndef NDEBUG
+        isUpdated[i] = true;
+#endif
+    }
+}
+
+void SceneGraph::Update(float timeStep)
+{
+    for (Animation &animation : m_Animations)
+        animation.Update(timeStep, m_SceneNodes);
+
+    UpdateTransforms();
+}
+
+std::span<const SceneNode> SceneGraph::GetSceneNodes() const
+{
+    return m_SceneNodes;
+}
+
 Scene::Scene()
 {
     m_Transforms.push_back(glm::mat4(1.0f));
+}
+
+void Scene::Update(float timeStep)
+{
+    m_Graph.Update(timeStep);
+
+    auto nodes = m_Graph.GetSceneNodes();
+
+    // TODO: Resize only in SceneBuilder::Build()
+    m_ModelInstances.resize(m_ModelInstanceInfos.size());
+
+    for (int i = 0; i < m_ModelInstanceInfos.size(); i++)
+    {
+        m_ModelInstances[i].ModelIndex = m_ModelInstanceInfos[i].ModelIndex;  // TODO: This also only in SB::Build()
+        m_ModelInstances[i].Transform = nodes[m_ModelInstanceInfos[i].SceneNodeIndex].CurrentTransform;
+    }
+}
+
+uint32_t Scene::AddSceneNode(SceneNode &&node)
+{
+    return m_Graph.AddSceneNode(std::move(node));
+}
+
+void Scene::AddAnimation(Animation &&animation)
+{
+    return m_Graph.AddAnimation(std::move(animation));
 }
 
 uint32_t Scene::AddGeometry(Geometry &&geometry)
@@ -50,10 +151,10 @@ uint32_t Scene::AddModel(std::span<const MeshInfo> meshInfos)
     return m_Models.size() - 1;
 }
 
-uint32_t Scene::AddModelInstance(uint32_t modelIndex, glm::mat4 transform)
+uint32_t Scene::AddModelInstance(ModelInstanceInfo &&info)
 {
-    m_ModelInstances.emplace_back(modelIndex, transform);
-    return m_ModelInstances.size() - 1;
+    m_ModelInstanceInfos.push_back(std::move(info));
+    return m_ModelInstanceInfos.size() - 1;
 }
 
 uint32_t Scene::AddTexture(TextureInfo &&texture)

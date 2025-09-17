@@ -28,7 +28,7 @@ Shaders::EnabledTextureFlags s_EnabledTextures = Shaders::TexturesEnableAll;
 Shaders::RenderModeFlags s_RenderMode = Shaders::RenderModeColor;
 Shaders::RaygenFlags s_RaygenFlags = Shaders::RaygenFlagsNone;
 Shaders::ClosestHitFlags s_ClosestHitFlags = Shaders::ClosestHitFlagsNone;
-char s_SceneName[256] = "Sponza";
+char s_SceneName[256] = "Box Animated";
 
 void CheckVkResult(VkResult err)
 {

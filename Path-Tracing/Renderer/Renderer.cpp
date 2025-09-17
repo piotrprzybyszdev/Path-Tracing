@@ -30,6 +30,7 @@ Shaders::MissFlags Renderer::s_MissFlags = Shaders::MissFlagsNone;
 Shaders::ClosestHitFlags Renderer::s_ClosestHitFlags = Shaders::ClosestHitFlagsNone;
 
 const Swapchain *Renderer::s_Swapchain = nullptr;
+const Scene *Renderer::s_Scene = nullptr;
 
 std::vector<Renderer::RenderingResources> Renderer::s_RenderingResources = {};
 
@@ -147,7 +148,6 @@ void Renderer::Shutdown()
     s_DescriptorSetBuilder.reset();
 
     s_StaticSceneData.SceneShaderBindingTable.reset();
-    s_StaticSceneData.SceneAccelerationStructure.reset();
     s_StaticSceneData.Skybox.reset();
     s_StaticSceneData.Textures.clear();
     s_StaticSceneData.MaterialBuffer.reset();
@@ -169,6 +169,7 @@ void Renderer::Shutdown()
 void Renderer::SetScene(const Scene &scene)
 {
     DeviceContext::GetGraphicsQueue().WaitIdle();
+    s_Scene = &scene;
 
     {
         Timer timer("Mesh Upload");
@@ -241,16 +242,9 @@ void Renderer::SetScene(const Scene &scene)
         s_MainCommandBuffer->SubmitBlocking();
     }
 
-    // Setup AC and SBT
+    // TODO: Do we want to recreate AC here?
+
     auto models = scene.GetModels();
-    auto instances = scene.GetModelInstances();
-    s_StaticSceneData.SceneAccelerationStructure = std::make_unique<AccelerationStructure>(
-        *s_StaticSceneData.VertexBuffer, *s_StaticSceneData.IndexBuffer, *s_StaticSceneData.TransformBuffer,
-        scene
-    );
-
-    s_StaticSceneData.SceneAccelerationStructure->Build();
-
     s_StaticSceneData.SceneShaderBindingTable = std::make_unique<ShaderBindingTable>();
     for (const auto &model : models)
         for (const auto &mesh : model.Meshes)
@@ -611,6 +605,13 @@ void Renderer::OnInFlightCountChange()
             sizeof(Shaders::ClosestHitUniformData), std::format("Closest Hit Uniform Buffer {}", frameIndex)
         );
 
+        res.SceneAccelerationStructure = std::make_unique<AccelerationStructure>(
+            *s_StaticSceneData.VertexBuffer, *s_StaticSceneData.IndexBuffer,
+            *s_StaticSceneData.TransformBuffer, *s_Scene
+        );
+
+        res.SceneAccelerationStructure->Build();
+
         s_RenderingResources.push_back(std::move(res));
     }
 
@@ -629,7 +630,7 @@ void Renderer::RecreateDescriptorSet()
         const RenderingResources &res = s_RenderingResources[frameIndex];
 
         s_DescriptorSet->UpdateAccelerationStructures(
-            0, frameIndex, { s_StaticSceneData.SceneAccelerationStructure->GetTlas() }
+            0, frameIndex, { res.SceneAccelerationStructure->GetTlas() }
         );
         s_DescriptorSet->UpdateImage(
             1, frameIndex, res.StorageImage, vk::Sampler(), vk::ImageLayout::eGeneral
@@ -661,6 +662,9 @@ void Renderer::OnUpdate(float /* timeStep */)
 {
     if (s_RenderingResources.size() < s_Swapchain->GetInFlightCount())
         OnInFlightCountChange();
+
+    const RenderingResources &res = s_RenderingResources[s_Swapchain->GetCurrentFrameInFlightIndex()];
+    res.SceneAccelerationStructure->Build();
 
     {
         std::lock_guard lock(s_DescriptorSetMutex);
