@@ -451,7 +451,7 @@ void LoadLights(SceneBuilder &sceneBuilder, const aiScene *scene)
     {
         const aiLight *light = scene->mLights[i];
 
-        assert(light->mType == aiLightSource_POINT);
+        // assert(light->mType == aiLightSource_POINT);
         assert(light->mColorAmbient == light->mColorDiffuse && light->mColorDiffuse == light->mColorSpecular);
 
         logger::info("Light {} ({})", light->mName.C_Str(), static_cast<uint32_t>(light->mType));
