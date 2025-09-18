@@ -255,6 +255,13 @@ void LoadLights(Scene &outScene, const aiScene *scene)
     {
         const aiLight *light = scene->mLights[i];
 
+        aiNode *rootNode = scene->mRootNode;
+        aiNode *cameraNode = rootNode->FindNode(light->mName);
+        aiMatrix4x4 cameraTransformationMatrix = cameraNode->mTransformation;
+        aiQuaternion rotation;
+        aiVector3D position;
+        cameraTransformationMatrix.DecomposeNoScaling(rotation, position);
+
         // assert(light->mType == aiLightSource_POINT);
         assert(light->mColorAmbient == light->mColorDiffuse && light->mColorDiffuse == light->mColorSpecular);
 
@@ -268,10 +275,10 @@ void LoadLights(Scene &outScene, const aiScene *scene)
             .Color = light->mColorDiffuse.IsBlack()
                                          ? glm::vec3(1.0f)
                                          : TrivialCopyUnsafe<aiColor3D, glm::vec3>(light->mColorDiffuse),
-                            .Position = TrivialCopy<aiVector3D, glm::vec3>(light->mPosition),
+                            .Position = TrivialCopy<aiVector3D, glm::vec3>(position),
                             .AttenuationConstant = light->mAttenuationConstant,
                             .AttenuationLinear = light->mAttenuationLinear,
-            .AttenuationQuadratic = light->mAttenuationQuadratic
+                            .AttenuationQuadratic = light->mAttenuationQuadratic
         });
     }
 }

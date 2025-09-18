@@ -680,10 +680,10 @@ void Renderer::OnUpdate(float /* timeStep */)
     }
 }
 
-void Renderer::Render(const Camera &camera)
+void Renderer::Render(const Camera &camera, float exposure)
 {
     Shaders::RaygenUniformData rgenData = { camera.GetInvViewMatrix(), camera.GetInvProjectionMatrix(),
-                                            s_RaygenFlags };
+                                            s_RaygenFlags, exposure };
     Shaders::ClosestHitUniformData rchitData = { s_RenderMode, s_EnabledTextures, s_ClosestHitFlags,
                                                  s_StaticSceneData.LightCount };
     Shaders::MissUniformData missData = { s_MissFlags };

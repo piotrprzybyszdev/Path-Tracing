@@ -165,7 +165,7 @@ std::span<const Shaders::Light> Scene::GetLights() const
 
 std::span<const Camera> Scene::GetCameras() const
 {
-    assert(!m_Cameras.empty());
+    //assert(!m_Cameras.empty());
     return m_Cameras;
 }
 

@@ -19,6 +19,8 @@ namespace PathTracing
 bool UserInterface::s_IsVisible = false;
 bool UserInterface::s_IsFocused = false;
 ImGuiIO *UserInterface::s_Io = nullptr;
+int UserInterface::s_CameraIndex = 0;
+float UserInterface::s_Exposure = 0;
 
 namespace
 {
@@ -133,6 +135,16 @@ Shaders::ClosestHitFlags UserInterface::GetClosestHitFlags()
     return s_ClosestHitFlags;
 }
 
+int UserInterface::GetCameraIndex()
+{
+    return s_CameraIndex;
+}
+
+float UserInterface::GetExposure()
+{
+    return s_Exposure;
+}
+
 void UserInterface::DefineUI()
 {
     s_IsFocused = false;
@@ -227,6 +239,11 @@ void UserInterface::DefineUI()
 
     char textBuf[256] = {};
     ImGui::InputText("Scene Name:", s_SceneName, 256);
+    
+    ImGui::InputInt("Camera Index:", &s_CameraIndex);
+
+    ImGui::SliderFloat("Exposure:", &s_Exposure, -10.0f, 10.0f, "%.2f");
+    
     ImGui::End();
 
     ImGui::Begin("Statistics");

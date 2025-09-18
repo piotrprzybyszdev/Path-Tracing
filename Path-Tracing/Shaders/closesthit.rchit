@@ -60,7 +60,7 @@ vec3 computeLightContribution(Light light, vec3 position, vec3 V, vec3 N, mat3 T
 	const float specular = 1.0f * max(pow(dot(R, V), 50.0f), 0.0f);
 
 	const float dist = length(lightDir);
-	const float attenuation = light.AttenuationConstant + dist * light.AttenuationLinear + dist * dist * light.AttenuationQuadratic;
+	const float attenuation = 1.0f / (dist * dist);
 
 	return ambient * color + (diffuse + specular) * light.Color * color * attenuation;
 }

@@ -36,5 +36,5 @@ void main()
 
     traceRayEXT(u_TopLevelAS, flags, 0xff, 0, 1, 0, origin.xyz, tmin, direction.xyz, tmax, 0);
 
-	imageStore(u_Image, ivec2(gl_LaunchIDEXT.xy), vec4(hitValue, 0.0));
+	imageStore(u_Image, ivec2(gl_LaunchIDEXT.xy), vec4(hitValue * mainUniform.u_Exposure, 0.0));
 }

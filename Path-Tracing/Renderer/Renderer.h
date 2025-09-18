@@ -33,7 +33,7 @@ public:
 
     static void OnResize(vk::Extent2D extent);
     static void OnUpdate(float timeStep);
-    static void Render(const Camera &camera);
+    static void Render(const Camera &camera, float exposure);
 
     static void ReloadShaders();
 

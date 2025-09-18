@@ -266,7 +266,8 @@ void Application::Run()
                 if (!s_Swapchain->AcquireImage())
                     continue;
 
-                Renderer::Render(camera);
+                float exposure = pow(2.0f, UserInterface::GetExposure());
+                Renderer::Render(camera, exposure);
 
                 if (!s_Swapchain->Present())
                     continue;
