@@ -42,6 +42,7 @@ public:
     static Shaders::RaygenFlags s_RaygenFlags;
     static Shaders::MissFlags s_MissFlags;
     static Shaders::ClosestHitFlags s_ClosestHitFlags;
+    static float s_Exposure;
 
     static std::unique_ptr<CommandBuffer> s_MainCommandBuffer;
 

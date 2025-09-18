@@ -10,27 +10,13 @@ namespace PathTracing
 
 static inline constexpr glm::vec3 UpDirection { 0, -1, 0 };
 
-Camera::Camera(float verticalFOV, float nearClip, float farClip)
-    : m_VerticalFOV(verticalFOV), m_NearClip(nearClip), m_FarClip(farClip), m_Position(0.0f, 0.0f, 3.0f),
-      m_Direction(0.0f, 0.0f, -1.0f), m_PreviousMousePos(0.0f, 0.0f), m_Yaw(-90.0f), m_Pitch(0.0f),
+Camera::Camera(float verticalFOV, float nearClip, float farClip, glm::vec3 position, float yaw, float pitch)
+    : m_VerticalFOV(verticalFOV), m_NearClip(nearClip), m_FarClip(farClip), m_Position(position),
+      m_Direction(0.0f, 0.0f, -1.0f), m_PreviousMousePos(0.0f, 0.0f), m_Yaw(yaw), m_Pitch(pitch),
       m_WasPreviousPressed(false)
 {
-    glm::vec3 position(m_Position.x, m_Position.y, m_Position.z);
-    glm::vec3 direction(m_Direction.x, m_Direction.y, m_Direction.z);
-    m_InvView = glm::inverse(glm::lookAt(position, position + direction, UpDirection));
-    m_InvProjection = glm::mat4();
-}
-
-Camera::Camera(float verticalFOV, float nearClip, float farClip, glm::vec3 position, float yaw, float pitch)
-    : Camera(verticalFOV, nearClip, farClip)
-{
-    m_Position = position;
-    m_Yaw = yaw;
-    m_Pitch = pitch;
-}
-
-Camera::~Camera()
-{
+    m_InvView = glm::inverse(glm::lookAt(m_Position, m_Position + m_Direction, UpDirection));
+    m_InvProjection = glm::mat4(1.0f);
 }
 
 void Camera::OnUpdate(float timeStep)

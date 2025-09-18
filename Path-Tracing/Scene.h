@@ -125,7 +125,8 @@ public:
     [[nodiscard]] const SkyboxVariant &GetSkybox() const;
 
     [[nodiscard]] uint32_t GetCameraCount() const;
-    [[nodiscard]] void SetActiveCamera(uint32_t index);
+    [[nodiscard]] uint32_t GetActiveCameraIndex() const;
+    [[nodiscard]] void SetActiveCameraIndex(uint32_t index);
     [[nodiscard]] Camera &GetActiveCamera();
 
 private:

@@ -258,11 +258,20 @@ void Application::Run()
                         Renderer::UpdateSceneData();
                     }
                 }
+
+                if (SceneManager::GetActiveScene()->GetActiveCameraIndex() != UserInterface::GetCameraIndex())
+                {
+                    SceneManager::GetActiveScene()->SetActiveCameraIndex(UserInterface::GetCameraIndex());
+                    SceneManager::GetActiveScene()->GetActiveCamera().OnResize(
+                        windowSize.width, windowSize.height
+                    );
+                }
                 SceneManager::GetActiveScene()->Update(timeStep);
                 Renderer::s_EnabledTextures = UserInterface::GetEnabledTextures();
                 Renderer::s_RenderMode = UserInterface::GetRenderMode();
                 Renderer::s_RaygenFlags = UserInterface::GetRaygenFlags();
                 Renderer::s_ClosestHitFlags = UserInterface::GetClosestHitFlags();
+                Renderer::s_Exposure = UserInterface::GetExposure();
                 Renderer::OnUpdate(timeStep);
             }
 

@@ -463,11 +463,18 @@ void LoadLights(SceneBuilder &sceneBuilder, const aiScene *scene)
             light->mAttenuationQuadratic
         );
 
+        aiNode *rootNode = scene->mRootNode;
+        aiNode *cameraNode = rootNode->FindNode(light->mName);
+        aiMatrix4x4 cameraTransformationMatrix = cameraNode->mTransformation;
+        aiQuaternion rotation;
+        aiVector3D position;
+        cameraTransformationMatrix.DecomposeNoScaling(rotation, position);
+
         sceneBuilder.AddLight({
             .Color = light->mColorDiffuse.IsBlack()
                          ? glm::vec3(1.0f)
                          : TrivialCopyUnsafe<aiColor3D, glm::vec3>(light->mColorDiffuse),
-            .Position = TrivialCopy<aiVector3D, glm::vec3>(light->mPosition),
+            .Position = TrivialCopy<aiVector3D, glm::vec3>(position),
             .AttenuationConstant = light->mAttenuationConstant,
             .AttenuationLinear = light->mAttenuationLinear,
             .AttenuationQuadratic = light->mAttenuationQuadratic,

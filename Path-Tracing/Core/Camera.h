@@ -10,9 +10,10 @@ namespace PathTracing
 class Camera
 {
 public:
-    Camera(float verticalFOV, float nearClip, float farClip);
-    Camera(float verticalFOV, float nearClip, float farClip, glm::vec3 position, float yaw, float pitch);
-    ~Camera();
+    Camera(
+        float verticalFOV, float nearClip, float farClip, glm::vec3 position = glm::vec3(0.0f, 0.0f, 3.0f),
+        float yaw = -90.0f, float pitch = 0.0f
+    );
 
     void OnUpdate(float timeStep);
     void OnResize(uint32_t width, uint32_t height);

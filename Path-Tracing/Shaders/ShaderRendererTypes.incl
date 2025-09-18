@@ -25,6 +25,7 @@ struct RaygenUniformData
 {
     Camera u_Camera;
     uint u_Flags;               // enum
+    float u_Exposure;
 };
 
 struct MissUniformData

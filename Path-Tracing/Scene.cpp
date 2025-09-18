@@ -251,7 +251,12 @@ uint32_t Scene::GetCameraCount() const
     return m_Cameras.size();
 }
 
-void Scene::SetActiveCamera(uint32_t index)
+uint32_t Scene::GetActiveCameraIndex() const
+{
+    return m_ActiveCameraIndex;
+}
+
+void Scene::SetActiveCameraIndex(uint32_t index)
 {
     m_ActiveCameraIndex = index;
 }

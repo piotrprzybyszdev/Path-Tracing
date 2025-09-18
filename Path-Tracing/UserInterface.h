@@ -30,6 +30,8 @@ public:
     static Shaders::RenderModeFlags GetRenderMode();
     static Shaders::RaygenFlags GetRaygenFlags();
     static Shaders::ClosestHitFlags GetClosestHitFlags();
+    static int GetCameraIndex();
+    static float GetExposure();
 
     static const char *SceneChange();
 
@@ -37,6 +39,8 @@ private:
     static bool s_IsVisible;
     static bool s_IsFocused;
     static ImGuiIO *s_Io;
+    static int s_CameraIndex;
+    static float s_Exposure;
 
 private:
     static void DefineUI();

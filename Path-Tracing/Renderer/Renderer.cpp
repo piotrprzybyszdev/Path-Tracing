@@ -29,6 +29,7 @@ Shaders::EnabledTextureFlags Renderer::s_EnabledTextures = Shaders::TexturesEnab
 Shaders::RaygenFlags Renderer::s_RaygenFlags = Shaders::RaygenFlagsNone;
 Shaders::MissFlags Renderer::s_MissFlags = Shaders::MissFlagsNone;
 Shaders::ClosestHitFlags Renderer::s_ClosestHitFlags = Shaders::ClosestHitFlagsNone;
+float Renderer::s_Exposure = 1.0f;
 
 const Swapchain *Renderer::s_Swapchain = nullptr;
 
@@ -691,7 +692,7 @@ void Renderer::OnUpdate(float /* timeStep */)
 void Renderer::Render(const Camera &camera)
 {
     Shaders::RaygenUniformData rgenData = { camera.GetInvViewMatrix(), camera.GetInvProjectionMatrix(),
-                                            s_RaygenFlags };
+                                            s_RaygenFlags, s_Exposure };
     Shaders::ClosestHitUniformData rchitData = { s_RenderMode, s_EnabledTextures, s_ClosestHitFlags,
                                                  s_StaticSceneData.LightCount };
     Shaders::MissUniformData missData = { s_MissFlags };
