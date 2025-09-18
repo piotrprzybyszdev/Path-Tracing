@@ -10,84 +10,23 @@
 namespace PathTracing
 {
 
-void Animation::Update(float timeStep, std::span<SceneNode> nodes)
+Scene::Scene(
+    std::string name, std::vector<Shaders::Vertex> &&vertices, std::vector<uint32_t> &&indices,
+    std::vector<glm::mat4> &&transforms, std::vector<Geometry> &&geometries,
+    std::vector<Shaders::Material> &&materials, std::vector<TextureInfo> &&textures,
+    std::vector<Model> &&models, std::vector<ModelInstance> &&modelInstances, SceneGraph &&sceneGraph,
+    SkyboxVariant &&skybox
+)
+    : m_Name(std::move(name)), m_Vertices(std::move(vertices)), m_Indices(std::move(indices)),
+      m_Transforms(std::move(transforms)), m_Geometries(std::move(geometries)),
+      m_Materials(std::move(materials)), m_Textures(std::move(textures)), m_Models(std::move(models)),
+      m_ModelInstances(std::move(modelInstances)), m_Graph(std::move(sceneGraph)), m_Skybox(std::move(skybox))
 {
-    CurrentTick += timeStep * TickPerSecond;
-    if (CurrentTick >= TickDuration)
-    {
-        for (AnimationNode& node : Nodes)
-        {
-            node.Positions.Index = 0;
-            node.Rotations.Index = 0;
-            node.Scales.Index = 0;
-        }
-    }
-
-    while (CurrentTick >= TickDuration)
-        CurrentTick -= TickDuration;
-
-    for (AnimationNode &node : Nodes)
-    {
-        glm::vec3 position = node.Positions.Update(CurrentTick);
-        glm::quat rotation = node.Rotations.Update(CurrentTick);
-        glm::vec3 scale = node.Scales.Update(CurrentTick);
-      
-        nodes[node.SceneNodeIndex].Transform =
-            glm::transpose(glm::scale(glm::translate(glm::mat4(1.0f), position) * glm::mat4(rotation), scale)
-            );
-    }
 }
 
-uint32_t SceneGraph::AddSceneNode(SceneNode &&node)
+const std::string &Scene::GetName() const
 {
-    m_SceneNodes.push_back(std::move(node));
-    return m_SceneNodes.size() - 1;
-}
-
-void SceneGraph::AddAnimation(Animation &&animation)
-{
-    return m_Animations.push_back(std::move(animation));
-}
-
-void SceneGraph::UpdateTransforms()
-{
-#ifndef NDEBUG
-    std::vector<bool> isUpdated(m_SceneNodes.size());
-#endif
-
-    m_SceneNodes[0].CurrentTransform = m_SceneNodes[0].Transform;
-    isUpdated[0] = true;
-
-    for (int i = 1; i < m_SceneNodes.size(); i++)
-    {
-        SceneNode &node = m_SceneNodes[i];
-        SceneNode &parent = m_SceneNodes[node.Parent];
-        assert(isUpdated[node.Parent] == true);  // Nodes are not in pre-order sequence
-        assert(isUpdated[i] == false);  // Two animations have the same SceneNode or it's a DAG not a tree
-
-        node.CurrentTransform = node.Transform * parent.CurrentTransform;
-#ifndef NDEBUG
-        isUpdated[i] = true;
-#endif
-    }
-}
-
-void SceneGraph::Update(float timeStep)
-{
-    for (Animation &animation : m_Animations)
-        animation.Update(timeStep, m_SceneNodes);
-
-    UpdateTransforms();
-}
-
-std::span<const SceneNode> SceneGraph::GetSceneNodes() const
-{
-    return m_SceneNodes;
-}
-
-Scene::Scene()
-{
-    m_Transforms.push_back(glm::mat4(1.0f));
+    return m_Name;
 }
 
 void Scene::Update(float timeStep)
@@ -96,27 +35,22 @@ void Scene::Update(float timeStep)
 
     auto nodes = m_Graph.GetSceneNodes();
 
-    // TODO: Resize only in SceneBuilder::Build()
-    m_ModelInstances.resize(m_ModelInstanceInfos.size());
-
-    for (int i = 0; i < m_ModelInstanceInfos.size(); i++)
-    {
-        m_ModelInstances[i].ModelIndex = m_ModelInstanceInfos[i].ModelIndex;  // TODO: This also only in SB::Build()
-        m_ModelInstances[i].Transform = nodes[m_ModelInstanceInfos[i].SceneNodeIndex].CurrentTransform;
-    }
+    for (auto &instance : m_ModelInstances)
+        instance.Transform = nodes[instance.SceneNodeIndex].CurrentTransform;
 }
 
-uint32_t Scene::AddSceneNode(SceneNode &&node)
+uint32_t SceneBuilder::AddSceneNode(SceneNode &&node)
 {
-    return m_Graph.AddSceneNode(std::move(node));
+    m_SceneNodes.push_back(std::move(node));
+    return m_SceneNodes.size() - 1;
 }
 
-void Scene::AddAnimation(Animation &&animation)
+void SceneBuilder::AddAnimation(Animation &&animation)
 {
-    return m_Graph.AddAnimation(std::move(animation));
+    m_Animations.push_back(std::move(animation));
 }
 
-uint32_t Scene::AddGeometry(Geometry &&geometry)
+uint32_t SceneBuilder::AddGeometry(Geometry &&geometry)
 {
     logger::trace(
         "Added Geometry to Scene with {} vertices and {} indices", geometry.VertexLength, geometry.IndexLength
@@ -126,7 +60,7 @@ uint32_t Scene::AddGeometry(Geometry &&geometry)
     return m_Geometries.size() - 1;
 }
 
-uint32_t Scene::AddModel(std::span<const MeshInfo> meshInfos)
+uint32_t SceneBuilder::AddModel(std::span<const MeshInfo> meshInfos)
 {
     const uint32_t sbtOffset =
         m_Models.empty() ? 0
@@ -151,13 +85,13 @@ uint32_t Scene::AddModel(std::span<const MeshInfo> meshInfos)
     return m_Models.size() - 1;
 }
 
-uint32_t Scene::AddModelInstance(ModelInstanceInfo &&info)
+uint32_t SceneBuilder::AddModelInstance(uint32_t modelIndex, uint32_t sceneNodeIndex)
 {
-    m_ModelInstanceInfos.push_back(std::move(info));
+    m_ModelInstanceInfos.emplace_back(modelIndex, sceneNodeIndex);
     return m_ModelInstanceInfos.size() - 1;
 }
 
-uint32_t Scene::AddTexture(TextureInfo &&texture)
+uint32_t SceneBuilder::AddTexture(TextureInfo &&texture)
 {
     const std::string name = texture.Path.string();
 
@@ -173,7 +107,7 @@ uint32_t Scene::AddTexture(TextureInfo &&texture)
     return textureIndex;
 }
 
-uint32_t Scene::AddMaterial(std::string name, Shaders::Material material)
+uint32_t SceneBuilder::AddMaterial(std::string name, Shaders::Material material)
 {
     if (m_MaterialIndices.contains(name))
         return m_MaterialIndices[name];
@@ -187,24 +121,55 @@ uint32_t Scene::AddMaterial(std::string name, Shaders::Material material)
     return m_Materials.size() - 1;
 }
 
-void Scene::SetVertices(std::vector<Shaders::Vertex> &&vertices)
+void SceneBuilder::SetVertices(std::vector<Shaders::Vertex> &&vertices)
 {
     m_Vertices = std::move(vertices);
 }
 
-void Scene::SetIndices(std::vector<uint32_t> &&indices)
+void SceneBuilder::SetIndices(std::vector<uint32_t> &&indices)
 {
     m_Indices = std::move(indices);
 }
 
-void Scene::SetSkybox(Skybox2D &&skybox)
+void SceneBuilder::SetSkybox(Skybox2D &&skybox)
 {
     m_Skybox = skybox;
 }
 
-void Scene::SetSkybox(SkyboxCube &&skybox)
+void SceneBuilder::SetSkybox(SkyboxCube &&skybox)
 {
     m_Skybox = skybox;
+}
+
+std::shared_ptr<Scene> SceneBuilder::CreateSceneShared(std::string name)
+{
+    m_ModelInstances.reserve(m_ModelInstanceInfos.size());
+    for (const auto &info : m_ModelInstanceInfos)
+        m_ModelInstances.emplace_back(info.first, info.second, m_SceneNodes[info.second].Transform);
+
+    auto scene = std::make_shared<Scene>(
+        std::move(name), std::move(m_Vertices), std::move(m_Indices), std::move(m_Transforms),
+        std::move(m_Geometries), std::move(m_Materials), std::move(m_Textures), std::move(m_Models),
+        std::move(m_ModelInstances), SceneGraph(std::move(m_SceneNodes), std::move(m_Animations)),
+        std::move(m_Skybox)
+    );
+
+    m_Vertices.clear();
+    m_Indices.clear();
+    m_Transforms = { glm::mat4(1.0f) };
+    m_Geometries.clear();
+    m_Materials.clear();
+    m_MaterialIndices.clear();
+    m_Textures.clear();
+    m_TextureIndices.clear();
+    m_Models.clear();
+    m_ModelInstances.clear();
+    m_ModelInstanceInfos.clear();
+    m_SceneNodes.clear();
+    m_Animations.clear();
+    m_Skybox = SkyboxClearColor {};
+
+    return scene;
 }
 
 std::span<const Shaders::Vertex> Scene::GetVertices() const
@@ -247,7 +212,12 @@ std::span<const ModelInstance> Scene::GetModelInstances() const
     return m_ModelInstances;
 }
 
-const Scene::SkyboxVariant &Scene::GetSkybox() const
+bool Scene::HasAnimations() const
+{
+    return m_Graph.HasAnimations();
+}
+
+const SkyboxVariant &Scene::GetSkybox() const
 {
     return m_Skybox;
 }

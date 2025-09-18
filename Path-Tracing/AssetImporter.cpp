@@ -7,14 +7,12 @@
 
 #include "Core/Core.h"
 
-#include "AssetManager.h"
+#include "AssetImporter.h"
 
 namespace PathTracing
 {
 
-std::unordered_map<std::string, Scene> AssetManager::s_Scenes = {};
-
-std::byte *AssetManager::LoadTextureData(const TextureInfo &info)
+std::byte *AssetImporter::LoadTextureData(const TextureInfo &info)
 {
     const std::string pathString = info.Path.string();
 
@@ -29,17 +27,12 @@ std::byte *AssetManager::LoadTextureData(const TextureInfo &info)
     return reinterpret_cast<std::byte *>(data);
 }
 
-void AssetManager::ReleaseTextureData(std::byte *data)
+void AssetImporter::ReleaseTextureData(std::byte *data)
 {
     stbi_image_free(data);
 }
 
-void AssetManager::AddScene(const std::string &name, Scene &&scene)
-{
-    s_Scenes[name] = std::move(scene);
-}
-
-TextureInfo AssetManager::GetTextureInfo(const std::filesystem::path path, TextureType type)
+TextureInfo AssetImporter::GetTextureInfo(const std::filesystem::path path, TextureType type)
 {
     std::string pathString = path.string();
     int x, y, channels;
@@ -91,7 +84,8 @@ uint32_t GetDefaultTextureIndex(TextureType type)
 }
 
 uint32_t AddTexture(
-    Scene &outScene, const std::filesystem::path &base, const aiMaterial *material, aiTextureType type
+    SceneBuilder &sceneBuilder, const std::filesystem::path &base, const aiMaterial *material,
+    aiTextureType type
 )
 {
     const uint32_t cnt = material->GetTextureCount(type);
@@ -114,10 +108,12 @@ uint32_t AddTexture(
 
     std::filesystem::path texturePath = base.string() / std::filesystem::path(path.C_Str());
 
-    return outScene.AddTexture(AssetManager::GetTextureInfo(texturePath, textureType));
+    return sceneBuilder.AddTexture(AssetImporter::GetTextureInfo(texturePath, textureType));
 }
 
-std::vector<uint32_t> LoadMaterials(const std::filesystem::path &path, Scene &outScene, const aiScene *scene)
+std::vector<uint32_t> LoadMaterials(
+    const std::filesystem::path &path, SceneBuilder &sceneBuilder, const aiScene *scene
+)
 {
     std::vector<uint32_t> materialIndexMap(scene->mNumMaterials);
     for (int i = 0; i < scene->mNumMaterials; i++)
@@ -128,21 +124,21 @@ std::vector<uint32_t> LoadMaterials(const std::filesystem::path &path, Scene &ou
             originalName.length != 0 ? originalName.C_Str() : std::format("Unnamed Material at index {}", i);
 
         const Shaders::Material outMaterial = {
-            .ColorIdx = AddTexture(outScene, path.parent_path(), material, aiTextureType_BASE_COLOR),
-            .NormalIdx = AddTexture(outScene, path.parent_path(), material, aiTextureType_NORMALS),
+            .ColorIdx = AddTexture(sceneBuilder, path.parent_path(), material, aiTextureType_BASE_COLOR),
+            .NormalIdx = AddTexture(sceneBuilder, path.parent_path(), material, aiTextureType_NORMALS),
             .RoughnessIdx =
-                AddTexture(outScene, path.parent_path(), material, aiTextureType_DIFFUSE_ROUGHNESS),
-            .MetalicIdx = AddTexture(outScene, path.parent_path(), material, aiTextureType_METALNESS),
+                AddTexture(sceneBuilder, path.parent_path(), material, aiTextureType_DIFFUSE_ROUGHNESS),
+            .MetalicIdx = AddTexture(sceneBuilder, path.parent_path(), material, aiTextureType_METALNESS),
         };
 
-        materialIndexMap[i] = outScene.AddMaterial(materialName, outMaterial);
+        materialIndexMap[i] = sceneBuilder.AddMaterial(materialName, outMaterial);
         logger::debug("Added Material: {}", materialName);
     }
 
     return materialIndexMap;
 }
 
-bool CheckOpaque(const aiMaterial *material)
+bool CheckOpaque(const std::filesystem::path &path, const aiMaterial *material)
 {
     // TODO: Handle other opaque flags from input file
     if (material->GetTextureCount(aiTextureType_BASE_COLOR) == 0)
@@ -151,9 +147,10 @@ bool CheckOpaque(const aiMaterial *material)
     aiString colorTexturePath;
     aiReturn ret = material->GetTexture(aiTextureType_BASE_COLOR, 0, &colorTexturePath);
     assert(ret == aiReturn::aiReturn_SUCCESS);
+    std::string fullPath = (path.parent_path() / std::filesystem::path(colorTexturePath.C_Str())).string();
     int channels;
-    int result = stbi_info(colorTexturePath.C_Str(), nullptr, nullptr, &channels);
-    assert(result == 0);
+    int result = stbi_info(fullPath.c_str(), nullptr, nullptr, &channels);
+    assert(result == 1);
     return channels == 3;
 }
 
@@ -169,7 +166,9 @@ uint32_t FindSameGeometry(std::span<aiMesh *const> haystack, const aiMesh *needl
     return haystack.size();
 }
 
-std::vector<uint32_t> LoadMeshes(Scene &outScene, const aiScene *scene)
+std::vector<uint32_t> LoadMeshes(
+    SceneBuilder &sceneBuilder, const std::filesystem::path &path, const aiScene *scene
+)
 {
     std::vector<Shaders::Vertex> vertices;
     std::vector<uint32_t> indices;
@@ -229,21 +228,21 @@ std::vector<uint32_t> LoadMeshes(Scene &outScene, const aiScene *scene)
             std::ranges::copy(std::span(face.mIndices, 3), indices.begin() + idx);
         }
 
-        bool isOpaque = CheckOpaque(scene->mMaterials[mesh->mMaterialIndex]);
+        bool isOpaque = CheckOpaque(path, scene->mMaterials[mesh->mMaterialIndex]);
 
         meshToGeometry[i] =
-            outScene.AddGeometry({ vertexOffset, vertexCount, indexOffset, indexCount, isOpaque });
+            sceneBuilder.AddGeometry({ vertexOffset, vertexCount, indexOffset, indexCount, isOpaque });
         vertexOffset += vertexCount;
         indexOffset += indexCount;
 
         logger::debug(
-            "Adding geometry (mesh {}) with {} vertices and {} indices", mesh->mName.C_Str(), vertexCount,
-            indexCount
+            "Adding geometry (mesh {}) ({}) with {} vertices and {} indices", mesh->mName.C_Str(),
+            isOpaque ? "Opaque" : "Not opaque", vertexCount, indexCount
         );
     }
 
-    outScene.SetVertices(std::move(vertices));
-    outScene.SetIndices(std::move(indices));
+    sceneBuilder.SetVertices(std::move(vertices));
+    sceneBuilder.SetIndices(std::move(indices));
 
     return meshToGeometry;
 }
@@ -267,10 +266,13 @@ std::unordered_set<const aiNode *> FindDynamicNodes(const aiScene *scene)
                 animation->mName.C_Str()
             );
 
-        logger::info(
-            "Animation {} ({}s)", animation->mName.C_Str(),
-            static_cast<uint32_t>(animation->mDuration / animation->mTicksPerSecond)
-        );
+        {
+            const aiString originalName = animation->mName;
+            const std::string animationName = originalName.length != 0
+                                                  ? originalName.C_Str()
+                                                  : std::format("Unnamed Animation at index {}", i);
+            logger::info("{} ({:.1f}s)", animationName, animation->mDuration / animation->mTicksPerSecond);
+        }
 
         for (int j = 0; j < animation->mNumChannels; j++)
         {
@@ -291,8 +293,8 @@ std::unordered_set<const aiNode *> FindDynamicNodes(const aiScene *scene)
 }
 
 std::unordered_map<const aiNode *, uint32_t> LoadSceneHierarchy(
-    Scene &outScene, const aiScene *scene, std::span<const uint32_t> meshToGeometry,
-    std::span<const uint32_t> materialIndexMap, std::unordered_set<const aiNode *> dynamicNodes
+    SceneBuilder &sceneBuilder, const aiScene *scene, std::span<const uint32_t> meshToGeometry,
+    std::span<const uint32_t> materialIndexMap, const std::unordered_set<const aiNode *> &dynamicNodes
 )
 {
     std::unordered_map<const aiNode *, uint32_t> sceneNodeToIndex;
@@ -317,7 +319,7 @@ std::unordered_map<const aiNode *, uint32_t> LoadSceneHierarchy(
 
         glm::mat4 nodeTransform = toTransformMatrix(node->mTransformation);
 
-        const uint32_t sceneNodeIndex = outScene.AddSceneNode({
+        const uint32_t sceneNodeIndex = sceneBuilder.AddSceneNode({
             .Parent = parentNodeIndex,
             .Transform = nodeTransform,
             .CurrentTransform = glm::mat4(1.0f),
@@ -343,17 +345,17 @@ std::unordered_map<const aiNode *, uint32_t> LoadSceneHierarchy(
             stack.emplace(node->mChildren[i], totalTransform, modelIndex, sceneNodeIndex, depth + 1);
     }
 
-    // TODO: Combine models in to one if their meshInfos are the same
+    // TODO: Combine models into one if their meshInfos are the same
 
     for (int i = 0; i < modelToMeshInfos.size(); i++)
         if (!modelToMeshInfos[i].empty())
-            outScene.AddModelInstance({ outScene.AddModel(modelToMeshInfos[i]), sceneNodeIndices[i] });
+            sceneBuilder.AddModelInstance(sceneBuilder.AddModel(modelToMeshInfos[i]), sceneNodeIndices[i]);
 
     return sceneNodeToIndex;
 }
-
+ 
 void LoadAnimations(
-    Scene &outScene, const aiScene *scene,
+    SceneBuilder &sceneBuilder, const aiScene *scene,
     const std::unordered_map<const aiNode *, uint32_t> &sceneNodeIndices
 )
 {
@@ -377,9 +379,28 @@ void LoadAnimations(
             outAnimNode.Rotations.Keys.reserve(animNode->mNumRotationKeys);
             outAnimNode.Scales.Keys.reserve(animNode->mNumScalingKeys);
 
+            {
+                aiQuaternion rotation;
+                aiVector3D position, scaling;
+                node->mTransformation.Decompose(scaling, rotation, position);
+
+                if (animNode->mPositionKeys[0].mTime != 0.0f)
+                    outAnimNode.Positions.Keys.emplace_back(
+                        TrivialCopy<aiVector3D, glm::vec3>(position), 0.0f
+                    );
+                if (animNode->mRotationKeys[0].mTime != 0.0f)
+                    outAnimNode.Rotations.Keys.emplace_back(
+                        glm::quat(rotation.w, rotation.x, rotation.y, rotation.z), 0.0f
+                    );
+                if (animNode->mScalingKeys[0].mTime != 0.0f)
+                    outAnimNode.Scales.Keys.emplace_back(TrivialCopy<aiVector3D, glm::vec3>(position), 0.0f);
+            }
+
             for (int k = 0; k < animNode->mNumPositionKeys; k++)
             {
                 const aiVectorKey *key = &animNode->mPositionKeys[k];
+                assert(key->mInterpolation == aiAnimInterpolation_Linear);
+
                 outAnimNode.Positions.Keys.emplace_back(
                     TrivialCopy<aiVector3D, glm::vec3>(key->mValue), static_cast<float>(key->mTime)
                 );
@@ -388,6 +409,11 @@ void LoadAnimations(
             for (int k = 0; k < animNode->mNumRotationKeys; k++)
             {
                 const aiQuatKey *key = &animNode->mRotationKeys[k];
+                assert(
+                    key->mInterpolation == aiAnimInterpolation_Linear ||
+                    key->mInterpolation == aiAnimInterpolation_Spherical_Linear
+                );
+
                 outAnimNode.Rotations.Keys.emplace_back(
                     glm::quat(key->mValue.w, key->mValue.x, key->mValue.y, key->mValue.z),
                     static_cast<float>(key->mTime)
@@ -397,21 +423,31 @@ void LoadAnimations(
             for (int k = 0; k < animNode->mNumScalingKeys; k++)
             {
                 const aiVectorKey *key = &animNode->mScalingKeys[k];
+                assert(key->mInterpolation == aiAnimInterpolation_Linear);
+
                 outAnimNode.Scales.Keys.emplace_back(
                     TrivialCopy<aiVector3D, glm::vec3>(key->mValue), static_cast<float>(key->mTime)
                 );
             }
 
+            assert(
+                animNode->mPreState == aiAnimBehaviour_DEFAULT ||
+                animNode->mPreState == aiAnimBehaviour_REPEAT
+            );
+            assert(
+                animNode->mPostState == aiAnimBehaviour_DEFAULT || animNode->mPostState == aiAnimBehaviour_REPEAT
+            );
+
             outAnimation.Nodes.push_back(std::move(outAnimNode));
         }
 
-        outScene.AddAnimation(std::move(outAnimation));
+        sceneBuilder.AddAnimation(std::move(outAnimation));
     }
 }
 
 }
 
-void AssetManager::LoadScene(const std::string &name, const std::filesystem::path &path)
+std::shared_ptr<Scene> AssetImporter::LoadScene(const std::string &name, const std::filesystem::path &path)
 {
     logger::info("Loading Scene {}", name);
     Timer timer("Scene Load");
@@ -442,31 +478,18 @@ void AssetManager::LoadScene(const std::string &name, const std::filesystem::pat
     // TODO: Support embedded textures
     assert(scene->HasTextures() == false);
 
-    Scene outScene;
+    SceneBuilder sceneBuilder;
 
-    std::vector<uint32_t> materialIndexMap = LoadMaterials(path, outScene, scene);
-    std::vector<uint32_t> meshToGeometry = LoadMeshes(outScene, scene);
+    std::vector<uint32_t> materialIndexMap = LoadMaterials(path, sceneBuilder, scene);
+    std::vector<uint32_t> meshToGeometry = LoadMeshes(sceneBuilder, path, scene);
     std::unordered_set<const aiNode *> dynamicNodes = FindDynamicNodes(scene);
     std::unordered_map<const aiNode *, uint32_t> sceneNodeIndices =
-        LoadSceneHierarchy(outScene, scene, meshToGeometry, materialIndexMap, dynamicNodes);
+        LoadSceneHierarchy(sceneBuilder, scene, meshToGeometry, materialIndexMap, dynamicNodes);
 
     if (scene->HasAnimations())
-        LoadAnimations(outScene, scene, sceneNodeIndices);
+        LoadAnimations(sceneBuilder, scene, sceneNodeIndices);
 
-    s_Scenes[name] = std::move(outScene);
-}
-
-Scene &AssetManager::GetScene(const std::string &name)
-{
-    auto it = s_Scenes.find(name);
-    assert(it != s_Scenes.end());
-    return it->second;
-}
-
-void AssetManager::ReleaseScene(const std::string &name)
-{
-    auto it = s_Scenes.find(name);
-    s_Scenes.erase(it);
+    return sceneBuilder.CreateSceneShared(name);
 }
 
 }

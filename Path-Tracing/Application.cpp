@@ -14,8 +14,7 @@
 #include "Renderer/Swapchain.h"
 
 #include "Application.h"
-#include "AssetManager.h"
-#include "ExampleScenes.h"
+#include "SceneManager.h"
 #include "UserInterface.h"
 #include "Window.h"
 
@@ -158,7 +157,7 @@ void Application::Init()
     UserInterface::Init(s_Instance, s_Swapchain->GetSurfaceFormat().format, s_Swapchain->GetImageCount());
     s_State = State::HasUserInterface;
 
-    ExampleScenes::CreateScenes();
+    SceneManager::Init();
 
     Renderer::Init(s_Swapchain.get());
     s_State = State::Initialized;
@@ -172,6 +171,7 @@ void Application::Shutdown()
         Renderer::Shutdown();
         [[fallthrough]];
     case State::HasUserInterface:
+        SceneManager::Shutdown();
         UserInterface::Shutdown();
         [[fallthrough]];
     case State::HasSwapchain:
@@ -204,9 +204,8 @@ void Application::Run()
     float lastFrameTime = 0.0f;
     vk::Extent2D previousSize = {};
 
-    // TODO: Fix, this doesn't work if UI changes the scene
-    Scene &scene = AssetManager::GetScene("Virtual City");
-    Renderer::SetScene(scene);
+    SceneManager::SetActiveScene("Sponza");
+    Renderer::UpdateSceneData();
 
     while (!Window::ShouldClose())
     {
@@ -250,8 +249,16 @@ void Application::Run()
                 Timer timer("Update");
 
                 Window::OnUpdate(timeStep);
+                {
+                    const char *newScene = UserInterface::SceneChange();
+                    if (newScene)
+                    {
+                        SceneManager::SetActiveScene(std::string(newScene));
+                        Renderer::UpdateSceneData();
+                    }
+                }
                 camera.OnUpdate(timeStep);
-                scene.Update(timeStep);
+                SceneManager::GetActiveScene()->Update(timeStep);
                 Renderer::s_EnabledTextures = UserInterface::GetEnabledTextures();
                 Renderer::s_RenderMode = UserInterface::GetRenderMode();
                 Renderer::s_RaygenFlags = UserInterface::GetRaygenFlags();

@@ -29,7 +29,7 @@ public:
     static void Init(const Swapchain *swapchain);
     static void Shutdown();
 
-    static void SetScene(const Scene &scene);
+    static void UpdateSceneData();
 
     static void OnResize(vk::Extent2D extent);
     static void OnUpdate(float timeStep);
@@ -51,7 +51,6 @@ public:
 
 private:
     static const Swapchain *s_Swapchain;
-    static const Scene *s_Scene;
 
     struct RenderingResources
     {
