@@ -146,7 +146,7 @@ private:
     std::vector<Model> m_Models;
     std::vector<ModelInstance> m_ModelInstances;
 
-    Shaders::Light m_DefaultLight = { glm::vec3(1.0f), glm::vec3(3.0f, 15.0f, 7.0f) };
+    Shaders::Light m_DefaultLight = { glm::vec3(1.0f), 0.0f, glm::vec3(3.0f, 15.0f, 7.0f), 0.0f, 0.0f, 0.0f, 1.0f, 0.0f};
     std::vector<Shaders::Light> m_Lights;
     std::vector<Camera> m_Cameras;
 
