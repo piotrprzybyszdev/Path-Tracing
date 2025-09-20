@@ -6,7 +6,7 @@ namespace PathTracing
 void Animation::Update(float timeStep, std::span<SceneNode> nodes)
 {
     CurrentTick += timeStep * TickPerSecond;
-    if (CurrentTick >= TickDuration)
+    if (CurrentTick >= Duration)
     {
         for (AnimationNode &node : Nodes)
         {
@@ -16,8 +16,8 @@ void Animation::Update(float timeStep, std::span<SceneNode> nodes)
         }
     }
 
-    while (CurrentTick >= TickDuration)
-        CurrentTick -= TickDuration;
+    while (CurrentTick >= Duration)
+        CurrentTick -= Duration;
 
     for (AnimationNode &node : Nodes)
     {

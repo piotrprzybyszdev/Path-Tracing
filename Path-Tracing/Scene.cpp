@@ -15,14 +15,23 @@ Scene::Scene(
     std::vector<glm::mat4> &&transforms, std::vector<Geometry> &&geometries,
     std::vector<Shaders::Material> &&materials, std::vector<TextureInfo> &&textures,
     std::vector<Model> &&models, std::vector<ModelInstance> &&modelInstances, SceneGraph &&sceneGraph,
-    std::vector<Shaders::Light> &&lights, SkyboxVariant &&skybox, std::vector<Camera> &&cameras
+    std::vector<LightInfo> &&lightInfos, std::vector<Shaders::Light> &&lights, SkyboxVariant &&skybox,
+    const std::vector<CameraInfo> &cameraInfos
 )
     : m_Name(std::move(name)), m_Vertices(std::move(vertices)), m_Indices(std::move(indices)),
       m_Transforms(std::move(transforms)), m_Geometries(std::move(geometries)),
       m_Materials(std::move(materials)), m_Textures(std::move(textures)), m_Models(std::move(models)),
-      m_ModelInstances(std::move(modelInstances)), m_Graph(std::move(sceneGraph)), m_Lights(lights),
-      m_Skybox(std::move(skybox)), m_Cameras(std::move(cameras))
+      m_ModelInstances(std::move(modelInstances)), m_Graph(std::move(sceneGraph)), m_LightInfos(lightInfos),
+      m_Lights(std::move(lights)), m_Skybox(std::move(skybox)), m_ActiveCameraId(g_InputCameraId)
 {
+    auto nodes = m_Graph.GetSceneNodes();
+
+    m_SceneCameras.reserve(cameraInfos.size());
+    for (const auto &info : cameraInfos)
+        m_SceneCameras.emplace_back(
+            info.VerticalFOV, info.NearClip, info.FarClip, info.Position, info.Direction, info.UpDirection,
+            nodes[info.SceneNodeIndex].CurrentTransform
+        );
 }
 
 const std::string &Scene::GetName() const
@@ -38,6 +47,10 @@ void Scene::Update(float timeStep)
 
     for (auto &instance : m_ModelInstances)
         instance.Transform = nodes[instance.SceneNodeIndex].CurrentTransform;
+
+    for (int i = 0; i < m_LightInfos.size(); i++)
+        m_Lights[i].Position = glm::vec4(m_LightInfos[i].Position, 1.0f) *
+                               nodes[m_LightInfos[i].SceneNodeIndex].CurrentTransform;
 
     GetActiveCamera().OnUpdate(timeStep);
 }
@@ -134,9 +147,11 @@ void SceneBuilder::SetIndices(std::vector<uint32_t> &&indices)
     m_Indices = std::move(indices);
 }
 
-void SceneBuilder::AddLight(Shaders::Light &&light)
+void SceneBuilder::AddLight(Shaders::Light &&light, uint32_t sceneNodeIndex)
 {
+    m_LightInfos.emplace_back(sceneNodeIndex, light.Position);
     m_Lights.push_back(std::move(light));
+    assert(m_LightInfos.size() <= Shaders::MaxLightCount);
 }
 
 void SceneBuilder::SetSkybox(Skybox2D &&skybox)
@@ -149,25 +164,26 @@ void SceneBuilder::SetSkybox(SkyboxCube &&skybox)
     m_Skybox = skybox;
 }
 
-void SceneBuilder::AddCamera(Camera &&camera)
+void SceneBuilder::AddCamera(CameraInfo &&camera)
 {
-    m_Cameras.push_back(std::move(camera));
+    m_CameraInfos.push_back(camera);
 }
 
 std::shared_ptr<Scene> SceneBuilder::CreateSceneShared(std::string name)
 {
-    m_ModelInstances.reserve(m_ModelInstanceInfos.size());
+    std::vector<ModelInstance> modelInstances;
+    modelInstances.reserve(m_ModelInstanceInfos.size());
     for (const auto &info : m_ModelInstanceInfos)
-        m_ModelInstances.emplace_back(info.first, info.second, m_SceneNodes[info.second].Transform);
+        modelInstances.emplace_back(info.first, info.second, m_SceneNodes[info.second].Transform);
 
     if (m_Lights.empty())
-        m_Lights.push_back(s_DefaultLight);
+        m_Lights.push_back(g_DefaultLight);
 
     auto scene = std::make_shared<Scene>(
         std::move(name), std::move(m_Vertices), std::move(m_Indices), std::move(m_Transforms),
         std::move(m_Geometries), std::move(m_Materials), std::move(m_Textures), std::move(m_Models),
-        std::move(m_ModelInstances), SceneGraph(std::move(m_SceneNodes), std::move(m_Animations)),
-        std::move(m_Lights), std::move(m_Skybox), std::move(m_Cameras)
+        std::move(modelInstances), SceneGraph(std::move(m_SceneNodes), std::move(m_Animations)),
+        std::move(m_LightInfos), std::move(m_Lights), std::move(m_Skybox), m_CameraInfos
     );
 
     m_Vertices.clear();
@@ -179,14 +195,13 @@ std::shared_ptr<Scene> SceneBuilder::CreateSceneShared(std::string name)
     m_Textures.clear();
     m_TextureIndices.clear();
     m_Models.clear();
-    m_ModelInstances.clear();
     m_ModelInstanceInfos.clear();
     m_SceneNodes.clear();
     m_Animations.clear();
     m_Lights.clear();
+    m_LightInfos.clear();
     m_Skybox = SkyboxClearColor {};
-    m_Cameras.clear();
-    m_Cameras.push_back(Camera(45.0f, 100.0f, 0.1f));
+    m_CameraInfos.clear();
 
     return scene;
 }
@@ -246,24 +261,32 @@ const SkyboxVariant &Scene::GetSkybox() const
     return m_Skybox;
 }
 
-uint32_t Scene::GetCameraCount() const
+uint32_t Scene::GetSceneCamerasCount() const
 {
-    return m_Cameras.size();
+    return m_SceneCameras.size();
 }
 
-uint32_t Scene::GetActiveCameraIndex() const
+CameraId Scene::GetActiveCameraId() const
 {
-    return m_ActiveCameraIndex;
-}
-
-void Scene::SetActiveCameraIndex(uint32_t index)
-{
-    m_ActiveCameraIndex = index;
+    return m_ActiveCameraId;
 }
 
 Camera &Scene::GetActiveCamera()
 {
-    return m_Cameras[m_ActiveCameraIndex];
+    if (m_ActiveCameraId == g_InputCameraId)
+        return m_InputCamera;
+    return m_SceneCameras[m_ActiveCameraId];
+}
+
+void Scene::SetActiveCamera(CameraId id)
+{
+    Camera *camera = &m_InputCamera;
+    if (id != g_InputCameraId)
+        camera = &m_SceneCameras[id];
+
+    auto [width, height] = GetActiveCamera().GetExtent();
+    camera->OnResize(width, height);
+    m_ActiveCameraId = id;
 }
 
 }

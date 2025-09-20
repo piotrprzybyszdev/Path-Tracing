@@ -73,7 +73,7 @@ void Buffer::Upload(BufferContent content, vk::DeviceSize offset) const
 
 void Buffer::UploadStaging(vk::CommandBuffer commandBuffer, const Buffer &staging) const
 {
-    UploadStaging(commandBuffer, staging, staging.GetSize());
+    UploadStaging(commandBuffer, staging, m_Size);
 }
 
 void Buffer::UploadStaging(vk::CommandBuffer commandBuffer, const Buffer &staging, vk::DeviceSize size) const

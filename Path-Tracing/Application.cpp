@@ -259,13 +259,6 @@ void Application::Run()
                     }
                 }
 
-                if (SceneManager::GetActiveScene()->GetActiveCameraIndex() != UserInterface::GetCameraIndex())
-                {
-                    SceneManager::GetActiveScene()->SetActiveCameraIndex(UserInterface::GetCameraIndex());
-                    SceneManager::GetActiveScene()->GetActiveCamera().OnResize(
-                        windowSize.width, windowSize.height
-                    );
-                }
                 SceneManager::GetActiveScene()->Update(timeStep);
                 Renderer::s_EnabledTextures = UserInterface::GetEnabledTextures();
                 Renderer::s_RenderMode = UserInterface::GetRenderMode();

@@ -364,7 +364,7 @@ void LoadAnimations(
         const aiAnimation *animation = scene->mAnimations[i];
         Animation outAnimation = {
             .TickPerSecond = static_cast<float>(animation->mTicksPerSecond),
-            .TickDuration = static_cast<float>(animation->mDuration),
+            .Duration = static_cast<float>(animation->mDuration),
         };
 
         for (int j = 0; j < animation->mNumChannels; j++)
@@ -445,7 +445,10 @@ void LoadAnimations(
     }
 }
 
-void LoadLights(SceneBuilder &sceneBuilder, const aiScene *scene)
+void LoadLights(
+    SceneBuilder &sceneBuilder, const aiScene *scene,
+    const std::unordered_map<const aiNode *, uint32_t> &sceneNodeIndices
+)
 {
     for (int i = 0; i < scene->mNumLights; i++)
     {
@@ -463,56 +466,50 @@ void LoadLights(SceneBuilder &sceneBuilder, const aiScene *scene)
             light->mAttenuationQuadratic
         );
 
-        aiNode *rootNode = scene->mRootNode;
-        aiNode *cameraNode = rootNode->FindNode(light->mName);
-        aiMatrix4x4 cameraTransformationMatrix = cameraNode->mTransformation;
-        aiQuaternion rotation;
-        aiVector3D position;
-        cameraTransformationMatrix.DecomposeNoScaling(rotation, position);
+        const aiNode *node = scene->mRootNode->FindNode(light->mName);
+        const uint32_t nodeIndex = sceneNodeIndices.at(node);
 
-        sceneBuilder.AddLight({
-            .Color = light->mColorDiffuse.IsBlack()
-                         ? glm::vec3(1.0f)
-                         : TrivialCopyUnsafe<aiColor3D, glm::vec3>(light->mColorDiffuse),
-            .Position = TrivialCopy<aiVector3D, glm::vec3>(position),
-            .AttenuationConstant = light->mAttenuationConstant,
-            .AttenuationLinear = light->mAttenuationLinear,
-            .AttenuationQuadratic = light->mAttenuationQuadratic,
-        });
+        sceneBuilder.AddLight(
+            {
+                .Color = light->mColorDiffuse.IsBlack()
+                             ? glm::vec3(1.0f)
+                             : TrivialCopyUnsafe<aiColor3D, glm::vec3>(light->mColorDiffuse),
+                .Position = TrivialCopy<aiVector3D, glm::vec3>(light->mPosition),
+                .AttenuationConstant = light->mAttenuationConstant,
+                .AttenuationLinear = light->mAttenuationLinear,
+                .AttenuationQuadratic = light->mAttenuationQuadratic,
+            },
+            nodeIndex
+        );
     }
 }
 
-void LoadCameras(SceneBuilder &sceneBuilder, const aiScene *scene)
+void LoadCameras(
+    SceneBuilder &sceneBuilder, const aiScene *scene,
+    const std::unordered_map<const aiNode *, uint32_t> &sceneNodeIndices
+)
 {
     for (int i = 0; i < scene->mNumCameras; i++)
     {
         const aiCamera *camera = scene->mCameras[i];
 
-        // find the transformation matrix corresponding to the camera node
-        aiNode *rootNode = scene->mRootNode;
-        aiNode *cameraNode = rootNode->FindNode(camera->mName);
-        aiMatrix4x4 cameraTransformationMatrix = cameraNode->mTransformation;
-        aiQuaternion rotation;
-        aiVector3D position;
-        cameraTransformationMatrix.DecomposeNoScaling(rotation, position);
+        const aiNode *node = scene->mRootNode->FindNode(camera->mName);
+        const uint32_t nodeIndex = sceneNodeIndices.at(node);
 
-        glm::quat rotation2 = { rotation.w, rotation.x, rotation.y, rotation.z };
-        float yaw = glm::degrees(glm::yaw(rotation2));
-        float pitch = glm::degrees(glm::pitch(rotation2));
+        const float aspect = camera->mAspect == 0.0f ? 16.0f / 9.0f : camera->mAspect;
+        const float verticalFov = 2.0f * glm::atan(glm::tan(camera->mHorizontalFOV / 2.0f) / aspect);
+        glm::vec3 up = TrivialCopy<aiVector3D, glm::vec3>(camera->mUp);
+        up.y *= -1;
 
-        glm::vec3 position2 = TrivialCopyUnsafe<aiVector3D, glm::vec3>(position);
-
-        Camera sceneCamera(
-            glm::degrees(camera->mHorizontalFOV), camera->mClipPlaneNear, camera->mClipPlaneFar,
-            std::move(position2), yaw, pitch
-        );
-
-        logger::info(
-            "Camera {} Position ({}, {}, {})", camera->mName.C_Str(), position2.x, position2.y, position2.z
-        );
-        logger::info("Camera {} Yaw ({}) Pitch ({})", camera->mName.C_Str(), yaw, pitch);
-
-        sceneBuilder.AddCamera(std::move(sceneCamera));
+        sceneBuilder.AddCamera(CameraInfo {
+            .VerticalFOV = glm::degrees(verticalFov),
+            .NearClip = camera->mClipPlaneNear,
+            .FarClip = camera->mClipPlaneFar,
+            .Position = TrivialCopy<aiVector3D, glm::vec3>(camera->mPosition),
+            .Direction = TrivialCopy<aiVector3D, glm::vec3>(camera->mLookAt),
+            .UpDirection = up,
+            .SceneNodeIndex = nodeIndex,
+        });
     }
 }
 
@@ -558,8 +555,8 @@ std::shared_ptr<Scene> AssetImporter::LoadScene(const std::string &name, const s
 
     LoadAnimations(sceneBuilder, scene, sceneNodeIndices);
     
-    LoadLights(sceneBuilder, scene);
-    LoadCameras(sceneBuilder, scene);
+    LoadLights(sceneBuilder, scene, sceneNodeIndices);
+    LoadCameras(sceneBuilder, scene, sceneNodeIndices);
 
     return sceneBuilder.CreateSceneShared(name);
 }

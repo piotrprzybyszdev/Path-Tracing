@@ -50,6 +50,8 @@ const uint ClosestHitFlagsNone              = 0x0u;
 const uint ClosestHitFlagsDisableMipMaps    = 0x1u;
 const uint ClosestHitFlagsAll               = 0x1u;
 
+const uint MaxLightCount                    = 64u;
+
 struct Camera
 {
     mat4 ViewInverse;

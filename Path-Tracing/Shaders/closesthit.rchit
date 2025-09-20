@@ -24,8 +24,8 @@ layout(binding = 7, set = 0) readonly buffer MaterialBuffer {
 	Material[] materials;
 };
 
-layout(binding = 8, set = 0) readonly buffer LightsBuffer {
-	Light[] lights;
+layout(binding = 8, set = 0) uniform LightsBuffer {
+	Light[MaxLightCount] lights;
 };
 
 layout(shaderRecordEXT, std430) buffer SBT {
@@ -55,14 +55,13 @@ vec3 computeLightContribution(Light light, vec3 position, vec3 V, vec3 N, mat3 T
 
 	const vec3 R = 2.0f * dot(L, N) * N - L;
 
-	const float ambient = 0.1f;
 	const float diffuse = 1.0f * max(dot(L, N), 0.0f);
 	const float specular = 1.0f * max(pow(dot(R, V), 50.0f), 0.0f);
 
 	const float dist = length(lightDir);
 	const float attenuation = 1.0f / (light.AttenuationConstant + dist * light.AttenuationLinear + dist * dist * light.AttenuationQuadratic);
 
-	return ambient * color + (diffuse + specular) * light.Color * color * attenuation;
+	return (diffuse + specular) * light.Color * color * attenuation;
 }
 
 void main()
@@ -89,7 +88,8 @@ void main()
 	const mat3 TBN = mat3(vertex.Tangent, vertex.Bitangent, vertex.Normal);
 	const vec3 N = normalize(vertex.Normal + TBN * (2.0f * normal - 1.0f));
 
-	vec3 totalLight = vec3(0.0f);
+	const float ambient = 0.1f;
+	vec3 totalLight = ambient * color;
 	for (uint lightIndex = 0; lightIndex < mainUniform.u_LightCount; lightIndex++)
 	{
 		const vec3 lightContribution = computeLightContribution(lights[lightIndex], vertex.Position, V, N, TBN, color, roughness, metalness);

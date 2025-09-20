@@ -70,7 +70,7 @@ struct Animation
 {
     std::vector<AnimationNode> Nodes;
     const float TickPerSecond;
-    const float TickDuration;
+    const float Duration;
     float CurrentTick = 0;
 
     void Update(float timeStep, std::span<SceneNode> nodes);

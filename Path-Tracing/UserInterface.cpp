@@ -19,7 +19,6 @@ namespace PathTracing
 bool UserInterface::s_IsVisible = false;
 bool UserInterface::s_IsFocused = false;
 ImGuiIO *UserInterface::s_Io = nullptr;
-int UserInterface::s_CameraIndex = 0;
 float UserInterface::s_Exposure = 0.0f;
 
 namespace
@@ -139,11 +138,6 @@ const char *UserInterface::SceneChange()
     return ret;
 }
 
-int UserInterface::GetCameraIndex()
-{
-    return s_CameraIndex;
-}
-
 float UserInterface::GetExposure()
 {
     return std::pow(2.0f, s_Exposure);
@@ -247,7 +241,19 @@ void UserInterface::DefineUI()
             s_SceneChange = scene.c_str();
     ImGui::EndListBox();
     
-    ImGui::InputInt("Camera Index:", &s_CameraIndex);
+    auto scene = SceneManager::GetActiveScene();
+
+    ImGui::Text("Cameras");
+    if (ImGui::RadioButton("Input Camera", scene->GetActiveCameraId() == Scene::g_InputCameraId))
+        scene->SetActiveCamera(Scene::g_InputCameraId);
+
+    for (int i = 0; i < scene->GetSceneCamerasCount(); i++)
+    {
+        ImGui::PushID(i);
+        if (ImGui::RadioButton(std::format("Scene Camera {}", i).c_str(), scene->GetActiveCameraId() == i))
+            scene->SetActiveCamera(i);
+        ImGui::PopID();
+    }
 
     ImGui::SliderFloat("Exposure:", &s_Exposure, -10.0f, 10.0f, "%.2f");
     
