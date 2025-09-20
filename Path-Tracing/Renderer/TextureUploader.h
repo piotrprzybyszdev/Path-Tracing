@@ -69,7 +69,7 @@ private:
     static inline constexpr vk::Extent2D MaxTextureDataSize = { 4096u, 4096u };
     static inline constexpr size_t StagingBufferSize =
         4ull * MaxTextureDataSize.width * MaxTextureDataSize.height;
-    static inline constexpr vk::Format IntermediateTextureFormat = vk::Format::eR8G8B8A8Unorm;
+    static inline constexpr vk::Format IntermediateTextureFormat = vk::Format::eR8G8B8A8Srgb;
 
 private:
     void StartLoaderThreads(const Scene &scene);

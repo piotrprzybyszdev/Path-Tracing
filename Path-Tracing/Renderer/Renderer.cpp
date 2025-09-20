@@ -526,12 +526,18 @@ void Renderer::RecordCommandBuffer(const RenderingResources &resources)
 
         vk::ImageSubresourceLayers subresource(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
         vk::Offset3D offset(0, 0, 0);
-        vk::ImageCopy copy(subresource, offset, subresource, offset, vk::Extent3D(extent, 1));
 
-        commandBuffer.copyImage(
-            resources.StorageImage.GetHandle(), vk::ImageLayout::eTransferSrcOptimal, image,
-            vk::ImageLayout::eTransferDstOptimal, { copy }
+        vk::ImageBlit2 imageBlit(
+            subresource, { offset, vk::Offset3D(extent.width, extent.height, 1) }, subresource,
+            { offset, vk::Offset3D(extent.width, extent.height, 1) }
         );
+
+        vk::BlitImageInfo2 blitInfo(
+            resources.StorageImage.GetHandle(), vk::ImageLayout::eTransferSrcOptimal, image,
+            vk::ImageLayout::eTransferDstOptimal, imageBlit, vk::Filter::eLinear
+        );
+
+        commandBuffer.blitImage2(blitInfo);
 
         Image::Transition(
             commandBuffer, image, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eAttachmentOptimal

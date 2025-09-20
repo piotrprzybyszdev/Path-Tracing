@@ -27,7 +27,7 @@ void CreateScenes()
     // CreateSponzaScene();
     // CreateChessGameScene();
     // CreateVirtualCity();
-    // CreateLampLightScene();
+    CreateLampLightScene();
     CreateBigSponzaScene();
 }
 

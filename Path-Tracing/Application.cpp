@@ -150,7 +150,7 @@ void Application::Init()
     s_State = State::HasDevice;
 
     s_Swapchain = std::make_unique<Swapchain>(
-        s_Surface, vk::SurfaceFormatKHR(vk::Format::eR8G8B8A8Unorm, vk::ColorSpaceKHR::eSrgbNonlinear),
+        s_Surface, vk::SurfaceFormatKHR(vk::Format::eR8G8B8A8Srgb, vk::ColorSpaceKHR::eSrgbNonlinear),
         UserInterface::GetPresentMode(), windowSize
     );
     s_State = State::HasSwapchain;
@@ -202,7 +202,7 @@ void Application::Run()
     float lastFrameTime = 0.0f;
     vk::Extent2D previousSize = {};
 
-    auto scene = AssetManager::GetScene("BigSponza");
+    auto scene = AssetManager::GetScene("Lamp");
 
     auto cameras = scene.GetCameras();
 

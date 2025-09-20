@@ -333,6 +333,8 @@ bool TextureUploader::CheckCanUpload(const TextureInfo &info)
 vk::Format TextureUploader::SelectTextureFormat(TextureType type)
 {
     // TODO: Select format depending on TextureType
+    if (type == TextureType::Color)
+        return vk::Format::eR8G8B8A8Srgb;
     return vk::Format::eR8G8B8A8Unorm;
 }
 
