@@ -47,22 +47,81 @@ Vertex transform(Vertex vertex, uint transformIndex)
     return vertex;
 }
 
-vec3 computeLightContribution(Light light, vec3 position, vec3 V, vec3 N, mat3 TBN, vec3 color, vec3 normal, vec3 roughness, vec3 metalness)
+float DistributionGGX(vec3 N, vec3 H, float roughness)
+{
+    float a = roughness * roughness;
+    float a2 = a * a;
+    float NdotH = max(dot(N, H), 0.0);
+    float NdotH2 = NdotH * NdotH;
+
+    float nom = a2;
+    float denom = (NdotH2 * (a2 - 1.0) + 1.0);
+    denom = PI * denom * denom;
+
+    return nom / denom;
+}
+
+float GeometrySchlickGGX(float NdotV, float roughness)
+{
+    float r = (roughness + 1.0);
+    float k = (r * r) / 8.0;
+
+    float nom = NdotV;
+    float denom = NdotV * (1.0 - k) + k;
+
+    return nom / denom;
+}
+
+float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
+{
+    float NdotV = max(dot(N, V), 0.0);
+    float NdotL = max(dot(N, L), 0.0);
+    float ggx2 = GeometrySchlickGGX(NdotV, roughness);
+    float ggx1 = GeometrySchlickGGX(NdotL, roughness);
+
+    return ggx1 * ggx2;
+}
+
+vec3 fresnelSchlick(float cosTheta, vec3 F0)
+{
+    return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
+vec3 computeLightContribution(Light light, vec3 position, vec3 V, vec3 N, mat3 TBN, vec3 color, vec3 normal, float roughness, float metalness)
 {
 	const vec3 lightDir = position - light.Position;
 
 	const vec3 L = -normalize(lightDir);
 
+	const vec3 H = normalize(V + L);
+
 	const vec3 R = 2.0f * dot(L, N) * N - L;
 
-	const float ambient = 0.1f;
-	const float diffuse = 1.0f * max(dot(L, N), 0.0f);
-	const float specular = 1.0f * max(pow(dot(R, V), 50.0f), 0.0f);
-
 	const float dist = length(lightDir);
-	const float attenuation = 1.0f / (dist * dist);
+	const float attenuation = 1.0f / (light.AttenuationConstant + dist * light.AttenuationLinear + dist * dist * light.AttenuationQuadratic);
 
-	return ambient * color + (diffuse + specular) * light.Color * color * attenuation;
+	const vec3 radiance = light.Color * attenuation;
+
+	vec3 F0 = vec3(0.04);	
+    F0 = mix(F0, color, metalness);
+
+    float NDF = DistributionGGX(N, H, roughness);   
+    float G   = GeometrySmith(N, V, L, roughness);      
+    vec3 F    = fresnelSchlick(max(dot(H, V), 0.0), F0);
+           
+    vec3 numerator    = NDF * G * F; 
+    float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.0001; // + 0.0001 to prevent divide by zero
+    vec3 specular = numerator / denominator;
+
+    vec3 kS = F;
+
+    vec3 kD = vec3(1.0) - kS;
+
+    kD *= 1.0 - metalness;
+
+    float NdotL = max(dot(N, L), 0.0);        
+
+    return (kD * color / PI + specular) * radiance * NdotL;
 }
 
 void main()
@@ -81,8 +140,8 @@ void main()
 	const Material material = materials[sbt.MaterialIndex];
 	const vec3 color = textureLod(textures[GetColorTextureIndex(mainUniform.u_EnabledTextures, material)], vertex.TexCoords, lod).xyz;
 	const vec3 normal = textureLod(textures[GetNormalTextureIndex(mainUniform.u_EnabledTextures, material)], vertex.TexCoords, lod).xyz;
-	const vec3 roughness = texture(textures[GetRoughnessTextureIndex(mainUniform.u_EnabledTextures, material)], vertex.TexCoords).xyz;
-	const vec3 metalness = texture(textures[GetMetalicTextureIndex(mainUniform.u_EnabledTextures, material)], vertex.TexCoords).xyz;
+	const float roughness = texture(textures[GetRoughnessTextureIndex(mainUniform.u_EnabledTextures, material)], vertex.TexCoords).y;
+	const float metalness = texture(textures[GetMetalicTextureIndex(mainUniform.u_EnabledTextures, material)], vertex.TexCoords).z;
 
 	const vec3 viewDir = gl_WorldRayDirectionEXT;
 	const vec3 V = -normalize(viewDir);
