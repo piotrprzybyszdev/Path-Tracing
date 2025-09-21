@@ -19,7 +19,7 @@ public:
     AccelerationStructure(
         vk::DeviceAddress vertexBufferAddress, vk::DeviceAddress indexBufferAddress,
         vk::DeviceAddress animatedVertexBufferAddress, vk::DeviceAddress animatedIndexBufferAddress,
-        vk::DeviceAddress transformBufferAddress, std::shared_ptr<const Scene> scene
+        vk::DeviceAddress transformBufferAddress, std::shared_ptr<const Scene> scene, uint32_t hitGroupCount
     );
     ~AccelerationStructure();
 
@@ -39,6 +39,7 @@ private:
     vk::DeviceAddress m_AnimatedIndexBufferAddress;
     vk::DeviceAddress m_TransformBufferAddress;
 
+    const uint32_t m_HitGroupCount;
     std::shared_ptr<const Scene> m_Scene;
 
     Buffer m_InstanceBuffer;

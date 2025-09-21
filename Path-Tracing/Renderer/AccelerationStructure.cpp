@@ -12,17 +12,18 @@ namespace PathTracing
 AccelerationStructure::AccelerationStructure(
     vk::DeviceAddress vertexBufferAddress, vk::DeviceAddress indexBufferAddress,
     vk::DeviceAddress animatedVertexBufferAddress, vk::DeviceAddress animatedIndexBufferAddress,
-    vk::DeviceAddress transformBufferAddress, std::shared_ptr<const Scene> scene
+    vk::DeviceAddress transformBufferAddress, std::shared_ptr<const Scene> scene, uint32_t hitGroupCount
 )
     : m_VertexBufferAddress(vertexBufferAddress), m_IndexBufferAddress(indexBufferAddress),
       m_AnimatedVertexBufferAddress(animatedVertexBufferAddress),
       m_AnimatedIndexBufferAddress(animatedIndexBufferAddress),
       m_TransformBufferAddress(transformBufferAddress), m_Scene(std::move(scene)),
+      m_HitGroupCount(hitGroupCount),
       m_ScratchOffsetAlignment(
           DeviceContext::GetAccelerationStructureProperties().minAccelerationStructureScratchOffsetAlignment
       )
 {
-    Timer timer("Acceleration Structure Update");
+    Timer timer("Acceleration Structure Build");
 
     Renderer::s_MainCommandBuffer->Begin();
     CreateBlases();
@@ -272,8 +273,8 @@ void AccelerationStructure::BuildTlas(
 
         instances.emplace_back(
             TrivialCopy<glm::mat3x4, vk::TransformMatrixKHR>(instance.Transform), customIndex, 0xff,
-            m_Scene->GetModels()[instance.ModelIndex].SbtOffset, vk::GeometryInstanceFlagsKHR(),
-            m_Blases[instance.ModelIndex].Address
+            m_Scene->GetModels()[instance.ModelIndex].MeshOffset * m_HitGroupCount,
+            vk::GeometryInstanceFlagsKHR(), m_Blases[instance.ModelIndex].Address
         );
     }
 

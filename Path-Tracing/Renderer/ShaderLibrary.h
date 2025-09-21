@@ -90,15 +90,14 @@ public:
     ShaderLibrary &operator=(const ShaderLibrary &) = delete;
 
     ShaderId AddShader(std::filesystem::path path, vk::ShaderStageFlagBits stage);
-    void AddGeneralGroup(uint32_t groupIndex, ShaderId shaderId);
-    void AddHitGroup(uint32_t groupIndex, ShaderId closestHitId, ShaderId anyHitId);
+    uint32_t AddGeneralGroup(ShaderId shaderId);
+    uint32_t AddHitGroup(ShaderId closestHitId, ShaderId anyHitId);
 
     vk::Pipeline CreateRaytracingPipeline(vk::PipelineLayout layout);
     vk::Pipeline CreateComputePipeline(vk::PipelineLayout layout, ShaderId shaderId);
 
-    static inline constexpr uint32_t RaygenGroupIndex = 0;
-    static inline constexpr uint32_t MissGroupIndex = 1;
-    static inline constexpr uint32_t HitGroupIndex = 2;
+public:
+    static inline constexpr ShaderId g_UnusedShaderId = vk::ShaderUnusedKHR;
 
 private:
     shaderc::Compiler m_Compiler;
@@ -109,9 +108,6 @@ private:
     std::vector<vk::RayTracingShaderGroupCreateInfoKHR> m_Groups;
 
     std::set<ShaderId> m_RaytracingShaderIds;
-
-private:
-    void ResizeGroups(uint32_t size);
 };
 
 }

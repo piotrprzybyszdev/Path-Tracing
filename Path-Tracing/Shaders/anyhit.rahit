@@ -47,6 +47,6 @@ void main()
 	const Material material = materials[sbt.MaterialIndex];
 	const float alpha = texture(textures[GetColorTextureIndex(mainUniform.u_EnabledTextures, material)], vertex.TexCoords).a;
 
-	if (alpha == 0.0f)
+	if (alpha < 0.9f)
 		ignoreIntersectionEXT;
 }

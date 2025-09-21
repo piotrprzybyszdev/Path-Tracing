@@ -63,7 +63,7 @@ struct Mesh
 struct Model
 {
     std::vector<Mesh> Meshes;
-    uint32_t SbtOffset;
+    uint32_t MeshOffset;
 };
 
 struct ModelInstance
@@ -278,7 +278,7 @@ private:
     };
 
 private:
-    uint32_t m_SbtOffset = 0;
+    uint32_t m_MeshOffset = 0;
 
     Model CreateModel(std::span<const MeshInfo> meshInfos);
 };

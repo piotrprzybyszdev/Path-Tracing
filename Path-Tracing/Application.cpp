@@ -204,7 +204,7 @@ void Application::Run()
     float lastFrameTime = 0.0f;
     vk::Extent2D previousSize = {};
 
-    SceneManager::SetActiveScene("Brain Stem");
+    SceneManager::SetActiveScene("Sponza");
     Renderer::UpdateSceneData();
 
     while (!Window::ShouldClose())

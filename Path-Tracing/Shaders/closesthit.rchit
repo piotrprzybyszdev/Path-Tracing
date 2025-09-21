@@ -6,6 +6,8 @@
 #include "ShaderRendererTypes.incl"
 #include "common.glsl"
 
+layout(binding = 0, set = 0) uniform accelerationStructureEXT u_TopLevelAS;
+
 layout(binding = 3, set = 0) uniform MainBlock {
 	ClosestHitUniformData mainUniform;
 };
@@ -33,6 +35,7 @@ layout(shaderRecordEXT, std430) buffer SBT {
 };
 
 layout(location = 0) rayPayloadInEXT vec3 hitValue;
+layout(location = 1) rayPayloadEXT bool isOccluded;
 hitAttributeEXT vec3 attribs;
 
 Vertex transform(Vertex vertex, uint transformIndex)
@@ -87,8 +90,28 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0)
     return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 
-vec3 computeLightContribution(Light light, vec3 position, vec3 V, vec3 N, mat3 TBN, vec3 color, vec3 normal, float roughness, float metalness)
+bool checkOccluded(Light light, vec3 position)
 {
+	if ((mainUniform.u_Flags & ClosestHitFlagsDisableShadows) != ClosestHitFlagsNone)
+		return false;
+
+	vec3 direction = normalize(light.Position - position);
+
+	float tmin = 0.001;
+	float tmax = length(direction);
+
+	isOccluded = true;
+
+	traceRayEXT(u_TopLevelAS, gl_RayFlagsNoneEXT, 0xff, 1, 2, 1, position, tmin, direction, tmax, 1);
+
+	return isOccluded;
+}
+
+vec3 computeLightContribution(Light light, vec3 position, vec3 V, vec3 N, mat3 TBN, vec3 color, float roughness, float metalness)
+{
+	if (checkOccluded(light, position))
+		return vec3(0.0f);
+
 	const vec3 lightDir = position - light.Position;
 
 	const vec3 L = -normalize(lightDir);
@@ -148,10 +171,11 @@ void main()
 	const mat3 TBN = mat3(vertex.Tangent, vertex.Bitangent, vertex.Normal);
 	const vec3 N = normalize(vertex.Normal + TBN * (2.0f * normal - 1.0f));
 
-	vec3 totalLight = vec3(0.0f);
+	const float ambient = 0.05f;
+	vec3 totalLight = color * ambient;
 	for (uint lightIndex = 0; lightIndex < mainUniform.u_LightCount; lightIndex++)
 	{
-		const vec3 lightContribution = computeLightContribution(lights[lightIndex], vertex.Position, V, N, TBN, color, normal, roughness, metalness);
+		const vec3 lightContribution = computeLightContribution(lights[lightIndex], vertex.Position, V, N, TBN, color, roughness, metalness);
 		totalLight += lightContribution;
 	}
 

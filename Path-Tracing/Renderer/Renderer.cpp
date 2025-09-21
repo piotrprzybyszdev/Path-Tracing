@@ -33,6 +33,13 @@ float Renderer::s_Exposure = 1.0f;
 
 const Swapchain *Renderer::s_Swapchain = nullptr;
 
+uint32_t Renderer::s_RaygenGroupIndex = 0;
+uint32_t Renderer::s_PrimaryRayMissIndex = 0;
+uint32_t Renderer::s_OcclusionRayMissIndex = 0;
+uint32_t Renderer::s_PrimaryRayHitIndex = 0;
+uint32_t Renderer::s_OcclusionRayHitIndex = 0;
+uint32_t Renderer::s_HitGroupCount = 2;
+
 std::vector<Renderer::RenderingResources> Renderer::s_RenderingResources = {};
 
 std::unique_ptr<CommandBuffer> Renderer::s_MainCommandBuffer = nullptr;
@@ -97,12 +104,16 @@ void Renderer::Init(const Swapchain *swapchain)
             s_ShaderLibrary->AddShader("Shaders/closesthit.rchit", vk::ShaderStageFlagBits::eClosestHitKHR);
         const ShaderId anyHitId =
             s_ShaderLibrary->AddShader("Shaders/anyhit.rahit", vk::ShaderStageFlagBits::eAnyHitKHR);
+        const ShaderId occlusionMissId =
+            s_ShaderLibrary->AddShader("Shaders/occlusion.rmiss", vk::ShaderStageFlagBits::eMissKHR);
         s_SkinningShaderId =
             s_ShaderLibrary->AddShader("Shaders/skinning.comp", vk::ShaderStageFlagBits::eCompute);
 
-        s_ShaderLibrary->AddGeneralGroup(ShaderBindingTable::RaygenGroupIndex, raygenId);
-        s_ShaderLibrary->AddGeneralGroup(ShaderBindingTable::MissGroupIndex, missId);
-        s_ShaderLibrary->AddHitGroup(ShaderBindingTable::HitGroupIndex, closestHitId, anyHitId);
+        s_RaygenGroupIndex = s_ShaderLibrary->AddGeneralGroup(raygenId);
+        s_PrimaryRayMissIndex = s_ShaderLibrary->AddGeneralGroup(missId);
+        s_OcclusionRayMissIndex = s_ShaderLibrary->AddGeneralGroup(occlusionMissId);
+        s_PrimaryRayHitIndex = s_ShaderLibrary->AddHitGroup(closestHitId, anyHitId);
+        s_OcclusionRayHitIndex = s_ShaderLibrary->AddHitGroup(ShaderLibrary::g_UnusedShaderId, anyHitId);
     }
 
     {
@@ -274,11 +285,17 @@ void Renderer::UpdateSceneData()
     }
 
     auto models = s_SceneData->Scene->GetModels();
-    s_SceneData->SceneShaderBindingTable = std::make_unique<ShaderBindingTable>();
+    s_SceneData->SceneShaderBindingTable = std::make_unique<ShaderBindingTable>(
+        s_RaygenGroupIndex, std::vector<uint32_t> { s_PrimaryRayMissIndex, s_OcclusionRayMissIndex },
+        std::vector<uint32_t> { s_PrimaryRayHitIndex, s_OcclusionRayHitIndex }
+    );
     for (const auto &model : models)
         for (const auto &mesh : model.Meshes)
-            s_SceneData->SceneShaderBindingTable->AddRecord({ mesh.GeometryIndex, mesh.MaterialIndex,
-                                                              mesh.TransformBufferOffset });
+        {
+            const Shaders::SBTBuffer data(mesh.GeometryIndex, mesh.MaterialIndex, mesh.TransformBufferOffset);
+            std::array<Shaders::SBTBuffer, 2> buffers = { { data, data } };
+            s_SceneData->SceneShaderBindingTable->AddRecord(buffers);
+        }
 
     const auto &skybox = s_SceneData->Scene->GetSkybox();
     s_MissFlags &= ~(Shaders::MissFlagsSkybox2D | Shaders::MissFlagsSkyboxCube);
@@ -358,7 +375,7 @@ bool Renderer::SetupPipeline()
 
     s_DescriptorSetBuilder
         ->SetDescriptor({ 0, vk::DescriptorType::eAccelerationStructureKHR, 1,
-                          vk::ShaderStageFlagBits::eRaygenKHR })
+                          vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR })
         .SetDescriptor({ 1, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eRaygenKHR })
         .SetDescriptor({ 2, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eRaygenKHR })
         .SetDescriptor({ 3, vk::DescriptorType::eUniformBuffer, 1,
@@ -622,7 +639,7 @@ void Renderer::CreateAccelerationStructure(RenderingResources &resources)
     resources.SceneAccelerationStructure = std::make_unique<AccelerationStructure>(
         getAddress(s_SceneData->VertexBuffer), getAddress(s_SceneData->IndexBuffer),
         getAddress(resources.OutAnimatedVertexBuffer), getAddress(s_SceneData->AnimatedIndexBuffer),
-        getAddress(s_SceneData->TransformBuffer), s_SceneData->Scene
+        getAddress(s_SceneData->TransformBuffer), s_SceneData->Scene, s_HitGroupCount
     );
 }
 

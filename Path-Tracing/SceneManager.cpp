@@ -35,7 +35,7 @@ void SceneManager::SetActiveScene(std::string sceneName)
     if (s_ActiveScene != nullptr && s_ActiveScene->GetName() == sceneName)
         return;
 
-    s_ActiveScene = std::move(s_Scenes.at(sceneName))();
+    s_ActiveScene = std::move(s_Scenes.at(sceneName)());
 }
 
 std::shared_ptr<Scene> SceneManager::GetActiveScene()

@@ -52,7 +52,8 @@ const uint MissFlagsAll                     = 0x3u;
 
 const uint ClosestHitFlagsNone              = 0x0u;
 const uint ClosestHitFlagsDisableMipMaps    = 0x1u;
-const uint ClosestHitFlagsAll               = 0x1u;
+const uint ClosestHitFlagsDisableShadows    = 0x2u;
+const uint ClosestHitFlagsAll               = 0x3u;
 
 const uint MaxLightCount                    = 64u;
 const uint MaxBonesPerVertex                = 4u;

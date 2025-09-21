@@ -236,6 +236,10 @@ void UserInterface::DefineUI()
     if (ImGui::Checkbox("Disable Mip Maps", &disableMipMaps))
         s_ClosestHitFlags ^= Shaders::ClosestHitFlagsDisableMipMaps;
 
+    static bool disableShadows;
+    if (ImGui::Checkbox("Disable Shadows", &disableShadows))
+        s_ClosestHitFlags ^= Shaders::ClosestHitFlagsDisableShadows;
+
     if (ImGui::BeginListBox("Scene"))
     {
         for (auto &scene : SceneManager::GetSceneNames())

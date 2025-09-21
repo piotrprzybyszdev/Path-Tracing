@@ -53,6 +53,13 @@ public:
 private:
     static const Swapchain *s_Swapchain;
 
+    static uint32_t s_RaygenGroupIndex;
+    static uint32_t s_PrimaryRayMissIndex;
+    static uint32_t s_OcclusionRayMissIndex;
+    static uint32_t s_PrimaryRayHitIndex;
+    static uint32_t s_OcclusionRayHitIndex;
+    static uint32_t s_HitGroupCount;
+
     struct RenderingResources
     {
         vk::CommandPool CommandPool;

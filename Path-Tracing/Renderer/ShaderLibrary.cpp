@@ -238,26 +238,26 @@ ShaderId ShaderLibrary::AddShader(std::filesystem::path path, vk::ShaderStageFla
     return m_Shaders.size() - 1;
 }
 
-void ShaderLibrary::ResizeGroups(uint32_t size)
+uint32_t ShaderLibrary::AddGeneralGroup(ShaderId shaderId)
 {
-    if (m_Groups.size() < size)
-        m_Groups.resize(size);
-}
-
-void ShaderLibrary::AddGeneralGroup(uint32_t groupIndex, ShaderId shaderId)
-{
-    ResizeGroups(groupIndex + 1);
+    assert(shaderId != g_UnusedShaderId);
     m_RaytracingShaderIds.insert(shaderId);
-    m_Groups[groupIndex] = { vk::RayTracingShaderGroupTypeKHR::eGeneral, static_cast<uint32_t>(shaderId) };
+    m_Groups.emplace_back(vk::RayTracingShaderGroupTypeKHR::eGeneral, static_cast<uint32_t>(shaderId));
+    return m_Groups.size() - 1;
 }
 
-void ShaderLibrary::AddHitGroup(uint32_t groupIndex, ShaderId closestHitId, ShaderId anyHitId)
+uint32_t ShaderLibrary::AddHitGroup(ShaderId closestHitId, ShaderId anyHitId)
 {
-    ResizeGroups(groupIndex + 1);
-    m_RaytracingShaderIds.insert(closestHitId);
-    m_RaytracingShaderIds.insert(anyHitId);
-    m_Groups[groupIndex] = { vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup, vk::ShaderUnusedKHR,
-                             static_cast<uint32_t>(closestHitId), static_cast<uint32_t>(anyHitId) };
+    if (closestHitId != g_UnusedShaderId)
+        m_RaytracingShaderIds.insert(closestHitId);
+    if (anyHitId != g_UnusedShaderId)
+        m_RaytracingShaderIds.insert(anyHitId);
+
+    m_Groups.emplace_back(
+        vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup, vk::ShaderUnusedKHR,
+        static_cast<uint32_t>(closestHitId), static_cast<uint32_t>(anyHitId)
+    );
+    return m_Groups.size() - 1;
 }
 
 vk::Pipeline ShaderLibrary::CreateRaytracingPipeline(vk::PipelineLayout layout)
@@ -273,7 +273,8 @@ vk::Pipeline ShaderLibrary::CreateRaytracingPipeline(vk::PipelineLayout layout)
         shaderStages.push_back(createInfo);
     }
 
-    vk::RayTracingPipelineCreateInfoKHR createInfo(vk::PipelineCreateFlags(), shaderStages, m_Groups, 1);
+    assert(DeviceContext::GetRayTracingPipelineProperties().maxRayRecursionDepth >= 2);
+    vk::RayTracingPipelineCreateInfoKHR createInfo(vk::PipelineCreateFlags(), shaderStages, m_Groups, 2);
     createInfo.setLayout(layout);
 
     vk::ResultValue<vk::Pipeline> result = DeviceContext::GetLogical().createRayTracingPipelineKHR(

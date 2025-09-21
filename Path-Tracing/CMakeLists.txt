@@ -1,15 +1,26 @@
 find_package(Vulkan REQUIRED COMPONENTS shaderc_combined)
 
+function (create_directory_link SRC DST)
+    get_filename_component(DST_PATH ${DST} ABSOLUTE)
+    if (IS_DIRECTORY ${DST_PATH})
+        return()
+    endif()
+
+    # Creating a symlink on Windows requires administrative permissions - create junction link instead
+    if (WIN32)
+        file(TO_NATIVE_PATH ${SRC} WIN_SRC_ASSET)
+        file(TO_NATIVE_PATH ${DST} WIN_DST_ASSET)
+        execute_process(COMMAND cmd.exe /c mklink /J ${WIN_DST_ASSET} ${WIN_SRC_ASSET})
+    else()
+        file(CREATE_LINK ${SRC} ${DST} SYMBOLIC)
+    endif()
+endfunction()
+
 set(SHADER_HEADER_FILES Shaders/ShaderTypes.incl Shaders/ShaderRendererTypes.incl Shaders/common.glsl)
-set(SHADER_SOURCE_FILES Shaders/raygen.rgen Shaders/miss.rmiss Shaders/closesthit.rchit Shaders/anyhit.rahit Shaders/skinning.comp)
+set(SHADER_SOURCE_FILES Shaders/raygen.rgen Shaders/miss.rmiss Shaders/closesthit.rchit Shaders/anyhit.rahit Shaders/occlusion.rmiss Shaders/skinning.comp)
 set(SHADER_SPV_FILES)
 
-if(NOT ${CMAKE_CURRENT_SOURCE_DIR} PATH_EQUAL ${CMAKE_CURRENT_BINARY_DIR})
-    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/Shaders)
-    foreach (SHADER_FILE IN LISTS SHADER_HEADER_FILES SHADER_SOURCE_FILES)
-        file(CREATE_LINK ${CMAKE_CURRENT_SOURCE_DIR}/${SHADER_FILE} ${CMAKE_CURRENT_BINARY_DIR}/${SHADER_FILE})
-    endforeach()
-endif()
+create_directory_link(${CMAKE_CURRENT_SOURCE_DIR}/Shaders ${CMAKE_CURRENT_BINARY_DIR}/Shaders)
 
 add_executable(Path-Tracing Core/Core.h Core/Core.cpp Core/Input.h Core/Input.cpp Core/Camera.h Core/Camera.cpp Renderer/Utils.h Renderer/DeviceContext.h Renderer/DeviceContext.cpp Renderer/Buffer.h Renderer/Buffer.cpp Renderer/Image.h Renderer/Image.cpp Renderer/DescriptorSet.h Renderer/DescriptorSet.cpp Renderer/AccelerationStructure.h Renderer/AccelerationStructure.cpp Renderer/ShaderBindingTable.h Renderer/ShaderBindingTable.cpp Renderer/ShaderLibrary.h Renderer/ShaderLibrary.cpp Renderer/CommandBuffer.h Renderer/CommandBuffer.cpp Renderer/TextureUploader.h Renderer/TextureUploader.cpp Renderer/Swapchain.h Renderer/Swapchain.cpp Renderer/Renderer.h Renderer/Renderer.cpp AssetImporter.h AssetImporter.cpp SceneGraph.h SceneGraph.cpp Scene.h Scene.cpp SceneManager.h SceneManager.cpp ExampleScenes.h ExampleScenes.cpp UserInterface.h UserInterface.cpp Window.h Window.cpp Application.h Application.cpp main.cpp)
 

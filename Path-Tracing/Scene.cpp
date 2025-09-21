@@ -203,7 +203,7 @@ std::shared_ptr<Scene> SceneBuilder::CreateSceneShared(std::string name)
         std::move(m_LightInfos), std::move(m_Lights), std::move(m_Skybox), m_CameraInfos
     );
 
-    m_SbtOffset = 0;
+    m_MeshOffset = 0;
     m_Vertices.clear();
     m_AnimatedVertices.clear();
     m_Indices.clear();
@@ -229,7 +229,7 @@ std::shared_ptr<Scene> SceneBuilder::CreateSceneShared(std::string name)
 
 Model SceneBuilder::CreateModel(std::span<const MeshInfo> meshInfos)
 {
-    Model model = { {}, m_SbtOffset };
+    Model model = { {}, m_MeshOffset };
     for (const MeshInfo &meshInfo : meshInfos)
     {
         const bool isIdentity = glm::all(glm::equal(meshInfo.Transform, glm::mat3x4(1.0f)));
@@ -243,7 +243,7 @@ Model SceneBuilder::CreateModel(std::span<const MeshInfo> meshInfos)
             m_Transforms.push_back(meshInfo.Transform);
     }
 
-    m_SbtOffset += meshInfos.size();
+    m_MeshOffset += meshInfos.size();
     return model;
 }
 
