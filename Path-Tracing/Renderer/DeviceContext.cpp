@@ -34,6 +34,7 @@ void DeviceContext::Init(vk::Instance instance, vk::SurfaceKHR surface)
         VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
         VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
         VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+        VK_KHR_SWAPCHAIN_MUTABLE_FORMAT_EXTENSION_NAME,
     };
 
     for (const char *extension : deviceExtensions)

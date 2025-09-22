@@ -11,8 +11,8 @@ class Swapchain
 {
 public:
     Swapchain(
-        vk::SurfaceKHR surface, vk::SurfaceFormatKHR surfaceFormat, vk::PresentModeKHR presentMode,
-        vk::Extent2D extent
+        vk::SurfaceKHR surface, vk::SurfaceFormatKHR surfaceFormat, vk::Format linearFormat,
+        vk::PresentModeKHR presentMode, vk::Extent2D extent
     );
     ~Swapchain();
 
@@ -29,7 +29,8 @@ public:
     struct Frame
     {
         vk::Image Image;
-        vk::ImageView ImageView;
+        vk::ImageView LinearImageView;
+        vk::ImageView NonLinearImageView;
     };
 
     struct SynchronizationObjects
@@ -55,6 +56,7 @@ private:
 
     const vk::SurfaceKHR m_Surface;
     const vk::SurfaceFormatKHR m_SurfaceFormat;
+    const vk::Format m_LinearFormat;
     vk::PresentModeKHR m_PresentMode = vk::PresentModeKHR::eFifo;
 
     uint32_t m_ImageCount;

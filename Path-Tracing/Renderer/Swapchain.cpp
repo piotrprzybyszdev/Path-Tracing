@@ -9,10 +9,10 @@ namespace PathTracing
 {
 
 Swapchain::Swapchain(
-    vk::SurfaceKHR surface, vk::SurfaceFormatKHR surfaceFormat, vk::PresentModeKHR presentMode,
-    vk::Extent2D extent
+    vk::SurfaceKHR surface, vk::SurfaceFormatKHR surfaceFormat, vk::Format linearFormat,
+    vk::PresentModeKHR presentMode, vk::Extent2D extent
 )
-    : m_Surface(surface), m_SurfaceFormat(surfaceFormat), m_Extent(extent)
+    : m_Surface(surface), m_SurfaceFormat(surfaceFormat), m_Extent(extent), m_LinearFormat(linearFormat)
 {
     Recreate(presentMode);
 }
@@ -43,7 +43,8 @@ Swapchain::~Swapchain()
 
     for (const Frame &frame : m_Frames)
     {
-        DeviceContext::GetLogical().destroyImageView(frame.ImageView);
+        DeviceContext::GetLogical().destroyImageView(frame.LinearImageView);
+        DeviceContext::GetLogical().destroyImageView(frame.NonLinearImageView);
     }
 
     DeviceContext::GetLogical().destroySwapchainKHR(m_Handle);
@@ -120,20 +121,26 @@ void Swapchain::Recreate(vk::PresentModeKHR presentMode)
 
     auto queueFamilyIndices = DeviceContext::GetQueueFamilyIndices();
 
+    std::array<vk::Format, 2> imageFormats = { m_SurfaceFormat.format, m_LinearFormat };
+    vk::ImageFormatListCreateInfo formatList(imageFormats);
+
     vk::SwapchainCreateInfoKHR createInfo(
-        vk::SwapchainCreateFlagsKHR(), m_Surface, m_ImageCount, m_SurfaceFormat.format,
+        vk::SwapchainCreateFlagBitsKHR::eMutableFormat, m_Surface, m_ImageCount, m_SurfaceFormat.format,
         m_SurfaceFormat.colorSpace, m_Extent, 1,
         vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferDst,
         queueFamilyIndices.size() > 1 ? vk::SharingMode::eConcurrent : vk::SharingMode::eExclusive,
         queueFamilyIndices, surfaceCapabilities.currentTransform, vk::CompositeAlphaFlagBitsKHR::eOpaque,
-        m_PresentMode, vk::True, m_Handle
+        m_PresentMode, vk::True, m_Handle, &formatList
     );
 
     vk::SwapchainKHR oldSwapchainHandle = m_Handle;
     m_Handle = DeviceContext::GetLogical().createSwapchainKHR(createInfo);
 
     for (const Frame &frame : m_Frames)
-        DeviceContext::GetLogical().destroyImageView(frame.ImageView);
+    {
+        DeviceContext::GetLogical().destroyImageView(frame.LinearImageView);
+        DeviceContext::GetLogical().destroyImageView(frame.NonLinearImageView);
+    }
     m_Frames.clear();
 
     for (vk::Image image : DeviceContext::GetLogical().getSwapchainImagesKHR(m_Handle))
@@ -143,7 +150,12 @@ void Swapchain::Recreate(vk::PresentModeKHR presentMode)
             vk::ComponentMapping(), vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1)
         );
 
-        m_Frames.push_back({ image, DeviceContext::GetLogical().createImageView(createInfo) });
+        auto nonLinearImageView = DeviceContext::GetLogical().createImageView(createInfo);
+        
+        createInfo.setFormat(m_LinearFormat);
+        auto linearImageView = DeviceContext::GetLogical().createImageView(createInfo);
+
+        m_Frames.emplace_back(image, linearImageView, nonLinearImageView);
     }
 
     while (m_SynchronizationObjects.size() < m_Frames.size())
@@ -163,7 +175,8 @@ void Swapchain::Recreate(vk::PresentModeKHR presentMode)
     for (int i = 0; i < m_Frames.size(); i++)
     {
         Utils::SetDebugName(m_Frames[i].Image, std::format("Swapchain Image {}", i));
-        Utils::SetDebugName(m_Frames[i].ImageView, std::format("Swapchain ImageView {}", i));
+        Utils::SetDebugName(m_Frames[i].LinearImageView, std::format("Swapchain Linear ImageView {}", i));
+        Utils::SetDebugName(m_Frames[i].NonLinearImageView, std::format("Swapchain NonLinear ImageView {}", i));
     }
 }
 

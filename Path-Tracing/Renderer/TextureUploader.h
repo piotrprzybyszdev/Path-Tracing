@@ -45,9 +45,12 @@ private:
     CommandBuffer m_MipCommandBuffer;
 
     const bool m_UseTransferQueue;
-    const bool m_TextureScalingSupported;
+    const bool m_ColorTextureScalingSupported;
+    const bool m_OtherTextureScalingSupported;
 
-    Image m_TemporaryImage;
+    Image m_TemporaryColorImage;  // for scaling down color textures
+    Image m_TemporaryOtherImage;  // for scaling down other textures
+
     std::jthread m_SubmitThread;
     ImageBuilder m_ImageBuilder;
 
@@ -69,7 +72,8 @@ private:
     static inline constexpr vk::Extent2D MaxTextureDataSize = { 4096u, 4096u };
     static inline constexpr size_t StagingBufferSize =
         4ull * MaxTextureDataSize.width * MaxTextureDataSize.height;
-    static inline constexpr vk::Format IntermediateTextureFormat = vk::Format::eR8G8B8A8Unorm;
+    static inline constexpr vk::Format IntermediateColorTextureFormat = vk::Format::eR8G8B8A8Srgb;
+    static inline constexpr vk::Format IntermediateOtherTextureFormat = vk::Format::eR8G8B8A8Unorm;
 
 private:
     void StartLoaderThreads(const std::shared_ptr<const Scene> &scene);
@@ -91,6 +95,9 @@ private:
     );
 
     bool CheckCanUpload(const TextureInfo &info);
+
+    bool IsScalingSupported(TextureType type) const;
+    const Image &GetTemporaryImage(TextureType type) const;
 
     static vk::Format SelectTextureFormat(TextureType type);
     static bool CheckBlitSupported(vk::Format format);

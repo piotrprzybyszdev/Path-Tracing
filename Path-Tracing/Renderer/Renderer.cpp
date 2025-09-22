@@ -348,6 +348,7 @@ uint32_t Renderer::AddDefaultTexture(glm::u8vec4 value, std::string &&name)
 
 void Renderer::AddSkybox(const Skybox2D &skybox)
 {
+    // TODO: Move to texture uploader and switch to srgb
     // TOOD: HDR
     vk::Format format = vk::Format::eR8G8B8A8Unorm;
     vk::Extent2D extent(skybox.Content.Width, skybox.Content.Height);
@@ -381,7 +382,8 @@ void Renderer::AddSkybox(const SkyboxCube &skybox)
 {
     std::array<const TextureInfo *, 6> textureInfos = { &skybox.Front, &skybox.Back, &skybox.Up,
                                                         &skybox.Down,  &skybox.Left, &skybox.Right };
-
+    
+    // TODO: Move to texture uploader and switch to srgb
     // TOOD: HDR
     vk::Format format = vk::Format::eR8G8B8A8Unorm;
     vk::Extent2D extent(textureInfos[0]->Width, textureInfos[0]->Height);
@@ -481,7 +483,8 @@ void Renderer::RecordCommandBuffer(const RenderingResources &resources)
 {
     vk::CommandBuffer commandBuffer = resources.CommandBuffer;
     vk::Image image = s_Swapchain->GetCurrentFrame().Image;
-    vk::ImageView imageView = s_Swapchain->GetCurrentFrame().ImageView;
+    vk::ImageView linearImageView = s_Swapchain->GetCurrentFrame().LinearImageView;
+    vk::ImageView nonLinearImageView = s_Swapchain->GetCurrentFrame().NonLinearImageView;
     vk::Extent2D extent = s_Swapchain->GetExtent();
 
     commandBuffer.reset();
@@ -511,14 +514,16 @@ void Renderer::RecordCommandBuffer(const RenderingResources &resources)
             commandBuffer, vk::ImageLayout::eGeneral, vk::ImageLayout::eTransferSrcOptimal
         );
 
+        auto area = Image::GetMipLevelArea(extent);
         vk::ImageSubresourceLayers subresource(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
-        vk::Offset3D offset(0, 0, 0);
-        vk::ImageCopy copy(subresource, offset, subresource, offset, vk::Extent3D(extent, 1));
+        vk::ImageBlit2 imageBlit(subresource, area, subresource, area);
 
-        commandBuffer.copyImage(
+        vk::BlitImageInfo2 blitInfo(
             resources.StorageImage.GetHandle(), vk::ImageLayout::eTransferSrcOptimal, image,
-            vk::ImageLayout::eTransferDstOptimal, { copy }
+            vk::ImageLayout::eTransferDstOptimal, imageBlit, vk::Filter::eLinear
         );
+
+        commandBuffer.blitImage2(blitInfo);
 
         Image::Transition(
             commandBuffer, image, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eAttachmentOptimal
@@ -533,7 +538,7 @@ void Renderer::RecordCommandBuffer(const RenderingResources &resources)
         Utils::DebugLabel label(commandBuffer, "UI pass", { 0.24f, 0.34f, 0.93f, 1.0f });
 
         std::array<vk::RenderingAttachmentInfo, 1> colorAttachments = {
-            vk::RenderingAttachmentInfo(imageView, vk::ImageLayout::eAttachmentOptimal)
+            vk::RenderingAttachmentInfo(linearImageView, vk::ImageLayout::eAttachmentOptimal)
         };
 
         commandBuffer.beginRendering(

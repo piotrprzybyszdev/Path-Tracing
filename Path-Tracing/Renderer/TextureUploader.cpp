@@ -25,7 +25,8 @@ TextureUploader::TextureUploader(
       m_FreeBuffersSemaphore(m_StagingBufferCount), m_DataBuffersSemaphore(0),
       m_TransferCommandBuffer(DeviceContext::GetTransferQueue()),
       m_MipCommandBuffer(DeviceContext::GetMipQueue()), m_UseTransferQueue(DeviceContext::HasTransferQueue()),
-      m_TextureScalingSupported(CheckBlitSupported(IntermediateTextureFormat))
+      m_ColorTextureScalingSupported(CheckBlitSupported(IntermediateColorTextureFormat)),
+      m_OtherTextureScalingSupported(CheckBlitSupported(IntermediateOtherTextureFormat))
 {
     if (!DeviceContext::HasMipQueue())
         logger::warn("Secondary graphics queue wasn't found - Texture loading will be asynchronous, but it "
@@ -34,11 +35,20 @@ TextureUploader::TextureUploader(
     if (!m_UseTransferQueue)
         logger::warn("Dedicated transfer queue for texture upload not found - using graphics queue instead");
 
-    if (!m_TextureScalingSupported)
+    if (!m_ColorTextureScalingSupported)
         logger::warn(
-            "Blit operation is not supported on {} format. Textures with size above {}x{} are not supported",
-            vk::to_string(IntermediateTextureFormat), MaxTextureSize.width, MaxTextureSize.height
+            "Blit operation is not supported on {} format. Color textures with size above {}x{} are not "
+            "supported",
+            vk::to_string(IntermediateColorTextureFormat), MaxTextureSize.width, MaxTextureSize.height
         );
+
+    if (!m_OtherTextureScalingSupported)
+        logger::warn(
+            "Blit operation is not supported on {} format. Textures with size above {}x{} are not "
+            "supported",
+            vk::to_string(IntermediateOtherTextureFormat), MaxTextureSize.width, MaxTextureSize.height
+        );
+
 
     m_LoaderThreads.resize(m_LoaderThreadCount);
     m_FreeBuffers.reserve(m_StagingBufferCount);
@@ -51,14 +61,19 @@ TextureUploader::TextureUploader(
         );
 
     m_ImageBuilder = ImageBuilder()
-                         .SetFormat(IntermediateTextureFormat)
+                         .SetFormat(IntermediateColorTextureFormat)
                          .SetUsageFlags(
                              vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst |
                              vk::ImageUsageFlagBits::eSampled
                          )
                          .EnableMips();
 
-    m_TemporaryImage = m_ImageBuilder.CreateImage(MaxTextureDataSize, "Texture Uploader Staging Image");
+    m_TemporaryColorImage =
+        m_ImageBuilder.CreateImage(MaxTextureDataSize, "Texture Uploader Color Staging Image");
+    
+    m_ImageBuilder.SetFormat(IntermediateOtherTextureFormat);
+    m_TemporaryOtherImage =
+        m_ImageBuilder.CreateImage(MaxTextureDataSize, "Texture Uploader Other Staging Image");
 
     logger::info("Max Texture Size: {}x{}", MaxTextureSize.width, MaxTextureSize.height);
     logger::info("Max Texture Data Size: {}x{}", MaxTextureDataSize.width, MaxTextureDataSize.height);
@@ -230,14 +245,14 @@ void TextureUploader::StartSubmitThread(const std::shared_ptr<const Scene> &scen
             textureIndices.clear();
         }
 
-        uint32_t rejectedcount = m_RejectedCount;
-        if (uploadedCount == textures.size() - rejectedcount)
+        uint32_t rejectedCount = m_RejectedCount;
+        if (uploadedCount == textures.size() - rejectedCount)
             logger::info("Done uploading scene textures");
         else
             logger::debug("Texture upload cancelled");
 
-        if (rejectedcount > 0)
-            logger::warn("{} texture(s) weren't uploaded", rejectedcount);
+        if (rejectedCount > 0)
+            logger::warn("{} texture(s) weren't uploaded", rejectedCount);
     });
 }
 
@@ -246,7 +261,7 @@ void TextureUploader::UploadToBuffer(const TextureInfo &textureInfo, const Buffe
     std::byte *data = AssetImporter::LoadTextureData(textureInfo);
 
     const vk::Extent2D extent(textureInfo.Width, textureInfo.Height);
-    const size_t dataSize = Image::GetByteSize(extent, IntermediateTextureFormat);
+    const size_t dataSize = Image::GetByteSize(extent, GetTemporaryImage(textureInfo.Type).GetFormat());
 
     assert(extent <= MaxTextureDataSize);
     assert(dataSize <= StagingBufferSize);
@@ -273,8 +288,8 @@ void TextureUploader::UploadTexture(
     Image image = m_ImageBuilder.CreateImage(extent, texture.Path.string());
 
     image.UploadStaging(
-        mipBuffer, transferBuffer, buffer, m_TemporaryImage, vk::Extent2D(texture.Width, texture.Height),
-        vk::ImageLayout::eShaderReadOnlyOptimal
+        mipBuffer, transferBuffer, buffer, GetTemporaryImage(texture.Type),
+        vk::Extent2D(texture.Width, texture.Height), vk::ImageLayout::eShaderReadOnlyOptimal
     );
 
     m_Textures[Shaders::GetSceneTextureIndex(textureIndex)] = std::move(image);
@@ -317,7 +332,7 @@ void TextureUploader::UploadBuffersWithTransfer(
 
 bool TextureUploader::CheckCanUpload(const TextureInfo &info)
 {
-    if (!m_TextureScalingSupported && vk::Extent2D(info.Width, info.Height) > MaxTextureSize)
+    if (!IsScalingSupported(info.Type) && vk::Extent2D(info.Width, info.Height) > MaxTextureSize)
     {
         logger::error(
             "Cannot load texture {} because Texture Scaling is not supported and the texture size {}x{} is "
@@ -332,8 +347,36 @@ bool TextureUploader::CheckCanUpload(const TextureInfo &info)
 
 vk::Format TextureUploader::SelectTextureFormat(TextureType type)
 {
-    // TODO: Select format depending on TextureType
-    return vk::Format::eR8G8B8A8Unorm;
+    // TODO: Consider compressed texture formats
+    switch (type)
+    {
+    case TextureType::Color:
+        return vk::Format::eR8G8B8A8Srgb;
+    default:
+        return vk::Format::eR8G8B8A8Unorm;
+    }
+}
+
+bool TextureUploader::IsScalingSupported(TextureType type) const
+{
+    switch (type)
+    {
+    case TextureType::Color:
+        return m_ColorTextureScalingSupported;
+    default:
+        return m_OtherTextureScalingSupported;
+    }
+}
+
+const Image &TextureUploader::GetTemporaryImage(TextureType type) const
+{
+    switch (type)
+    {
+    case TextureType::Color:
+        return m_TemporaryColorImage;
+    default:
+        return m_TemporaryOtherImage;
+    }
 }
 
 bool TextureUploader::CheckBlitSupported(vk::Format format)

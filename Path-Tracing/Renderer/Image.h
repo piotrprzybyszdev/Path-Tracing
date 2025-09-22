@@ -35,6 +35,7 @@ public:
     [[nodiscard]] vk::Extent2D GetExtent() const;
     [[nodiscard]] vk::Image GetHandle() const;
     [[nodiscard]] vk::ImageView GetView() const;
+    [[nodiscard]] vk::Format GetFormat() const;
 
     /* Commands from the transfer buffer should be executed before mip buffer */
     /* If they are the same buffer they can be submitted at once because of barriers*/
@@ -69,6 +70,8 @@ public:
         uint32_t baseMipLevel = 0, uint32_t mipLevels = 1, uint32_t layer = 0, uint32_t layerCount = 1
     );
 
+    static std::array<vk::Offset3D, 2> GetMipLevelArea(vk::Extent2D extent, uint32_t level = 0);
+
 private:
     vk::Image m_Handle { nullptr };
     VmaAllocation m_Allocation { nullptr };
@@ -81,8 +84,7 @@ private:
     bool m_IsMoved = false;
 
 private:
-    [[nodiscard]] std::array<vk::Offset3D, 2> GetMipLevelArea(uint32_t level) const;
-    [[nodiscard]] std::array<vk::Offset3D, 2> GetMipLevelArea(vk::Extent2D extent) const;
+    [[nodiscard]] std::array<vk::Offset3D, 2> GetMipLevelArea(uint32_t level = 0) const;
     [[nodiscard]] vk::ImageSubresourceLayers GetMipLayer(
         uint32_t level, uint32_t layer = 0, uint32_t layerCount = 1
     ) const;

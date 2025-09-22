@@ -149,12 +149,12 @@ void Application::Init()
     s_State = State::HasDevice;
 
     s_Swapchain = std::make_unique<Swapchain>(
-        s_Surface, vk::SurfaceFormatKHR(vk::Format::eR8G8B8A8Unorm, vk::ColorSpaceKHR::eSrgbNonlinear),
-        UserInterface::GetPresentMode(), windowSize
+        s_Surface, vk::SurfaceFormatKHR(vk::Format::eR8G8B8A8Srgb, vk::ColorSpaceKHR::eSrgbNonlinear),
+        vk::Format::eR8G8B8A8Unorm, UserInterface::GetPresentMode(), windowSize
     );
     s_State = State::HasSwapchain;
 
-    UserInterface::Init(s_Instance, s_Swapchain->GetSurfaceFormat().format, s_Swapchain->GetImageCount());
+    UserInterface::Init(s_Instance, vk::Format::eR8G8B8A8Unorm, s_Swapchain->GetImageCount());
     s_State = State::HasUserInterface;
 
     SceneManager::Init();

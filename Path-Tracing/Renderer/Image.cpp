@@ -98,6 +98,11 @@ vk::ImageView Image::GetView() const
     return m_View;
 }
 
+vk::Format Image::GetFormat() const
+{
+    return m_Format;
+}
+
 uint32_t Image::GetMip(vk::Extent2D extent) const
 {
     return m_MipLevels - ComputeMipLevels(extent);
@@ -169,7 +174,7 @@ void Image::UploadStaging(
 
         vk::ImageBlit2 imageBlit(
             temporary.GetMipLayer(destMip), temporary.GetMipLevelArea(destExtent), GetMipLayer(0, layer),
-            GetMipLevelArea(0)
+            GetMipLevelArea()
         );
 
         mipBuffer.blitImage2(createBlitInfo(imageBlit));
@@ -186,8 +191,8 @@ void Image::UploadStaging(
         );
 
         vk::ImageBlit2 imageBlit(
-            temporary.GetMipLayer(0, layer, layerCount), temporary.GetMipLevelArea(0),
-            GetMipLayer(0, layer, layerCount), GetMipLevelArea(0)
+            temporary.GetMipLayer(0, layer, layerCount), temporary.GetMipLevelArea(),
+            GetMipLayer(0, layer, layerCount), GetMipLevelArea()
         );
 
         mipBuffer.blitImage2(createBlitInfo(imageBlit));
@@ -345,14 +350,14 @@ void Image::Transition(
     buffer.pipelineBarrier2(dependency);
 }
 
+std::array<vk::Offset3D, 2> Image::GetMipLevelArea(vk::Extent2D extent, uint32_t level)
+{
+    return { vk::Offset3D(), vk::Offset3D(extent.width >> level, extent.height >> level, 1) };
+}
+
 std::array<vk::Offset3D, 2> Image::GetMipLevelArea(uint32_t level) const
 {
     return GetMipLevelArea(vk::Extent2D(m_Extent.width >> level, m_Extent.height >> level));
-}
-
-std::array<vk::Offset3D, 2> Image::GetMipLevelArea(vk::Extent2D extent) const
-{
-    return { vk::Offset3D(), vk::Offset3D(extent.width, extent.height, 1) };
 }
 
 vk::ImageSubresourceLayers Image::GetMipLayer(uint32_t level, uint32_t layer, uint32_t layerCount) const
