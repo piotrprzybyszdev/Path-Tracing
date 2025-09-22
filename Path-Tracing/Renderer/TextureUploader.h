@@ -32,6 +32,10 @@ public:
     void UploadTextures(const std::shared_ptr<const Scene> &scene);
     void Cancel();
 
+    Image UploadDefault(glm::u8vec4 value, std::string &&name);
+    Image UploadSkyboxBlocking(const Skybox2D &skybox);
+    Image UploadSkyboxBlocking(const SkyboxCube &skybox);
+
 public:
     [[nodiscard]] static size_t GetStagingMemoryRequirement(uint32_t numBuffers);
 
@@ -76,10 +80,12 @@ private:
     static inline constexpr vk::Format IntermediateOtherTextureFormat = vk::Format::eR8G8B8A8Unorm;
 
 private:
+    void SubmitBlocking(const Image &image, const Buffer &buffer, vk::Extent2D extent, TextureType type);
+
     void StartLoaderThreads(const std::shared_ptr<const Scene> &scene);
     void StartSubmitThread(const std::shared_ptr<const Scene> &scene);
 
-    void UploadToBuffer(const TextureInfo &textureInfo, const Buffer &buffer);
+    void UploadToBuffer(const TextureInfo &textureInfo, const Buffer &buffer, vk::DeviceSize offset = 0);
     void UploadTexture(
         vk::CommandBuffer mipBuffer, vk::CommandBuffer transferBuffer, const TextureInfo &texture,
         uint32_t textureIndex, const Buffer &buffer

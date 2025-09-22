@@ -66,23 +66,6 @@ TextureType ToTextureType(aiTextureType type)
     }
 }
 
-uint32_t GetDefaultTextureIndex(TextureType type)
-{
-    switch (type)
-    {
-    case TextureType::Color:
-        return Shaders::DefaultColorTextureIndex;
-    case TextureType::Normal:
-        return Shaders::DefaultNormalTextureIndex;
-    case TextureType::Roughness:
-        return Shaders::DefaultRoughnessTextureIndex;
-    case TextureType::Metalic:
-        return Shaders::DefaultMetalicTextureIndex;
-    default:
-        throw error(std::format("Unsupported Texture type {}", static_cast<uint8_t>(type)));
-    }
-}
-
 uint32_t AddTexture(
     SceneBuilder &sceneBuilder, const std::filesystem::path &base, const aiMaterial *material,
     aiTextureType type
@@ -94,7 +77,7 @@ uint32_t AddTexture(
     if (cnt == 0)
     {
         logger::trace("Texture {} doesn't exist", aiTextureTypeToString(type));
-        return GetDefaultTextureIndex(textureType);
+        return Scene::GetDefaultTextureIndex(textureType);
     }
 
     aiString path;

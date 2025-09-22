@@ -49,7 +49,6 @@ TextureUploader::TextureUploader(
             vk::to_string(IntermediateOtherTextureFormat), MaxTextureSize.width, MaxTextureSize.height
         );
 
-
     m_LoaderThreads.resize(m_LoaderThreadCount);
     m_FreeBuffers.reserve(m_StagingBufferCount);
     m_DataBuffers.reserve(m_StagingBufferCount);
@@ -70,7 +69,7 @@ TextureUploader::TextureUploader(
 
     m_TemporaryColorImage =
         m_ImageBuilder.CreateImage(MaxTextureDataSize, "Texture Uploader Color Staging Image");
-    
+
     m_ImageBuilder.SetFormat(IntermediateOtherTextureFormat);
     m_TemporaryOtherImage =
         m_ImageBuilder.CreateImage(MaxTextureDataSize, "Texture Uploader Other Staging Image");
@@ -142,6 +141,107 @@ void TextureUploader::Cancel()
     m_SubmitThread.join();
     for (auto &thread : m_LoaderThreads)
         thread.join();
+}
+
+Image TextureUploader::UploadDefault(glm::u8vec4 value, std::string &&name)
+{
+    vk::Extent2D extent = { 1, 1 };
+    vk::Format format = vk::Format::eR8G8B8A8Unorm;
+
+    Image image = ImageBuilder()
+                      .SetFormat(format)
+                      .SetUsageFlags(
+                          vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst |
+                          vk::ImageUsageFlagBits::eTransferSrc
+                      )
+                      .EnableMips()
+                      .CreateImage(extent, name);
+
+    const Buffer &buffer = m_FreeBuffers.front();
+
+    buffer.Upload(ToByteSpan(value));
+
+    assert(m_TemporaryOtherImage.GetFormat() == vk::Format::eR8G8B8A8Unorm);
+    Renderer::s_MainCommandBuffer->Begin();
+    image.UploadStaging(
+        Renderer::s_MainCommandBuffer->Buffer, Renderer::s_MainCommandBuffer->Buffer, buffer,
+        m_TemporaryOtherImage, extent, vk::ImageLayout::eShaderReadOnlyOptimal
+    );
+    Renderer::s_MainCommandBuffer->SubmitBlocking();
+
+    return image;
+}
+
+Image TextureUploader::UploadSkyboxBlocking(const Skybox2D &skybox)
+{
+    // TODO: HDR
+    vk::Format format = SelectTextureFormat(TextureType::Skybox);
+    vk::Extent2D extent(skybox.Content.Width, skybox.Content.Height);
+
+    assert(std::has_single_bit(extent.width) && std::has_single_bit(extent.height));
+    assert(skybox.Content.Type == TextureType::Skybox);
+
+    auto image = ImageBuilder()
+                     .SetFormat(format)
+                     .SetUsageFlags(
+                         vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst |
+                         vk::ImageUsageFlagBits::eTransferSrc
+                     )
+                     .EnableMips()
+                     .CreateImage(extent);
+
+    const Buffer &buffer = m_FreeBuffers.front();
+    const TextureInfo &textureInfo = skybox.Content;
+    UploadToBuffer(skybox.Content, buffer);
+    SubmitBlocking(image, buffer, extent, TextureType::Skybox);
+
+    return image;
+}
+
+Image TextureUploader::UploadSkyboxBlocking(const SkyboxCube &skybox)
+{
+    std::array<const TextureInfo *, 6> textureInfos = { &skybox.Front, &skybox.Back, &skybox.Up,
+                                                        &skybox.Down,  &skybox.Left, &skybox.Right };
+
+    // TOOD: HDR
+    vk::Format format = SelectTextureFormat(TextureType::Skybox);
+    vk::Extent2D extent(textureInfos[0]->Width, textureInfos[0]->Height);
+
+    assert(std::has_single_bit(extent.width) && std::has_single_bit(extent.height));
+
+    auto image = ImageBuilder()
+                     .SetFormat(format)
+                     .SetUsageFlags(
+                         vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst |
+                         vk::ImageUsageFlagBits::eTransferSrc
+                     )
+                     .EnableMips()
+                     .EnableCube()
+                     .CreateImage(extent);
+
+    const Buffer &buffer = m_FreeBuffers.front();
+    const vk::DeviceSize layerSize = Image::GetByteSize(extent, format);
+    for (int i = 0; i < textureInfos.size(); i++)
+    {
+        assert(textureInfos[i]->Width == extent.width && textureInfos[i]->Height == extent.height);
+        assert(textureInfos[i]->Type == TextureType::Skybox);
+        UploadToBuffer(*textureInfos[i], buffer, i * layerSize);
+    }
+
+    SubmitBlocking(image, buffer, extent, TextureType::Skybox);
+    return image;
+}
+
+void TextureUploader::SubmitBlocking(
+    const Image &image, const Buffer &buffer, vk::Extent2D extent, TextureType type
+)
+{
+    Renderer::s_MainCommandBuffer->Begin();
+    image.UploadStaging(
+        Renderer::s_MainCommandBuffer->Buffer, Renderer::s_MainCommandBuffer->Buffer, buffer,
+        GetTemporaryImage(type), extent, vk::ImageLayout::eShaderReadOnlyOptimal
+    );
+    Renderer::s_MainCommandBuffer->SubmitBlocking();
 }
 
 void TextureUploader::StartLoaderThreads(const std::shared_ptr<const Scene> &scene)
@@ -256,7 +356,9 @@ void TextureUploader::StartSubmitThread(const std::shared_ptr<const Scene> &scen
     });
 }
 
-void TextureUploader::UploadToBuffer(const TextureInfo &textureInfo, const Buffer &buffer)
+void TextureUploader::UploadToBuffer(
+    const TextureInfo &textureInfo, const Buffer &buffer, vk::DeviceSize offset
+)
 {
     std::byte *data = AssetImporter::LoadTextureData(textureInfo);
 
@@ -266,7 +368,7 @@ void TextureUploader::UploadToBuffer(const TextureInfo &textureInfo, const Buffe
     assert(extent <= MaxTextureDataSize);
     assert(dataSize <= StagingBufferSize);
 
-    buffer.Upload(std::span(data, dataSize));
+    buffer.Upload(std::span(data, dataSize), offset);
     AssetImporter::ReleaseTextureData(data);
 }
 
@@ -351,6 +453,7 @@ vk::Format TextureUploader::SelectTextureFormat(TextureType type)
     switch (type)
     {
     case TextureType::Color:
+    case TextureType::Skybox:
         return vk::Format::eR8G8B8A8Srgb;
     default:
         return vk::Format::eR8G8B8A8Unorm;
@@ -362,6 +465,7 @@ bool TextureUploader::IsScalingSupported(TextureType type) const
     switch (type)
     {
     case TextureType::Color:
+    case TextureType::Skybox:
         return m_ColorTextureScalingSupported;
     default:
         return m_OtherTextureScalingSupported;
@@ -373,6 +477,7 @@ const Image &TextureUploader::GetTemporaryImage(TextureType type) const
     switch (type)
     {
     case TextureType::Color:
+    case TextureType::Skybox:
         return m_TemporaryColorImage;
     default:
         return m_TemporaryOtherImage;

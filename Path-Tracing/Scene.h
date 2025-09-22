@@ -150,6 +150,9 @@ public:
 
     inline static const CameraId g_InputCameraId = -1;
 
+public:
+    [[nodiscard]] static uint32_t GetDefaultTextureIndex(TextureType type);
+
 private:
     std::string m_Name;
 

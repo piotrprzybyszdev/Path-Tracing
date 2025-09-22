@@ -37,6 +37,11 @@ std::vector<Renderer::RenderingResources> Renderer::s_RenderingResources = {};
 
 std::unique_ptr<CommandBuffer> Renderer::s_MainCommandBuffer = nullptr;
 
+std::unique_ptr<Renderer::SceneData> Renderer::s_SceneData = nullptr;
+
+std::vector<Image> Renderer::s_Textures = {};
+std::vector<uint32_t> Renderer::s_TextureMap = {};
+
 std::unique_ptr<DescriptorSetBuilder> Renderer::s_DescriptorSetBuilder = nullptr;
 std::unique_ptr<DescriptorSet> Renderer::s_DescriptorSet = nullptr;
 std::mutex Renderer::s_DescriptorSetMutex = {};
@@ -48,28 +53,17 @@ vk::Pipeline Renderer::s_Pipeline = nullptr;
 std::unique_ptr<BufferBuilder> Renderer::s_BufferBuilder = nullptr;
 std::unique_ptr<ImageBuilder> Renderer::s_ImageBuilder = nullptr;
 
-std::unique_ptr<Image> Renderer::s_StagingImage = nullptr;
 std::unique_ptr<Buffer> Renderer::s_StagingBuffer = nullptr;
 
 vk::Sampler Renderer::s_TextureSampler = nullptr;
 
 std::unique_ptr<ShaderLibrary> Renderer::s_ShaderLibrary = nullptr;
-Renderer::SceneData Renderer::s_SceneData = {};
 
 void Renderer::Init(const Swapchain *swapchain)
 {
     s_Swapchain = swapchain;
 
     s_MainCommandBuffer = std::make_unique<CommandBuffer>(DeviceContext::GetGraphicsQueue());
-
-    s_StagingImage = ImageBuilder()
-                         .SetUsageFlags(
-                             vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst |
-                             vk::ImageUsageFlagBits::eSampled
-                         )
-                         .SetFormat(vk::Format::eR8G8B8A8Unorm)
-                         .EnableMips()
-                         .CreateImageUnique(vk::Extent2D(4096, 4096), "Main Staging Image");
 
     s_StagingBuffer = BufferBuilder()
                           .SetUsageFlags(vk::BufferUsageFlagBits::eTransferSrc)
@@ -104,31 +98,33 @@ void Renderer::Init(const Swapchain *swapchain)
     }
 
     {
+#ifndef NDEBUG
+        const uint32_t loaderThreadCount = 2;
+        const uint32_t bufferPerLoaderThread = 1;
+#else
+        const uint32_t loaderThreadCount = std::thread::hardware_concurrency() / 2;
+        const uint32_t bufferPerLoaderThread = 2;
+#endif
+        const size_t stagingMemoryLimit =
+            TextureUploader::GetStagingMemoryRequirement(loaderThreadCount * bufferPerLoaderThread);
+
+        s_TextureUploader = std::make_unique<TextureUploader>(
+            loaderThreadCount, stagingMemoryLimit, s_Textures, s_DescriptorSetMutex
+        );
+    }
+
+    {
         uint32_t colorIndex = AddDefaultTexture(glm::u8vec4(255), "Default Color Texture");
         uint32_t normalIndex = AddDefaultTexture(glm::u8vec4(128, 128, 255, 255), "Default Normal Texture");
         uint32_t roughnessIndex = AddDefaultTexture(glm::u8vec4(0), "Default Roughness Texture");
         uint32_t metalicIndex = AddDefaultTexture(glm::u8vec4(0), "Default Metalic Texture");
 
-        s_SceneData.TextureMap.resize(4);
-        s_SceneData.TextureMap[Shaders::DefaultColorTextureIndex] = colorIndex;
-        s_SceneData.TextureMap[Shaders::DefaultNormalTextureIndex] = normalIndex;
-        s_SceneData.TextureMap[Shaders::DefaultRoughnessTextureIndex] = roughnessIndex;
-        s_SceneData.TextureMap[Shaders::DefaultMetalicTextureIndex] = metalicIndex;
+        s_TextureMap.resize(4);
+        s_TextureMap[Shaders::DefaultColorTextureIndex] = colorIndex;
+        s_TextureMap[Shaders::DefaultNormalTextureIndex] = normalIndex;
+        s_TextureMap[Shaders::DefaultRoughnessTextureIndex] = roughnessIndex;
+        s_TextureMap[Shaders::DefaultMetalicTextureIndex] = metalicIndex;
     }
-
-#ifndef NDEBUG
-    const uint32_t loaderThreadCount = 2;
-    const uint32_t bufferPerLoaderThread = 1;
-#else
-    const uint32_t loaderThreadCount = std::thread::hardware_concurrency() / 2;
-    const uint32_t bufferPerLoaderThread = 2;
-#endif
-    const size_t stagingMemoryLimit =
-        TextureUploader::GetStagingMemoryRequirement(loaderThreadCount * bufferPerLoaderThread);
-
-    s_TextureUploader = std::make_unique<TextureUploader>(
-        loaderThreadCount, stagingMemoryLimit, s_SceneData.Textures, s_DescriptorSetMutex
-    );
 }
 
 void Renderer::Shutdown()
@@ -148,20 +144,15 @@ void Renderer::Shutdown()
     s_DescriptorSet.reset();
     s_DescriptorSetBuilder.reset();
 
-    s_SceneData.SceneShaderBindingTable.reset();
-    s_SceneData.Skybox.reset();
-    s_SceneData.Textures.clear();
-    s_SceneData.MaterialBuffer.reset();
-    s_SceneData.GeometryBuffer.reset();
-    s_SceneData.TransformBuffer.reset();
-    s_SceneData.IndexBuffer.reset();
-    s_SceneData.VertexBuffer.reset();
+    s_TextureMap.clear();
+    s_Textures.clear();
+
+    s_SceneData.reset();
 
     DeviceContext::GetLogical().destroySampler(s_TextureSampler);
     s_ImageBuilder.reset();
     s_BufferBuilder.reset();
 
-    s_StagingImage.reset();
     s_StagingBuffer.reset();
 
     s_MainCommandBuffer.reset();
@@ -170,7 +161,8 @@ void Renderer::Shutdown()
 void Renderer::UpdateSceneData()
 {
     DeviceContext::GetGraphicsQueue().WaitIdle();
-    s_SceneData.Scene = SceneManager::GetActiveScene();
+    s_TextureUploader->Cancel();
+    s_SceneData = std::make_unique<SceneData>(SceneManager::GetActiveScene());
 
     {
         Timer timer("Mesh Upload");
@@ -179,11 +171,11 @@ void Renderer::UpdateSceneData()
             vk::BufferUsageFlagBits::eShaderDeviceAddress | vk::BufferUsageFlagBits::eTransferDst
         );
 
-        const auto &vertices = s_SceneData.Scene->GetVertices();
-        s_SceneData.VertexBuffer = CreateDeviceBufferUnique(vertices, "Vertex Buffer");
+        const auto &vertices = s_SceneData->Scene->GetVertices();
+        s_SceneData->VertexBuffer = CreateDeviceBuffer(vertices, "Vertex Buffer");
 
-        const auto &indices = s_SceneData.Scene->GetIndices();
-        s_SceneData.IndexBuffer = CreateDeviceBufferUnique(indices, "Index Buffer");
+        const auto &indices = s_SceneData->Scene->GetIndices();
+        s_SceneData->IndexBuffer = CreateDeviceBuffer(indices, "Index Buffer");
 
         s_BufferBuilder->ResetFlags().SetUsageFlags(
             vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR |
@@ -191,32 +183,32 @@ void Renderer::UpdateSceneData()
             vk::BufferUsageFlagBits::eTransferDst
         );
 
-        const auto &transforms = s_SceneData.Scene->GetTransforms();
+        const auto &transforms = s_SceneData->Scene->GetTransforms();
         std::vector<vk::TransformMatrixKHR> transforms2;
         transforms2.reserve(transforms.size());
         for (const auto &transform : transforms)
             transforms2.push_back(TrivialCopy<glm::mat3x4, vk::TransformMatrixKHR>(transform));
 
-        s_SceneData.TransformBuffer = CreateDeviceBufferUnique(std::span(transforms2), "Transform Buffer");
+        s_SceneData->TransformBuffer = CreateDeviceBuffer(std::span(transforms2), "Transform Buffer");
 
         s_BufferBuilder->ResetFlags().SetUsageFlags(
             vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst
         );
 
-        const auto &geometries = s_SceneData.Scene->GetGeometries();
+        const auto &geometries = s_SceneData->Scene->GetGeometries();
         std::vector<Shaders::Geometry> geometries2 = {};
         geometries2.reserve(geometries.size());
         for (const auto &geometry : geometries)
             geometries2.emplace_back(
-                s_SceneData.VertexBuffer->GetDeviceAddress() +
+                s_SceneData->VertexBuffer.GetDeviceAddress() +
                     geometry.VertexOffset * sizeof(Shaders::Vertex),
-                s_SceneData.IndexBuffer->GetDeviceAddress() + geometry.IndexOffset * sizeof(uint32_t)
+                s_SceneData->IndexBuffer.GetDeviceAddress() + geometry.IndexOffset * sizeof(uint32_t)
             );
 
-        s_SceneData.GeometryBuffer = CreateDeviceBufferUnique(std::span(geometries2), "Geometry Buffer");
+        s_SceneData->GeometryBuffer = CreateDeviceBuffer(std::span(geometries2), "Geometry Buffer");
 
-        const auto &materials = s_SceneData.Scene->GetMaterials();
-        s_SceneData.MaterialBuffer = CreateDeviceBufferUnique(materials, "Material Buffer");
+        const auto &materials = s_SceneData->Scene->GetMaterials();
+        s_SceneData->MaterialBuffer = CreateDeviceBuffer(materials, "Material Buffer");
     }
 
     for (int i = 0; i < s_RenderingResources.size(); i++)
@@ -224,96 +216,80 @@ void Renderer::UpdateSceneData()
         RenderingResources &res = s_RenderingResources[i];
 
         s_BufferBuilder->ResetFlags().SetUsageFlags(vk::BufferUsageFlagBits::eUniformBuffer);
-        res.LightCount = s_SceneData.Scene->GetLights().size();
+        res.LightCount = s_SceneData->Scene->GetLights().size();
         res.LightUniformBuffer = s_BufferBuilder->CreateHostBuffer(
-            s_SceneData.Scene->GetLights(), std::format("Light Uniform Buffer {}", i)
+            s_SceneData->Scene->GetLights(), std::format("Light Uniform Buffer {}", i)
         );
 
         res.SceneAccelerationStructure = std::make_unique<AccelerationStructure>(
-            *s_SceneData.VertexBuffer, *s_SceneData.IndexBuffer, *s_SceneData.TransformBuffer,
-            s_SceneData.Scene
+            s_SceneData->VertexBuffer, s_SceneData->IndexBuffer, s_SceneData->TransformBuffer,
+            s_SceneData->Scene
         );
     }
 
-    auto models = s_SceneData.Scene->GetModels();
-    s_SceneData.SceneShaderBindingTable = std::make_unique<ShaderBindingTable>();
+    auto models = s_SceneData->Scene->GetModels();
+    s_SceneData->SceneShaderBindingTable = std::make_unique<ShaderBindingTable>();
     for (const auto &model : models)
         for (const auto &mesh : model.Meshes)
-            s_SceneData.SceneShaderBindingTable->AddRecord({ mesh.GeometryIndex, mesh.MaterialIndex,
-                                                             mesh.TransformBufferOffset });
+            s_SceneData->SceneShaderBindingTable->AddRecord({ mesh.GeometryIndex, mesh.MaterialIndex,
+                                                              mesh.TransformBufferOffset });
 
-    const auto &skybox = s_SceneData.Scene->GetSkybox();
+    const auto &skybox = s_SceneData->Scene->GetSkybox();
     s_MissFlags &= ~(Shaders::MissFlagsSkybox2D | Shaders::MissFlagsSkyboxCube);
     switch (skybox.index())
     {
     case 0:
         break;
     case 1:
-        AddSkybox(std::get<Skybox2D>(skybox));
+        s_SceneData->Skybox = s_TextureUploader->UploadSkyboxBlocking(std::get<Skybox2D>(skybox));
+        s_MissFlags |= Shaders::MissFlagsSkybox2D;
         break;
     case 2:
-        AddSkybox(std::get<SkyboxCube>(skybox));
+        s_SceneData->Skybox = s_TextureUploader->UploadSkyboxBlocking(std::get<SkyboxCube>(skybox));
+        s_MissFlags |= Shaders::MissFlagsSkyboxCube;
         break;
     default:
         throw error("Unhandled skybox type");
     }
 
-    s_TextureUploader->Cancel();
-    const auto &textures = s_SceneData.Scene->GetTextures();
+    const auto &textures = s_SceneData->Scene->GetTextures();
 
-    s_SceneData.Textures.resize(Shaders::SceneTextureOffset + textures.size());
-    s_SceneData.TextureMap.resize(Shaders::SceneTextureOffset + textures.size());
+    s_Textures.resize(Shaders::SceneTextureOffset + textures.size());
+    s_TextureMap.resize(Shaders::SceneTextureOffset + textures.size());
     for (int i = 0; i < textures.size(); i++)
     {
-        const uint32_t mapIndex = Shaders::SceneTextureOffset + i;
-        switch (textures[i].Type)
-        {
-        case TextureType::Color:
-            s_SceneData.TextureMap[mapIndex] = Shaders::DefaultColorTextureIndex;
-            break;
-        case TextureType::Normal:
-            s_SceneData.TextureMap[mapIndex] = Shaders::DefaultNormalTextureIndex;
-            break;
-        case TextureType::Roughness:
-            s_SceneData.TextureMap[mapIndex] = Shaders::DefaultRoughnessTextureIndex;
-            break;
-        case TextureType::Metalic:
-            s_SceneData.TextureMap[mapIndex] = Shaders::DefaultMetalicTextureIndex;
-            break;
-        default:
-            throw error("Unsupported Texture Type");
-        }
+        const uint32_t mapIndex = Shaders::GetSceneTextureIndex(i);
+        s_TextureMap[mapIndex] = Scene::GetDefaultTextureIndex(textures[i].Type);
     }
 
     if (SetupPipeline())
         RecreateDescriptorSet();
 
-    s_TextureUploader->UploadTextures(s_SceneData.Scene);
+    s_TextureUploader->UploadTextures(s_SceneData->Scene);
 
-    s_SceneData.SceneShaderBindingTable->Upload(s_Pipeline);
+    s_SceneData->SceneShaderBindingTable->Upload(s_Pipeline);
 }
 
 void Renderer::UpdateTexture(uint32_t index)
 {
-    s_SceneData.TextureMap[index] = index;
+    s_TextureMap[index] = index;
 
     if (s_DescriptorSet == nullptr)
         return;
 
     for (uint32_t frameIndex = 0; frameIndex < s_RenderingResources.size(); frameIndex++)
         s_DescriptorSet->UpdateImage(
-            4, frameIndex, s_SceneData.Textures[index], s_TextureSampler,
-            vk::ImageLayout::eShaderReadOnlyOptimal, index
+            4, frameIndex, s_Textures[index], s_TextureSampler, vk::ImageLayout::eShaderReadOnlyOptimal, index
         );
 }
 
-std::unique_ptr<Buffer> Renderer::CreateDeviceBufferUnique(BufferContent content, std::string &&name)
+Buffer Renderer::CreateDeviceBuffer(BufferContent content, std::string &&name)
 {
-    auto buffer = s_BufferBuilder->CreateDeviceBufferUnique(content.Size, name);
+    auto buffer = s_BufferBuilder->CreateDeviceBuffer(content.Size, name);
     s_StagingBuffer->Upload(content);
 
     s_MainCommandBuffer->Begin();
-    buffer->UploadStaging(s_MainCommandBuffer->Buffer, *s_StagingBuffer);
+    buffer.UploadStaging(s_MainCommandBuffer->Buffer, *s_StagingBuffer);
     s_MainCommandBuffer->SubmitBlocking();
 
     return buffer;
@@ -321,105 +297,9 @@ std::unique_ptr<Buffer> Renderer::CreateDeviceBufferUnique(BufferContent content
 
 uint32_t Renderer::AddDefaultTexture(glm::u8vec4 value, std::string &&name)
 {
-    vk::Extent2D extent = { 1, 1 };
-    vk::Format format = vk::Format::eR8G8B8A8Unorm;
-
-    Image image = ImageBuilder()
-                      .SetFormat(format)
-                      .SetUsageFlags(
-                          vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst |
-                          vk::ImageUsageFlagBits::eTransferSrc
-                      )
-                      .EnableMips()
-                      .CreateImage(extent, name);
-
-    s_StagingBuffer->Upload(ToByteSpan(value));
-
-    s_MainCommandBuffer->Begin();
-    image.UploadStaging(
-        s_MainCommandBuffer->Buffer, s_MainCommandBuffer->Buffer, *s_StagingBuffer, *s_StagingImage, extent,
-        vk::ImageLayout::eShaderReadOnlyOptimal
-    );
-    s_MainCommandBuffer->SubmitBlocking();
-
-    s_SceneData.Textures.push_back(std::move(image));
-    return s_SceneData.Textures.size() - 1;
-}
-
-void Renderer::AddSkybox(const Skybox2D &skybox)
-{
-    // TODO: Move to texture uploader and switch to srgb
-    // TOOD: HDR
-    vk::Format format = vk::Format::eR8G8B8A8Unorm;
-    vk::Extent2D extent(skybox.Content.Width, skybox.Content.Height);
-
-    assert(std::has_single_bit(extent.width) && std::has_single_bit(extent.height));
-
-    s_SceneData.Skybox = ImageBuilder()
-                             .SetFormat(format)
-                             .SetUsageFlags(
-                                 vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst |
-                                 vk::ImageUsageFlagBits::eTransferSrc
-                             )
-                             .EnableMips()
-                             .CreateImageUnique(extent);
-
-    std::byte *data = AssetImporter::LoadTextureData(skybox.Content);
-    s_StagingBuffer->Upload(std::span(data, Image::GetByteSize(extent, format)));
-
-    s_MainCommandBuffer->Begin();
-    s_SceneData.Skybox->UploadStaging(
-        s_MainCommandBuffer->Buffer, s_MainCommandBuffer->Buffer, *s_StagingBuffer, *s_StagingImage, extent,
-        vk::ImageLayout::eShaderReadOnlyOptimal
-    );
-    s_MainCommandBuffer->SubmitBlocking();
-
-    AssetImporter::ReleaseTextureData(data);
-    s_MissFlags |= Shaders::MissFlagsSkybox2D;
-}
-
-void Renderer::AddSkybox(const SkyboxCube &skybox)
-{
-    std::array<const TextureInfo *, 6> textureInfos = { &skybox.Front, &skybox.Back, &skybox.Up,
-                                                        &skybox.Down,  &skybox.Left, &skybox.Right };
-    
-    // TODO: Move to texture uploader and switch to srgb
-    // TOOD: HDR
-    vk::Format format = vk::Format::eR8G8B8A8Unorm;
-    vk::Extent2D extent(textureInfos[0]->Width, textureInfos[0]->Height);
-
-    assert(std::has_single_bit(extent.width) && std::has_single_bit(extent.height));
-
-    s_SceneData.Skybox = ImageBuilder()
-                             .SetFormat(format)
-                             .SetUsageFlags(
-                                 vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst |
-                                 vk::ImageUsageFlagBits::eTransferSrc
-                             )
-                             .EnableMips()
-                             .EnableCube()
-                             .CreateImageUnique(extent);
-
-    for (int i = 0; i < textureInfos.size(); i++)
-    {
-        assert(textureInfos[i]->Width == extent.width && textureInfos[i]->Height == extent.height);
-
-        std::byte *data = AssetImporter::LoadTextureData(*textureInfos[i]);
-
-        const vk::DeviceSize layerSize = Image::GetByteSize(extent, format);
-        s_StagingBuffer->Upload(std::span(data, layerSize), i * layerSize);
-
-        AssetImporter::ReleaseTextureData(data);
-    }
-
-    s_MainCommandBuffer->Begin();
-    s_SceneData.Skybox->UploadStaging(
-        s_MainCommandBuffer->Buffer, s_MainCommandBuffer->Buffer, *s_StagingBuffer, *s_StagingImage, extent,
-        vk::ImageLayout::eShaderReadOnlyOptimal
-    );
-    s_MainCommandBuffer->SubmitBlocking();
-
-    s_MissFlags |= Shaders::MissFlagsSkyboxCube;
+    auto image = s_TextureUploader->UploadDefault(value, std::move(name));
+    s_Textures.push_back(std::move(image));
+    return s_Textures.size() - 1;
 }
 
 bool Renderer::SetupPipeline()
@@ -433,8 +313,7 @@ bool Renderer::SetupPipeline()
         .SetDescriptor({ 3, vk::DescriptorType::eUniformBuffer, 1,
                          vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eAnyHitKHR })
         .SetDescriptor(
-            { 4, vk::DescriptorType::eCombinedImageSampler,
-              static_cast<uint32_t>(s_SceneData.TextureMap.size()),
+            { 4, vk::DescriptorType::eCombinedImageSampler, static_cast<uint32_t>(s_TextureMap.size()),
               vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eAnyHitKHR },
             true
         )
@@ -476,7 +355,7 @@ void Renderer::ReloadShaders()
     DeviceContext::GetLogical().destroyPipeline(s_Pipeline);
     s_Pipeline = s_ShaderLibrary->CreatePipeline(s_PipelineLayout);
 
-    s_SceneData.SceneShaderBindingTable->Upload(s_Pipeline);
+    s_SceneData->SceneShaderBindingTable->Upload(s_Pipeline);
 }
 
 void Renderer::RecordCommandBuffer(const RenderingResources &resources)
@@ -499,9 +378,9 @@ void Renderer::RecordCommandBuffer(const RenderingResources &resources)
         );
 
         commandBuffer.traceRaysKHR(
-            s_SceneData.SceneShaderBindingTable->GetRaygenTableEntry(),
-            s_SceneData.SceneShaderBindingTable->GetMissTableEntry(),
-            s_SceneData.SceneShaderBindingTable->GetClosestHitTableEntry(),
+            s_SceneData->SceneShaderBindingTable->GetRaygenTableEntry(),
+            s_SceneData->SceneShaderBindingTable->GetMissTableEntry(),
+            s_SceneData->SceneShaderBindingTable->GetClosestHitTableEntry(),
             vk::StridedDeviceAddressRegionKHR(), extent.width, extent.height, 1,
             Application::GetDispatchLoader()
         );
@@ -614,14 +493,14 @@ void Renderer::OnInFlightCountChange()
             sizeof(Shaders::ClosestHitUniformData), std::format("Closest Hit Uniform Buffer {}", frameIndex)
         );
 
-        res.LightCount = s_SceneData.Scene->GetLights().size();
+        res.LightCount = s_SceneData->Scene->GetLights().size();
         res.LightUniformBuffer = s_BufferBuilder->CreateHostBuffer(
-            s_SceneData.Scene->GetLights(), std::format("Light Uniform Buffer {}", frameIndex)
+            s_SceneData->Scene->GetLights(), std::format("Light Uniform Buffer {}", frameIndex)
         );
 
         res.SceneAccelerationStructure = std::make_unique<AccelerationStructure>(
-            *s_SceneData.VertexBuffer, *s_SceneData.IndexBuffer, *s_SceneData.TransformBuffer,
-            s_SceneData.Scene
+            s_SceneData->VertexBuffer, s_SceneData->IndexBuffer, s_SceneData->TransformBuffer,
+            s_SceneData->Scene
         );
 
         s_RenderingResources.push_back(std::move(res));
@@ -650,21 +529,20 @@ void Renderer::RecreateDescriptorSet()
         s_DescriptorSet->UpdateBuffer(2, frameIndex, res.RaygenUniformBuffer);
         s_DescriptorSet->UpdateBuffer(3, frameIndex, res.ClosestHitUniformBuffer);
         s_DescriptorSet->UpdateImageArray(
-            4, frameIndex, s_SceneData.Textures, s_SceneData.TextureMap, s_TextureSampler,
-            vk::ImageLayout::eShaderReadOnlyOptimal
+            4, frameIndex, s_Textures, s_TextureMap, s_TextureSampler, vk::ImageLayout::eShaderReadOnlyOptimal
         );
-        s_DescriptorSet->UpdateBuffer(5, frameIndex, *s_SceneData.TransformBuffer);
-        s_DescriptorSet->UpdateBuffer(6, frameIndex, *s_SceneData.GeometryBuffer);
-        s_DescriptorSet->UpdateBuffer(7, frameIndex, *s_SceneData.MaterialBuffer);
+        s_DescriptorSet->UpdateBuffer(5, frameIndex, s_SceneData->TransformBuffer);
+        s_DescriptorSet->UpdateBuffer(6, frameIndex, s_SceneData->GeometryBuffer);
+        s_DescriptorSet->UpdateBuffer(7, frameIndex, s_SceneData->MaterialBuffer);
         s_DescriptorSet->UpdateBuffer(8, frameIndex, res.LightUniformBuffer);
         s_DescriptorSet->UpdateBuffer(9, frameIndex, res.MissUniformBuffer);
         if ((s_MissFlags & Shaders::MissFlagsSkybox2D) != Shaders::MissFlagsNone)
             s_DescriptorSet->UpdateImage(
-                10, frameIndex, *s_SceneData.Skybox, s_TextureSampler, vk::ImageLayout::eShaderReadOnlyOptimal
+                10, frameIndex, s_SceneData->Skybox, s_TextureSampler, vk::ImageLayout::eShaderReadOnlyOptimal
             );
         if ((s_MissFlags & Shaders::MissFlagsSkyboxCube) != Shaders::MissFlagsNone)
             s_DescriptorSet->UpdateImage(
-                11, frameIndex, *s_SceneData.Skybox, s_TextureSampler, vk::ImageLayout::eShaderReadOnlyOptimal
+                11, frameIndex, s_SceneData->Skybox, s_TextureSampler, vk::ImageLayout::eShaderReadOnlyOptimal
             );
     }
 }
@@ -697,7 +575,7 @@ void Renderer::Render(const Camera &camera)
     res.RaygenUniformBuffer.Upload(&rgenData);
     res.MissUniformBuffer.Upload(&missData);
     res.ClosestHitUniformBuffer.Upload(&rchitData);
-    res.LightUniformBuffer.Upload(s_SceneData.Scene->GetLights());
+    res.LightUniformBuffer.Upload(s_SceneData->Scene->GetLights());
 
     RecordCommandBuffer(res);
 

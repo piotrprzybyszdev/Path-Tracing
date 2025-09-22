@@ -181,6 +181,8 @@ void Image::UploadStaging(
     }
     else if (temporary.m_Format != m_Format)
     {
+        assert(temporary.m_Layers >= layer + layerCount);
+
         temporary.UploadFromBuffer(transferBuffer, buffer, extent, 0, layer, layerCount);
         temporary.TransitionMip(
             mipBuffer, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferSrcOptimal, 0, layer,
@@ -191,7 +193,7 @@ void Image::UploadStaging(
         );
 
         vk::ImageBlit2 imageBlit(
-            temporary.GetMipLayer(0, layer, layerCount), temporary.GetMipLevelArea(),
+            temporary.GetMipLayer(0, layer, layerCount), temporary.GetMipLevelArea(m_Extent),
             GetMipLayer(0, layer, layerCount), GetMipLevelArea()
         );
 

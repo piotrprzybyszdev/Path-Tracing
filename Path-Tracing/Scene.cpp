@@ -289,4 +289,21 @@ void Scene::SetActiveCamera(CameraId id)
     m_ActiveCameraId = id;
 }
 
+uint32_t Scene::GetDefaultTextureIndex(TextureType type)
+{
+    switch (type)
+    {
+    case TextureType::Color:
+        return Shaders::DefaultColorTextureIndex;
+    case TextureType::Normal:
+        return Shaders::DefaultNormalTextureIndex;
+    case TextureType::Roughness:
+        return Shaders::DefaultRoughnessTextureIndex;
+    case TextureType::Metalic:
+        return Shaders::DefaultMetalicTextureIndex;
+    default:
+        throw error(std::format("Unsupported Texture type {}", static_cast<uint8_t>(type)));
+    }
+}
+
 }

@@ -72,24 +72,26 @@ private:
 
     static std::vector<RenderingResources> s_RenderingResources;
 
-    static struct SceneData
+    struct SceneData
     {
         std::shared_ptr<Scene> Scene = nullptr;
 
-        std::unique_ptr<Buffer> VertexBuffer = nullptr;
-        std::unique_ptr<Buffer> IndexBuffer = nullptr;
-        std::unique_ptr<Buffer> TransformBuffer = nullptr;
+        Buffer VertexBuffer;
+        Buffer IndexBuffer;
+        Buffer TransformBuffer;
 
-        std::unique_ptr<Buffer> GeometryBuffer = nullptr;
-        std::unique_ptr<Buffer> MaterialBuffer = nullptr;
+        Buffer GeometryBuffer;
+        Buffer MaterialBuffer;
 
-        std::vector<Image> Textures;
-        std::vector<uint32_t> TextureMap;
-
-        std::unique_ptr<Image> Skybox = nullptr;
+        Image Skybox;
 
         std::unique_ptr<ShaderBindingTable> SceneShaderBindingTable = nullptr;
-    } s_SceneData;
+    };
+
+    static std::unique_ptr<SceneData> s_SceneData;
+
+    static std::vector<Image> s_Textures;
+    static std::vector<uint32_t> s_TextureMap;
 
     static std::unique_ptr<DescriptorSetBuilder> s_DescriptorSetBuilder;
     static std::unique_ptr<DescriptorSet> s_DescriptorSet;
@@ -103,12 +105,9 @@ private:
     static std::unique_ptr<ShaderLibrary> s_ShaderLibrary;
 
 private:
-    static std::unique_ptr<Buffer> CreateDeviceBufferUnique(BufferContent content, std::string &&name);
+    static Buffer CreateDeviceBuffer(BufferContent content, std::string &&name);
 
     static uint32_t AddDefaultTexture(glm::u8vec4 value, std::string &&name);
-
-    static void AddSkybox(const Skybox2D &skybox);
-    static void AddSkybox(const SkyboxCube &skybox);
 
     static bool SetupPipeline();
 
@@ -122,7 +121,6 @@ private:
     static std::unique_ptr<BufferBuilder> s_BufferBuilder;
     static std::unique_ptr<ImageBuilder> s_ImageBuilder;
 
-    static std::unique_ptr<Image> s_StagingImage;
     static std::unique_ptr<Buffer> s_StagingBuffer;
 
     static vk::Sampler s_TextureSampler;
