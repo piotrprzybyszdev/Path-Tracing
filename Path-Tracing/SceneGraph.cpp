@@ -47,26 +47,36 @@ void SceneGraph::UpdateTransforms()
         assert(isUpdated[node.Parent] == true);  // Nodes are not in pre-order sequence
         assert(isUpdated[i] == false);  // Two animations have the same SceneNode or it's a DAG not a tree
 
-        node.CurrentTransform = node.Transform * parent.CurrentTransform;
+        if (m_IsRelativeTransform[i])
+            node.CurrentTransform = node.Transform * parent.CurrentTransform;
+        else
+            node.CurrentTransform = node.Transform;
 #ifndef NDEBUG
         isUpdated[i] = true;
 #endif
     }
 }
 
-SceneGraph::SceneGraph(std::vector<SceneNode> &&sceneNodes, std::vector<Animation> &&animations)
-    : m_SceneNodes(std::move(sceneNodes)), m_Animations(std::move(animations))
+SceneGraph::SceneGraph(
+    std::vector<SceneNode> &&sceneNodes, std::vector<bool> &&isRelativeTransform,
+    std::vector<Animation> &&animations
+)
+    : m_SceneNodes(std::move(sceneNodes)), m_IsRelativeTransform(std::move(isRelativeTransform)),
+      m_Animations(std::move(animations))
 {
 }
 
 SceneGraph::SceneGraph(SceneGraph &&sceneGraph) noexcept
-    : m_SceneNodes(std::move(sceneGraph.m_SceneNodes)), m_Animations(std::move(sceneGraph.m_Animations))
+    : m_SceneNodes(std::move(sceneGraph.m_SceneNodes)),
+      m_IsRelativeTransform(std::move(sceneGraph.m_IsRelativeTransform)),
+      m_Animations(std::move(sceneGraph.m_Animations))
 {
 }
 
 SceneGraph &SceneGraph::operator=(SceneGraph &&sceneGraph) noexcept
 {
     m_SceneNodes = std::move(sceneGraph.m_SceneNodes);
+    m_IsRelativeTransform = std::move(sceneGraph.m_IsRelativeTransform);
     m_Animations = std::move(sceneGraph.m_Animations);
     return *this;
 }

@@ -37,7 +37,7 @@ hitAttributeEXT vec3 attribs;
 
 Vertex transform(Vertex vertex, uint transformIndex)
 {
-    const mat3x4 transform = mat3x4(transforms[transformIndex] * gl_ObjectToWorldEXT);
+    const mat3x4 transform = mat3x4(mat4(transforms[transformIndex]) * gl_ObjectToWorld3x4EXT);
 
 	vertex.Position = vec4(vertex.Position, 1.0f) * transform;
     vertex.Tangent = normalize(vec4(vertex.Tangent, 0.0f) * transform);

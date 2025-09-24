@@ -43,14 +43,14 @@ class Shader
 {
 public:
     Shader(std::filesystem::path path, vk::ShaderStageFlagBits stage);
-    ~Shader();
+    ~Shader() noexcept;
 
     Shader(Shader &&shader) noexcept;
 
     Shader(const Shader &) = delete;
     Shader &operator=(const Shader &) = delete;
 
-    [[nodiscard]] vk::ShaderModule GetModule(
+    [[nodiscard]] vk::PipelineShaderStageCreateInfo GetStageCreateInfo(
         const shaderc::Compiler &compiler, const shaderc::CompileOptions &options, Includer *includer
     );
 
@@ -68,6 +68,10 @@ private:
     bool m_IsMoved = false;
 
 private:
+    [[nodiscard]] vk::ShaderModule GetModule(
+        const shaderc::Compiler &compiler, const shaderc::CompileOptions &options, Includer *includer
+    );
+
     [[nodiscard]] std::filesystem::file_time_type ComputeUpdateTime() const;
     void UpdateModule(std::span<const uint32_t> code, std::filesystem::file_time_type updateTime);
 
@@ -89,7 +93,8 @@ public:
     void AddGeneralGroup(uint32_t groupIndex, ShaderId shaderId);
     void AddHitGroup(uint32_t groupIndex, ShaderId closestHitId, ShaderId anyHitId);
 
-    vk::Pipeline CreatePipeline(vk::PipelineLayout layout);
+    vk::Pipeline CreateRaytracingPipeline(vk::PipelineLayout layout);
+    vk::Pipeline CreateComputePipeline(vk::PipelineLayout layout, ShaderId shaderId);
 
     static inline constexpr uint32_t RaygenGroupIndex = 0;
     static inline constexpr uint32_t MissGroupIndex = 1;
@@ -101,8 +106,9 @@ private:
     Includer *m_Includer;
 
     std::vector<Shader> m_Shaders;
-    std::vector<vk::PipelineShaderStageCreateInfo> m_Stages;
     std::vector<vk::RayTracingShaderGroupCreateInfoKHR> m_Groups;
+
+    std::set<ShaderId> m_RaytracingShaderIds;
 
 private:
     void ResizeGroups(uint32_t size);

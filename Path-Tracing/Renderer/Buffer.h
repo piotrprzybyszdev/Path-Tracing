@@ -50,6 +50,13 @@ public:
     [[nodiscard]] vk::DeviceAddress GetDeviceAddress() const;
     [[nodiscard]] vk::DeviceSize GetSize() const;
 
+    [[nodiscard]] vk::BufferMemoryBarrier2 GetBarrier(
+        vk::PipelineStageFlagBits2 src, vk::PipelineStageFlagBits2 dst
+    ) const;
+    void AddBarrier(
+        vk::CommandBuffer commandBuffer, vk::PipelineStageFlagBits2 src, vk::PipelineStageFlagBits2 dst
+    ) const;
+
     void SetDebugName(const std::string &name) const;
 
 private:
@@ -60,6 +67,10 @@ private:
     bool m_IsDevice = false;
 
     bool m_IsMoved = false;
+
+private:
+    static vk::AccessFlagBits2 GetAccessFlagsSrc(vk::PipelineStageFlagBits2 stage);
+    static vk::AccessFlagBits2 GetAccessFlagsDst(vk::PipelineStageFlagBits2 stage);
 };
 
 class BufferBuilder

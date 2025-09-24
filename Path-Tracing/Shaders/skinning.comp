@@ -1,0 +1,50 @@
+#version 460
+#extension GL_EXT_buffer_reference : require
+
+#include "ShaderRendererTypes.incl"
+#include "common.glsl"
+
+layout(push_constant, std430) uniform PushConstantLayout {
+    SkinningPushConstants pc;
+};
+
+layout(set = 0, binding = 0) uniform TransformBuffer {
+	mat3x4[MaxBones] boneTransforms;
+};
+
+layout(set = 0, binding = 1) readonly buffer VertexIndexMap {
+    uint[] inIndices;
+};
+
+layout (local_size_x = SkinningShaderGroupSizeX, local_size_y = 1, local_size_z = 1) in;
+
+void main() 
+{
+    const uint outIndex = gl_GlobalInvocationID.x;
+
+    if (outIndex >= inIndices.length())
+        return;
+
+    const uint inIndex = inIndices[outIndex];
+
+    AnimatedVertex animatedVertex = getAnimatedVertex(pc.inAnimatedVertices, inIndex);
+    Vertex vertex = Vertex(vec3(0.0f), animatedVertex.TexCoords, vec3(0.0f), vec3(0.0f), vec3(0.0f));
+
+    float totalWeight = 0;
+    for (int i = 0 ; i < MaxBonesPerVertex && totalWeight < 1.0f; i++)
+    {
+        const uint boneIndex = animatedVertex.BoneIndices[i];
+        const float boneWeight = animatedVertex.BoneWeights[i];
+    
+        const mat3x4 transform = boneTransforms[boneIndex];
+        
+        // TODO: Disallow non-uniform scale
+	    vertex.Position += boneWeight * vec4(animatedVertex.Position, 1.0f) * transform;
+        vertex.Tangent += boneWeight * normalize(vec4(animatedVertex.Tangent, 0.0f) * transform);
+        vertex.Bitangent += boneWeight * normalize(vec4(animatedVertex.Bitangent, 0.0f) * transform);
+        vertex.Normal += boneWeight * normalize((vec4(animatedVertex.Normal, 0.0f) * transpose(inverse(mat4(transform)))).xyz);
+        totalWeight += boneWeight;
+    }
+
+    writeVertex(pc.outVertices, outIndex, vertex);
+}

@@ -11,17 +11,21 @@ namespace PathTracing
 {
 
 Scene::Scene(
-    std::string name, std::vector<Shaders::Vertex> &&vertices, std::vector<uint32_t> &&indices,
-    std::vector<glm::mat4> &&transforms, std::vector<Geometry> &&geometries,
-    std::vector<Shaders::Material> &&materials, std::vector<TextureInfo> &&textures,
-    std::vector<Model> &&models, std::vector<ModelInstance> &&modelInstances, SceneGraph &&sceneGraph,
+    std::string name, std::vector<Shaders::Vertex> &&vertices,
+    std::vector<Shaders::AnimatedVertex> &&animatedVertices, std::vector<uint32_t> &&indices,
+    std::vector<uint32_t> &&animatedIndices, std::vector<glm::mat3x4> &&transforms,
+    std::vector<Geometry> &&geometries, std::vector<Shaders::Material> &&materials,
+    std::vector<TextureInfo> &&textures, std::vector<Model> &&models,
+    std::vector<ModelInstance> &&modelInstances, std::vector<Bone> &&bones, SceneGraph &&sceneGraph,
     std::vector<LightInfo> &&lightInfos, std::vector<Shaders::Light> &&lights, SkyboxVariant &&skybox,
     const std::vector<CameraInfo> &cameraInfos
 )
-    : m_Name(std::move(name)), m_Vertices(std::move(vertices)), m_Indices(std::move(indices)),
-      m_Transforms(std::move(transforms)), m_Geometries(std::move(geometries)),
-      m_Materials(std::move(materials)), m_Textures(std::move(textures)), m_Models(std::move(models)),
-      m_ModelInstances(std::move(modelInstances)), m_Graph(std::move(sceneGraph)), m_LightInfos(lightInfos),
+    : m_Name(std::move(name)), m_Vertices(std::move(vertices)),
+      m_AnimatedVertices(std::move(animatedVertices)), m_Indices(std::move(indices)),
+      m_AnimatedIndices(std::move(animatedIndices)), m_Transforms(std::move(transforms)),
+      m_Geometries(std::move(geometries)), m_Materials(std::move(materials)), m_Textures(std::move(textures)),
+      m_Models(std::move(models)), m_ModelInstances(std::move(modelInstances)), m_Bones(std::move(bones)),
+      m_BoneTransforms(m_Bones.size()), m_Graph(std::move(sceneGraph)), m_LightInfos(std::move(lightInfos)),
       m_Lights(std::move(lights)), m_Skybox(std::move(skybox)), m_ActiveCameraId(g_InputCameraId)
 {
     auto nodes = m_Graph.GetSceneNodes();
@@ -32,6 +36,8 @@ Scene::Scene(
             info.VerticalFOV, info.NearClip, info.FarClip, info.Position, info.Direction, info.UpDirection,
             nodes[info.SceneNodeIndex].CurrentTransform
         );
+
+    m_HasSkeletalAnimations = std::ranges::any_of(m_Geometries, [](const auto &g) { return g.IsAnimated; });
 }
 
 const std::string &Scene::GetName() const
@@ -48,6 +54,9 @@ void Scene::Update(float timeStep)
     for (auto &instance : m_ModelInstances)
         instance.Transform = nodes[instance.SceneNodeIndex].CurrentTransform;
 
+    for (int i = 0; i < m_Bones.size(); i++)
+        m_BoneTransforms[i] = m_Bones[i].Offset * nodes[m_Bones[i].SceneNodeIndex].CurrentTransform;
+
     for (int i = 0; i < m_LightInfos.size(); i++)
         m_Lights[i].Position = glm::vec4(m_LightInfos[i].Position, 1.0f) *
                                nodes[m_LightInfos[i].SceneNodeIndex].CurrentTransform;
@@ -58,6 +67,7 @@ void Scene::Update(float timeStep)
 uint32_t SceneBuilder::AddSceneNode(SceneNode &&node)
 {
     m_SceneNodes.push_back(std::move(node));
+    m_IsRelativeTransform.push_back(true);
     return m_SceneNodes.size() - 1;
 }
 
@@ -78,26 +88,8 @@ uint32_t SceneBuilder::AddGeometry(Geometry &&geometry)
 
 uint32_t SceneBuilder::AddModel(std::span<const MeshInfo> meshInfos)
 {
-    const uint32_t sbtOffset =
-        m_Models.empty() ? 0
-                         : m_Models.back().SbtOffset + static_cast<uint32_t>(m_Models.back().Meshes.size());
-
-    Model model = { {}, sbtOffset };
-    for (const MeshInfo &meshInfo : meshInfos)
-    {
-        const bool isIdentity = glm::all(glm::equal(meshInfo.Transform, glm::mat4(1.0f)));
-
-        model.Meshes.emplace_back(
-            meshInfo.GeometryIndex, meshInfo.MaterialIndex,
-            isIdentity ? IdentityTransformIndex : static_cast<uint32_t>(m_Transforms.size())
-        );
-
-        if (!isIdentity)
-            m_Transforms.push_back(meshInfo.Transform);
-    }
-
+    Model model = CreateModel(meshInfos);
     m_Models.push_back(std::move(model));
-
     return m_Models.size() - 1;
 }
 
@@ -147,6 +139,29 @@ void SceneBuilder::SetIndices(std::vector<uint32_t> &&indices)
     m_Indices = std::move(indices);
 }
 
+void SceneBuilder::SetAnimatedVertices(std::vector<Shaders::AnimatedVertex> &&vertices)
+{
+    m_AnimatedVertices = vertices;
+}
+
+void SceneBuilder::SetAnimatedIndices(std::vector<uint32_t> &&indices)
+{
+    m_AnimatedIndices = indices;
+}
+
+uint32_t SceneBuilder::AddBone(Bone &&bone)
+{
+    assert(m_Bones.size() < Shaders::MaxBones);
+
+    m_Bones.push_back(std::move(bone));
+    return m_Bones.size() - 1;
+}
+
+void SceneBuilder::SetAbsoluteTransform(uint32_t sceneNodeIndex)
+{
+    m_IsRelativeTransform[sceneNodeIndex] = false;
+}
+
 void SceneBuilder::AddLight(Shaders::Light &&light, uint32_t sceneNodeIndex)
 {
     m_LightInfos.emplace_back(sceneNodeIndex, light.Position);
@@ -180,15 +195,20 @@ std::shared_ptr<Scene> SceneBuilder::CreateSceneShared(std::string name)
         m_Lights.push_back(g_DefaultLight);
 
     auto scene = std::make_shared<Scene>(
-        std::move(name), std::move(m_Vertices), std::move(m_Indices), std::move(m_Transforms),
-        std::move(m_Geometries), std::move(m_Materials), std::move(m_Textures), std::move(m_Models),
-        std::move(modelInstances), SceneGraph(std::move(m_SceneNodes), std::move(m_Animations)),
+        std::move(name), std::move(m_Vertices), std::move(m_AnimatedVertices), std::move(m_Indices),
+        std::move(m_AnimatedIndices), std::move(m_Transforms), std::move(m_Geometries),
+        std::move(m_Materials), std::move(m_Textures), std::move(m_Models), std::move(modelInstances),
+        std::move(m_Bones),
+        SceneGraph(std::move(m_SceneNodes), std::move(m_IsRelativeTransform), std::move(m_Animations)),
         std::move(m_LightInfos), std::move(m_Lights), std::move(m_Skybox), m_CameraInfos
     );
 
+    m_SbtOffset = 0;
     m_Vertices.clear();
+    m_AnimatedVertices.clear();
     m_Indices.clear();
-    m_Transforms = { glm::mat4(1.0f) };
+    m_AnimatedIndices.clear();
+    m_Transforms = { glm::mat3x4(1.0f) };
     m_Geometries.clear();
     m_Materials.clear();
     m_MaterialIndices.clear();
@@ -196,6 +216,7 @@ std::shared_ptr<Scene> SceneBuilder::CreateSceneShared(std::string name)
     m_TextureIndices.clear();
     m_Models.clear();
     m_ModelInstanceInfos.clear();
+    m_Bones.clear();
     m_SceneNodes.clear();
     m_Animations.clear();
     m_Lights.clear();
@@ -206,9 +227,34 @@ std::shared_ptr<Scene> SceneBuilder::CreateSceneShared(std::string name)
     return scene;
 }
 
+Model SceneBuilder::CreateModel(std::span<const MeshInfo> meshInfos)
+{
+    Model model = { {}, m_SbtOffset };
+    for (const MeshInfo &meshInfo : meshInfos)
+    {
+        const bool isIdentity = glm::all(glm::equal(meshInfo.Transform, glm::mat3x4(1.0f)));
+
+        model.Meshes.emplace_back(
+            meshInfo.GeometryIndex, meshInfo.MaterialIndex,
+            isIdentity ? IdentityTransformIndex : static_cast<uint32_t>(m_Transforms.size())
+        );
+
+        if (!isIdentity)
+            m_Transforms.push_back(meshInfo.Transform);
+    }
+
+    m_SbtOffset += meshInfos.size();
+    return model;
+}
+
 std::span<const Shaders::Vertex> Scene::GetVertices() const
 {
     return m_Vertices;
+}
+
+std::span<const Shaders::AnimatedVertex> Scene::GetAnimatedVertices() const
+{
+    return m_AnimatedVertices;
 }
 
 std::span<const uint32_t> Scene::GetIndices() const
@@ -216,7 +262,12 @@ std::span<const uint32_t> Scene::GetIndices() const
     return m_Indices;
 }
 
-std::span<const glm::mat4> Scene::GetTransforms() const
+std::span<const uint32_t> Scene::GetAnimatedIndices() const
+{
+    return m_AnimatedIndices;
+}
+
+std::span<const glm::mat3x4> Scene::GetTransforms() const
 {
     return m_Transforms;
 }
@@ -246,9 +297,19 @@ std::span<const ModelInstance> Scene::GetModelInstances() const
     return m_ModelInstances;
 }
 
+std::span<const glm::mat3x4> Scene::GetBoneTransforms() const
+{
+    return m_BoneTransforms;
+}
+
 bool Scene::HasAnimations() const
 {
     return m_Graph.HasAnimations();
+}
+
+bool Scene::HasSkeletalAnimations() const
+{
+    return m_HasSkeletalAnimations;
 }
 
 std::span<const Shaders::Light> Scene::GetLights() const

@@ -17,24 +17,27 @@ class AccelerationStructure
 {
 public:
     AccelerationStructure(
-        const Buffer &vertexBuffer, const Buffer &indexBuffer, const Buffer &transformBuffer,
-        std::shared_ptr<const Scene> scene
+        vk::DeviceAddress vertexBufferAddress, vk::DeviceAddress indexBufferAddress,
+        vk::DeviceAddress animatedVertexBufferAddress, vk::DeviceAddress animatedIndexBufferAddress,
+        vk::DeviceAddress transformBufferAddress, std::shared_ptr<const Scene> scene
     );
     ~AccelerationStructure();
 
     AccelerationStructure(const AccelerationStructure &) = delete;
     AccelerationStructure &operator=(const AccelerationStructure &) = delete;
 
-    void Update();
+    void Update(vk::CommandBuffer commandBuffer);
 
     [[nodiscard]] vk::AccelerationStructureKHR GetTlas() const;
 
 private:
     const vk::DeviceSize m_ScratchOffsetAlignment;
 
-    const Buffer &m_VertexBuffer;
-    const Buffer &m_IndexBuffer;
-    const Buffer &m_TransformBuffer;
+    vk::DeviceAddress m_VertexBufferAddress;
+    vk::DeviceAddress m_AnimatedVertexBufferAddress;
+    vk::DeviceAddress m_IndexBufferAddress;
+    vk::DeviceAddress m_AnimatedIndexBufferAddress;
+    vk::DeviceAddress m_TransformBufferAddress;
 
     std::shared_ptr<const Scene> m_Scene;
 
@@ -42,13 +45,26 @@ private:
 
     Buffer m_BlasBuffer;
     Buffer m_BlasScratchBuffer;
-    
+
+    struct BlasInfo
+    {
+        std::vector<vk::AccelerationStructureBuildRangeInfoKHR> Ranges;
+        std::vector<vk::AccelerationStructureGeometryKHR> Geometries;
+        vk::AccelerationStructureBuildGeometryInfoKHR BuildInfo;
+
+        vk::DeviceSize BlasBufferOffset = 0;
+        vk::DeviceSize BlasScratchBufferOffset = 0;
+        vk::DeviceSize BlasBufferSize = 0;
+        bool IsAnimated = false;
+    };
+
     struct Blas
     {
         vk::AccelerationStructureKHR Handle;
         vk::DeviceAddress Address;
     };
 
+    std::vector<BlasInfo> m_BlasInfos;
     std::vector<Blas> m_Blases;
 
     bool m_IsOpaque = true;
@@ -57,14 +73,16 @@ private:
     vk::AccelerationStructureKHR m_Tlas;
 
 private:
+    void CreateBlases();
+    void BuildBlases(vk::CommandBuffer commandBuffer, vk::BuildAccelerationStructureModeKHR mode);
+
     void CreateTlas();
+    void BuildTlas(vk::CommandBuffer commandBuffer, vk::BuildAccelerationStructureModeKHR mode);
 
-    void BuildBlases();
-    void BuildTlas(
-        vk::BuildAccelerationStructureModeKHR mode = vk::BuildAccelerationStructureModeKHR::eUpdate
-    );
+    void AddBuildSyncBarrier(vk::CommandBuffer commandBuffer);
+    void AddTraceBarrier(vk::CommandBuffer commandBuffer);
 
-    [[nodiscard]] vk::BuildAccelerationStructureFlagsKHR GetFlags() const;
+    [[nodiscard]] vk::BuildAccelerationStructureFlagsKHR GetFlags(bool isAnimated) const;
 };
 
 }

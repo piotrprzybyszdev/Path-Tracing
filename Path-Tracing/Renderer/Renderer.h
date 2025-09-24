@@ -67,6 +67,10 @@ private:
         uint32_t LightCount = 0;
         Buffer LightUniformBuffer;
 
+        Buffer BoneTransformUniformBuffer;
+        Buffer OutAnimatedVertexBuffer;
+        Buffer GeometryBuffer;
+
         std::unique_ptr<AccelerationStructure> SceneAccelerationStructure = nullptr;
     };
 
@@ -78,12 +82,22 @@ private:
 
         Buffer VertexBuffer;
         Buffer IndexBuffer;
+        
+        Buffer AnimatedVertexBuffer;
+        Buffer AnimatedVertexMapBuffer;
+        Buffer AnimatedIndexBuffer;
+        
         Buffer TransformBuffer;
-
-        Buffer GeometryBuffer;
         Buffer MaterialBuffer;
 
         Image Skybox;
+
+        uint32_t OutAnimatedVertexCount = 0;
+        uint32_t AnimatedGeometriesOffset = 0;
+        std::vector<Shaders::Geometry> Geometries;
+
+        std::vector<Image> Textures;
+        std::vector<uint32_t> TextureMap;
 
         std::unique_ptr<ShaderBindingTable> SceneShaderBindingTable = nullptr;
     };
@@ -93,14 +107,20 @@ private:
     static std::vector<Image> s_Textures;
     static std::vector<uint32_t> s_TextureMap;
 
+    static ShaderId s_SkinningShaderId;
+
     static std::unique_ptr<DescriptorSetBuilder> s_DescriptorSetBuilder;
+    static std::unique_ptr<DescriptorSetBuilder> s_SkinningDescriptorSetBuilder;
     static std::unique_ptr<DescriptorSet> s_DescriptorSet;
+    static std::unique_ptr<DescriptorSet> s_SkinningDescriptorSet;
 
     static std::mutex s_DescriptorSetMutex;
     static std::unique_ptr<TextureUploader> s_TextureUploader;
 
     static vk::PipelineLayout s_PipelineLayout;
+    static vk::PipelineLayout s_SkinningPipelineLayout;
     static vk::Pipeline s_Pipeline;
+    static vk::Pipeline s_SkinningPipeline;
 
     static std::unique_ptr<ShaderLibrary> s_ShaderLibrary;
 
@@ -112,8 +132,13 @@ private:
     static bool SetupPipeline();
 
     static void RecordCommandBuffer(const RenderingResources &resources);
+    static void UpdateAnimatedVertices(const RenderingResources &resources);
 
+    static void CreateSceneRenderingResources(RenderingResources &res, uint32_t frameIndex);
     static Image CreateStorageImage(vk::Extent2D extent);
+    static void CreateGeometryBuffer(RenderingResources &resources);
+    static void CreateAccelerationStructure(RenderingResources &resources);
+    
     static void OnInFlightCountChange();
     static void RecreateDescriptorSet();
 

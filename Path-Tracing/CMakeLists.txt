@@ -1,7 +1,7 @@
 find_package(Vulkan REQUIRED COMPONENTS shaderc_combined)
 
 set(SHADER_HEADER_FILES Shaders/ShaderTypes.incl Shaders/ShaderRendererTypes.incl Shaders/common.glsl)
-set(SHADER_SOURCE_FILES Shaders/raygen.rgen Shaders/miss.rmiss Shaders/closesthit.rchit Shaders/anyhit.rahit)
+set(SHADER_SOURCE_FILES Shaders/raygen.rgen Shaders/miss.rmiss Shaders/closesthit.rchit Shaders/anyhit.rahit Shaders/skinning.comp)
 set(SHADER_SPV_FILES)
 
 if(NOT ${CMAKE_CURRENT_SOURCE_DIR} PATH_EQUAL ${CMAKE_CURRENT_BINARY_DIR})

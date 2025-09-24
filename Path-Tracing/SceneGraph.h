@@ -42,13 +42,14 @@ struct AnimationNode
 
 template<typename T> inline T AnimationNode::Sequence<T>::Update(float currentTick)
 {
-    assert(Keys[0].Tick == 0.0f);
+    if (currentTick < Keys[0].Tick)
+        return Keys[0].Value;
 
     while (Index + 1 < Keys.size() && currentTick > Keys[Index + 1].Tick)
         Index++;
 
     if (Index + 1 == Keys.size())
-        return Keys[Index].Value;
+        return Keys.back().Value;
 
     const float total = Keys[Index + 1].Tick - Keys[Index].Tick;
     const float current = currentTick - Keys[Index].Tick;
@@ -79,7 +80,10 @@ struct Animation
 class SceneGraph
 {
 public:
-    SceneGraph(std::vector<SceneNode> &&sceneNodes, std::vector<Animation> &&animations);
+    SceneGraph(
+        std::vector<SceneNode> &&sceneNodes, std::vector<bool> &&isRelativeTransform,
+        std::vector<Animation> &&animations
+    );
 
     SceneGraph(const SceneGraph &) = delete;
     SceneGraph &operator=(const SceneGraph &) = delete;
@@ -94,6 +98,7 @@ public:
 
 private:
     std::vector<SceneNode> m_SceneNodes;
+    std::vector<bool> m_IsRelativeTransform;
     std::vector<Animation> m_Animations;
 
 private:

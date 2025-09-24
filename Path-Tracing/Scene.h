@@ -43,13 +43,14 @@ struct Geometry
     uint32_t IndexOffset;
     uint32_t IndexLength;
     bool IsOpaque;
+    bool IsAnimated;
 };
 
 struct MeshInfo
 {
     uint32_t GeometryIndex;
     uint32_t MaterialIndex;
-    glm::mat4 Transform;
+    glm::mat3x4 Transform;
 };
 
 struct Mesh
@@ -70,6 +71,12 @@ struct ModelInstance
     uint32_t ModelIndex;
     uint32_t SceneNodeIndex;
     glm::mat4 Transform;
+};
+
+struct Bone
+{
+    uint32_t SceneNodeIndex;
+    glm::mat4 Offset;
 };
 
 struct LightInfo
@@ -115,10 +122,12 @@ class Scene
 {
 public:
     Scene(
-        std::string name, std::vector<Shaders::Vertex> &&vertices, std::vector<uint32_t> &&indices,
-        std::vector<glm::mat4> &&transforms, std::vector<Geometry> &&geometries,
-        std::vector<Shaders::Material> &&materials, std::vector<TextureInfo> &&textures,
-        std::vector<Model> &&models, std::vector<ModelInstance> &&modelInstances, SceneGraph &&sceneGraph,
+        std::string name, std::vector<Shaders::Vertex> &&vertices,
+        std::vector<Shaders::AnimatedVertex> &&animatedVertices, std::vector<uint32_t> &&indices,
+        std::vector<uint32_t> &&animatedIndices, std::vector<glm::mat3x4> &&transforms,
+        std::vector<Geometry> &&geometries, std::vector<Shaders::Material> &&materials,
+        std::vector<TextureInfo> &&textures, std::vector<Model> &&models,
+        std::vector<ModelInstance> &&modelInstances, std::vector<Bone> &&bones, SceneGraph &&sceneGraph,
         std::vector<LightInfo> &&lightInfos, std::vector<Shaders::Light> &&lights, SkyboxVariant &&skybox,
         const std::vector<CameraInfo> &cameraInfos
     );
@@ -128,8 +137,10 @@ public:
     void Update(float timeStep);
 
     [[nodiscard]] std::span<const Shaders::Vertex> GetVertices() const;
+    [[nodiscard]] std::span<const Shaders::AnimatedVertex> GetAnimatedVertices() const;
     [[nodiscard]] std::span<const uint32_t> GetIndices() const;
-    [[nodiscard]] std::span<const glm::mat4> GetTransforms() const;
+    [[nodiscard]] std::span<const uint32_t> GetAnimatedIndices() const;
+    [[nodiscard]] std::span<const glm::mat3x4> GetTransforms() const;
     [[nodiscard]] std::span<const Geometry> GetGeometries() const;
     [[nodiscard]] std::span<const Shaders::Material> GetMaterials() const;
     [[nodiscard]] std::span<const TextureInfo> GetTextures() const;
@@ -137,7 +148,10 @@ public:
     [[nodiscard]] std::span<const Model> GetModels() const;
     [[nodiscard]] std::span<const ModelInstance> GetModelInstances() const;
 
+    [[nodiscard]] std::span<const glm::mat3x4> GetBoneTransforms() const;
+
     [[nodiscard]] bool HasAnimations() const;
+    [[nodiscard]] bool HasSkeletalAnimations() const;
 
     [[nodiscard]] std::span<const Shaders::Light> GetLights() const;
 
@@ -158,7 +172,10 @@ private:
 
     std::vector<Shaders::Vertex> m_Vertices;
     std::vector<uint32_t> m_Indices;
-    std::vector<glm::mat4> m_Transforms;
+    std::vector<glm::mat3x4> m_Transforms;
+
+    std::vector<Shaders::AnimatedVertex> m_AnimatedVertices;
+    std::vector<uint32_t> m_AnimatedIndices;
 
     std::vector<Geometry> m_Geometries;
 
@@ -169,7 +186,11 @@ private:
     std::vector<Model> m_Models;
     std::vector<ModelInstance> m_ModelInstances;
 
+    std::vector<Bone> m_Bones;
+    std::vector<glm::mat3x4> m_BoneTransforms;
+
     SceneGraph m_Graph;
+    bool m_HasSkeletalAnimations = false;
     
     std::vector<LightInfo> m_LightInfos;
     std::vector<Shaders::Light> m_Lights;
@@ -199,6 +220,12 @@ public:
     void SetVertices(std::vector<Shaders::Vertex> &&vertices);
     void SetIndices(std::vector<uint32_t> &&indices);
 
+    void SetAnimatedVertices(std::vector<Shaders::AnimatedVertex> &&vertices);
+    void SetAnimatedIndices(std::vector<uint32_t> &&indices);
+
+    uint32_t AddBone(Bone &&bone);
+    void SetAbsoluteTransform(uint32_t sceneNodeIndex);
+
     void AddLight(Shaders::Light &&light, uint32_t sceneNodeIndex);
 
     void SetSkybox(Skybox2D &&skybox);
@@ -214,7 +241,10 @@ public:
 private:
     std::vector<Shaders::Vertex> m_Vertices;
     std::vector<uint32_t> m_Indices;
-    std::vector<glm::mat4> m_Transforms = { glm::mat4(1.0f) };
+    std::vector<glm::mat3x4> m_Transforms = { glm::mat3x4(1.0f) };
+
+    std::vector<Shaders::AnimatedVertex> m_AnimatedVertices;
+    std::vector<uint32_t> m_AnimatedIndices;
 
     std::vector<Geometry> m_Geometries;
 
@@ -228,7 +258,10 @@ private:
     std::vector<std::pair<uint32_t, uint32_t>> m_ModelInstanceInfos;
 
     std::vector<SceneNode> m_SceneNodes;
+    std::vector<bool> m_IsRelativeTransform;
     std::vector<Animation> m_Animations;
+
+    std::vector<Bone> m_Bones;
 
     std::vector<Shaders::Light> m_Lights;
     std::vector<LightInfo> m_LightInfos;
@@ -243,6 +276,11 @@ private:
         .Position = glm::vec3(3.0f, 15.0f, 7.0f),
         .AttenuationConstant = 1.0f,
     };
+
+private:
+    uint32_t m_SbtOffset = 0;
+
+    Model CreateModel(std::span<const MeshInfo> meshInfos);
 };
 
 }

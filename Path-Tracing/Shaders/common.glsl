@@ -28,6 +28,51 @@ Vertex getVertex(VertexBuffer vertices, IndexBuffer indices, uint offset)
     return v;
 }
 
+AnimatedVertex getAnimatedVertex(AnimatedVertexBuffer vertices, uint index)
+{
+    const vec2 p1 = vertices.v[index * 11];
+    const vec2 p2 = vertices.v[index * 11 + 1];
+    const vec2 p3 = vertices.v[index * 11 + 2];
+    const vec2 p4 = vertices.v[index * 11 + 3];
+    const vec2 p5 = vertices.v[index * 11 + 4];
+    const vec2 p6 = vertices.v[index * 11 + 5];
+    const vec2 p7 = vertices.v[index * 11 + 6];
+    const vec2 p8 = vertices.v[index * 11 + 7];
+    const vec2 p9 = vertices.v[index * 11 + 8];
+    const vec2 p10 = vertices.v[index * 11 + 9];
+    const vec2 p11 = vertices.v[index * 11 + 10];
+
+    AnimatedVertex v;
+    v.Position = vec3(p1, p2.x);
+    v.TexCoords = vec2(p2.y, p3.x);
+    v.Normal = vec3(p3.y, p4);
+    v.Tangent = vec3(p5, p6.x);
+    v.Bitangent = vec3(p6.y, p7);
+    v.BoneIndices = uint[4](floatBitsToInt(p8.x), floatBitsToInt(p8.y), floatBitsToInt(p9.x), floatBitsToInt(p9.y));
+    v.BoneWeights = float[4](p10.x, p10.y, p11.x, p11.y);
+
+    return v;
+}
+
+void writeVertex(VertexWriteBuffer vertices, uint index, Vertex vertex)
+{
+    const vec2 p1 = vertex.Position.xy;
+    const vec2 p2 = vec2(vertex.Position.z, vertex.TexCoords.x);
+    const vec2 p3 = vec2(vertex.TexCoords.y, vertex.Normal.x);
+    const vec2 p4 = vertex.Normal.yz;
+    const vec2 p5 = vertex.Tangent.xy;
+    const vec2 p6 = vec2(vertex.Tangent.z, vertex.Bitangent.x);
+    const vec2 p7 = vec2(vertex.Bitangent.yz);
+
+    vertices.v[index * 7] = p1;
+    vertices.v[index * 7 + 1] = p2;
+    vertices.v[index * 7 + 2] = p3;
+    vertices.v[index * 7 + 3] = p4;
+    vertices.v[index * 7 + 4] = p5;
+    vertices.v[index * 7 + 5] = p6;
+    vertices.v[index * 7 + 6] = p7;
+}
+
 vec2 interpolate(vec2 v1, vec2 v2, vec2 v3, vec3 barycentricCoords)
 {
     return v1 * barycentricCoords.x + v2 * barycentricCoords.y + v3 * barycentricCoords.z;

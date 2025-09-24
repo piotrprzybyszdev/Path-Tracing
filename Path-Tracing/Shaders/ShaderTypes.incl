@@ -16,6 +16,7 @@ using ClosestHitFlags       = uint;
 
 #endif
 
+const uint MaxUniformBufferSize             = 64 * 1024u;
 
 const uint DefaultColorTextureIndex         = 0;
 const uint DefaultNormalTextureIndex        = 1;
@@ -54,6 +55,8 @@ const uint ClosestHitFlagsDisableMipMaps    = 0x1u;
 const uint ClosestHitFlagsAll               = 0x1u;
 
 const uint MaxLightCount                    = 64u;
+const uint MaxBonesPerVertex                = 4u;
+const uint MaxBones                         = MaxUniformBufferSize / (3 * 4 * 4);
 
 struct Camera
 {
@@ -68,6 +71,17 @@ struct Vertex
     vec3 Normal;
     vec3 Tangent;
     vec3 Bitangent;
+};
+
+struct AnimatedVertex
+{
+    vec3 Position;
+    vec2 TexCoords;
+    vec3 Normal;
+    vec3 Tangent;
+    vec3 Bitangent;
+    uint BoneIndices[MaxBonesPerVertex];
+    float BoneWeights[MaxBonesPerVertex];
 };
 
 struct Material

@@ -167,6 +167,8 @@ void Application::Shutdown()
 {
     switch (s_State)
     {
+    case State::Running:
+        [[fallthrough]];
     case State::Initialized:
         Renderer::Shutdown();
         [[fallthrough]];
@@ -202,7 +204,7 @@ void Application::Run()
     float lastFrameTime = 0.0f;
     vk::Extent2D previousSize = {};
 
-    SceneManager::SetActiveScene("Sponza");
+    SceneManager::SetActiveScene("Brain Stem");
     Renderer::UpdateSceneData();
 
     while (!Window::ShouldClose())

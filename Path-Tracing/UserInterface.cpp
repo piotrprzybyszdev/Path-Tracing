@@ -236,11 +236,13 @@ void UserInterface::DefineUI()
     if (ImGui::Checkbox("Disable Mip Maps", &disableMipMaps))
         s_ClosestHitFlags ^= Shaders::ClosestHitFlagsDisableMipMaps;
 
-    ImGui::BeginListBox("Scene");
-    for (auto &scene : SceneManager::GetSceneNames())
-        if (ImGui::Selectable(scene.c_str()))
-            s_SceneChange = scene.c_str();
-    ImGui::EndListBox();
+    if (ImGui::BeginListBox("Scene"))
+    {
+        for (auto &scene : SceneManager::GetSceneNames())
+            if (ImGui::Selectable(scene.c_str()))
+                s_SceneChange = scene.c_str();
+        ImGui::EndListBox();
+    }
     
     auto scene = SceneManager::GetActiveScene();
 

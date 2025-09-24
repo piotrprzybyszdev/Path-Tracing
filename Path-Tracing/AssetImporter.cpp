@@ -1,3 +1,4 @@
+#include <glm/ext/matrix_relational.hpp>
 #include <assimp/Importer.hpp>
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
@@ -143,32 +144,85 @@ uint32_t FindSameGeometry(std::span<aiMesh *const> haystack, const aiMesh *needl
     // TODO: Should check that both materials are opaque
 
     for (uint32_t i = 0; i < haystack.size(); i++)
-        if (haystack[i]->mFaces == needle->mFaces && haystack[i]->mNumFaces == needle->mNumFaces)
+        if (haystack[i]->mFaces == needle->mFaces && haystack[i]->mNumFaces == needle->mNumFaces &&
+            haystack[i]->mBones == needle->mBones)
             return i;
 
     return haystack.size();
 }
 
+bool CheckAnimated(const aiMesh* mesh)
+{
+    return mesh->HasBones();
+}
+
+void LoadBones(
+    SceneBuilder &sceneBuilder, const aiScene *scene, std::vector<Shaders::AnimatedVertex> &vertices,
+    uint32_t vertexOffset, const aiMesh *mesh,
+    const std::unordered_map<const aiNode *, uint32_t> &sceneNodeIndices,
+    std::unordered_set<const aiNode *> &armatures
+)
+{
+    std::vector<uint8_t> vertexBoneCount(vertices.size());
+
+    for (int i = 0; i < mesh->mNumBones; i++)
+    {
+        const aiBone *bone = mesh->mBones[i];
+        armatures.insert(bone->mArmature);
+
+        const uint32_t sceneNodeIndex = sceneNodeIndices.at(bone->mNode);
+        const uint32_t boneIndex = sceneBuilder.AddBone({
+            .SceneNodeIndex = sceneNodeIndex,
+            .Offset = TrivialCopy<aiMatrix4x4, glm::mat4>(bone->mOffsetMatrix),
+        });
+
+        for (int j = 0; j < bone->mNumWeights; j++)
+        {
+            const aiVertexWeight &weight = bone->mWeights[j];
+
+            const uint32_t vertexBoneIndex = vertexBoneCount[weight.mVertexId]++;
+            vertices[vertexOffset + weight.mVertexId].BoneWeights[vertexBoneIndex] = weight.mWeight;
+            vertices[vertexOffset + weight.mVertexId].BoneIndices[vertexBoneIndex] = boneIndex;
+
+            assert(vertexBoneIndex < Shaders::MaxBonesPerVertex);
+        }
+    }
+}
+
 std::vector<uint32_t> LoadMeshes(
-    SceneBuilder &sceneBuilder, const std::filesystem::path &path, const aiScene *scene
+    SceneBuilder &sceneBuilder, const std::filesystem::path &path, const aiScene *scene,
+    const std::unordered_map<const aiNode *, uint32_t> &sceneNodeIndices,
+    std::unordered_set<const aiNode *> &armatures
 )
 {
     std::vector<Shaders::Vertex> vertices;
+    std::vector<Shaders::AnimatedVertex> animatedVertices;
     std::vector<uint32_t> indices;
+    std::vector<uint32_t> animatedIndices;
 
     {
         uint32_t vertexCount = 0, indexCount = 0;
+        uint32_t animatedVertexCount = 0, animatedIndexCount = 0;
         for (int i = 0; i < scene->mNumMeshes; i++)
         {
-            vertexCount += scene->mMeshes[i]->mNumVertices;
-            indexCount += scene->mMeshes[i]->mNumFaces * 3;
+            const aiMesh *mesh = scene->mMeshes[i];
+
+            uint32_t &vc = CheckAnimated(mesh) ? animatedVertexCount : vertexCount;
+            uint32_t &ic = CheckAnimated(mesh) ? animatedIndexCount : indexCount;
+
+            vc += mesh->mNumVertices;
+            ic += mesh->mNumFaces * 3;
         }
+
         vertices.resize(vertexCount);
+        animatedVertices.resize(animatedVertexCount);
         indices.resize(indexCount);
+        animatedIndices.resize(animatedIndexCount);
     }
 
     std::vector<uint32_t> meshToGeometry(scene->mNumMeshes);
     uint32_t vertexOffset = 0, indexOffset = 0;
+    uint32_t animatedVertexOffset = 0, animatedIndexOffset = 0;
     for (uint32_t i = 0; i < scene->mNumMeshes; i++)
     {
         const aiMesh *mesh = scene->mMeshes[i];
@@ -187,36 +241,63 @@ std::vector<uint32_t> LoadMeshes(
         const uint32_t vertexCount = mesh->mNumVertices;
         const uint32_t indexCount = mesh->mNumFaces * 3;
 
+        uint32_t &vo = CheckAnimated(mesh) ? animatedVertexOffset : vertexOffset;
+        uint32_t &io = CheckAnimated(mesh) ? animatedIndexOffset : indexOffset;
+
         assert(!mesh->HasTextureCoords(0) || mesh->mNumUVComponents[0] == 2);
 
         for (int j = 0; j < vertexCount; j++)
         {
-            const uint32_t idx = vertexOffset + j;
-            vertices[idx].Position = TrivialCopy<aiVector3D, glm::vec3>(mesh->mVertices[j]);
-            if (mesh->HasTextureCoords(0))
-                vertices[idx].TexCoords = TrivialCopy<aiVector3D, glm::vec2>(mesh->mTextureCoords[0][j]);
-            vertices[idx].Normal = TrivialCopy<aiVector3D, glm::vec3>(mesh->mNormals[j]);
-            if (mesh->HasTangentsAndBitangents())
+            const uint32_t idx = vo + j;
+
+            if (CheckAnimated(mesh))
             {
-                vertices[idx].Tangent = TrivialCopy<aiVector3D, glm::vec3>(mesh->mTangents[j]);
-                vertices[idx].Bitangent = TrivialCopy<aiVector3D, glm::vec3>(mesh->mBitangents[j]);
+                animatedVertices[idx].Position = TrivialCopy<aiVector3D, glm::vec3>(mesh->mVertices[j]);
+                if (mesh->HasTextureCoords(0))
+                    animatedVertices[idx].TexCoords = TrivialCopy<aiVector3D, glm::vec2>(mesh->mTextureCoords[0][j]);
+                animatedVertices[idx].Normal = TrivialCopy<aiVector3D, glm::vec3>(mesh->mNormals[j]);
+                if (mesh->HasTangentsAndBitangents())
+                {
+                    animatedVertices[idx].Tangent = TrivialCopy<aiVector3D, glm::vec3>(mesh->mTangents[j]);
+                    animatedVertices[idx].Bitangent = TrivialCopy<aiVector3D, glm::vec3>(mesh->mBitangents[j]);
+                }
+            }
+            else
+            {
+                vertices[idx].Position = TrivialCopy<aiVector3D, glm::vec3>(mesh->mVertices[j]);
+                if (mesh->HasTextureCoords(0))
+                    vertices[idx].TexCoords = TrivialCopy<aiVector3D, glm::vec2>(mesh->mTextureCoords[0][j]);
+                vertices[idx].Normal = TrivialCopy<aiVector3D, glm::vec3>(mesh->mNormals[j]);
+                if (mesh->HasTangentsAndBitangents())
+                {
+                    vertices[idx].Tangent = TrivialCopy<aiVector3D, glm::vec3>(mesh->mTangents[j]);
+                    vertices[idx].Bitangent = TrivialCopy<aiVector3D, glm::vec3>(mesh->mBitangents[j]);
+                }
             }
         }
 
         for (int j = 0; j < mesh->mNumFaces; j++)
         {
-            const uint32_t idx = indexOffset + j * 3;
+            const uint32_t idx = io + j * 3;
             const aiFace &face = mesh->mFaces[j];
             assert(face.mNumIndices == 3);
-            std::ranges::copy(std::span(face.mIndices, 3), indices.begin() + idx);
+            std::vector<uint32_t> &i = !CheckAnimated(mesh) ? indices : animatedIndices;
+            std::ranges::copy(std::span(face.mIndices, 3), i.begin() + idx);
         }
+
+        if (CheckAnimated(mesh))
+            LoadBones(sceneBuilder, scene, animatedVertices, vo, mesh, sceneNodeIndices, armatures);
 
         bool isOpaque = CheckOpaque(path, scene->mMaterials[mesh->mMaterialIndex]);
 
-        meshToGeometry[i] =
-            sceneBuilder.AddGeometry({ vertexOffset, vertexCount, indexOffset, indexCount, isOpaque });
-        vertexOffset += vertexCount;
-        indexOffset += indexCount;
+        if (!CheckAnimated(mesh))
+            meshToGeometry[i] =
+                sceneBuilder.AddGeometry({ vo, vertexCount, io, indexCount, isOpaque, false });
+        else
+            meshToGeometry[i] = sceneBuilder.AddGeometry({ vo, vertexCount, io, indexCount, isOpaque, true });
+        
+        vo += vertexCount;
+        io += indexCount;
 
         logger::debug(
             "Adding geometry (mesh {}) ({}) with {} vertices and {} indices", mesh->mName.C_Str(),
@@ -225,7 +306,9 @@ std::vector<uint32_t> LoadMeshes(
     }
 
     sceneBuilder.SetVertices(std::move(vertices));
+    sceneBuilder.SetAnimatedVertices(std::move(animatedVertices));
     sceneBuilder.SetIndices(std::move(indices));
+    sceneBuilder.SetAnimatedIndices(std::move(animatedIndices));
 
     return meshToGeometry;
 }
@@ -275,68 +358,162 @@ std::unordered_set<const aiNode *> FindDynamicNodes(const aiScene *scene)
     return dynamicNodes;
 }
 
-std::unordered_map<const aiNode *, uint32_t> LoadSceneHierarchy(
-    SceneBuilder &sceneBuilder, const aiScene *scene, std::span<const uint32_t> meshToGeometry,
-    std::span<const uint32_t> materialIndexMap, const std::unordered_set<const aiNode *> &dynamicNodes
+std::unordered_map<const aiNode *, uint32_t> LoadSceneNodes(
+    SceneBuilder &sceneBuilder, const aiScene *scene, std::vector<const aiNode *> &nodes
 )
 {
     std::unordered_map<const aiNode *, uint32_t> sceneNodeToIndex;
 
-    const auto toTransformMatrix = TrivialCopy<aiMatrix4x4, glm::mat4>;
-    std::vector<std::vector<MeshInfo>> modelToMeshInfos(1 + dynamicNodes.size());
-    std::vector<uint32_t> sceneNodeIndices(1 + dynamicNodes.size());
-
-    std::stack<std::tuple<const aiNode *, glm::mat4, uint32_t, uint32_t, int>> stack;
-    stack.emplace(scene->mRootNode, glm::mat4(1.0f), 0u, -1u, 0);
-
-    uint32_t nextModelIndex = 0;
+    std::stack<std::tuple<const aiNode *, uint32_t, uint32_t>> stack;
+    stack.emplace(scene->mRootNode, -1u, 0u);
 
     while (!stack.empty())
     {
-        auto [node, totalTransform, modelIndex, parentNodeIndex, depth] = stack.top();
+        auto [node, parentNodeIndex, depth] = stack.top();
         stack.pop();
+
+        nodes.push_back(node);
 
         logger::info(
             "{}{}, mesh count: {}", std::string(depth * 4, ' '), node->mName.C_Str(), node->mNumMeshes
         );
 
-        glm::mat4 nodeTransform = toTransformMatrix(node->mTransformation);
-
         const uint32_t sceneNodeIndex = sceneBuilder.AddSceneNode({
             .Parent = parentNodeIndex,
-            .Transform = nodeTransform,
+            .Transform = TrivialCopy<aiMatrix4x4, glm::mat4>(node->mTransformation),
             .CurrentTransform = glm::mat4(1.0f),
         });
 
         sceneNodeToIndex.emplace(node, sceneNodeIndex);
-        totalTransform = nodeTransform * totalTransform;
 
-        if (dynamicNodes.contains(node) || node == scene->mRootNode)
+        for (int i = 0; i < node->mNumChildren; i++)
+            stack.emplace(node->mChildren[i], sceneNodeIndex, depth + 1);
+    }
+
+    return sceneNodeToIndex;
+}
+
+void LoadModels(
+    SceneBuilder &sceneBuilder, const aiScene *scene,
+    std::unordered_map<const aiNode *, uint32_t> sceneNodeIndices,
+    std::unordered_set<const aiNode *> dynamicNodes, std::unordered_set<const aiNode *> armatures,
+    std::vector<const aiNode *> nodes, const std::vector<uint32_t> &materialIndexMap,
+    const std::vector<uint32_t> &meshToGeometry
+)
+{
+    const uint32_t maxInstanceCount = 1 + dynamicNodes.size() + armatures.size();
+    auto isInstanceRoot = [&](const aiNode *node) {
+        return dynamicNodes.contains(node) || scene->mRootNode == node;
+    };
+
+    std::vector<std::vector<MeshInfo>> modelToMeshInfos(maxInstanceCount);
+    std::vector<std::vector<MeshInfo>> modelToAnimatedMeshInfos(maxInstanceCount);
+    std::vector<uint32_t> modelToSceneNodeIndex(maxInstanceCount);
+
+    uint32_t nextModelIndex = 0;
+
+    std::vector<uint32_t> sceneNodeToModelIndex(nodes.size());
+    std::vector<glm::mat4> sceneNodeToMeshTransform(nodes.size());
+
+    for (const aiNode *node : nodes)
+    {
+        const uint32_t sceneNodeIndex = sceneNodeIndices[node];
+
+        uint32_t &modelIndex = sceneNodeToModelIndex[sceneNodeIndex];
+        glm::mat4 &totalTransform = sceneNodeToMeshTransform[sceneNodeIndex];
+
+        if (isInstanceRoot(node))
         {
             modelIndex = nextModelIndex++;
-            sceneNodeIndices[modelIndex] = sceneNodeIndex;
+            modelToSceneNodeIndex[modelIndex] = sceneNodeIndex;
             totalTransform = glm::mat4(1.0f);
+        }
+        else
+        {
+            const uint32_t parentNodeIndex = sceneNodeIndices[node->mParent];
+            modelIndex = sceneNodeToModelIndex[parentNodeIndex];
+            totalTransform = TrivialCopy<aiMatrix4x4, glm::mat4>(node->mTransformation) *
+                             sceneNodeToMeshTransform[parentNodeIndex];
+        }
+
+        bool hasAnimatedMeshes = false;
+        for (int i = 0; i < node->mNumMeshes; i++)
+        {
+            const uint32_t meshIndex = node->mMeshes[i];
+            const aiMesh *mesh = scene->mMeshes[meshIndex];
+
+            if (CheckAnimated(mesh))
+            {
+                hasAnimatedMeshes = true;
+                continue;
+            }
+
+            modelToMeshInfos[modelIndex].emplace_back(
+                meshToGeometry[meshIndex], materialIndexMap[mesh->mMaterialIndex], totalTransform
+            );
+        }
+
+        uint32_t animatedModelIndex = -1;
+
+        if (hasAnimatedMeshes)
+        {
+            // For animated meshes we create another instance
+            animatedModelIndex = nextModelIndex++;
+
+            // We assume that the direct parent of the mesh is an ancestor of the mesh's armature
+            // (Lowest common ancestor of both node with the mesh and armature node)
+            const aiNode *ancestor = node->mParent;
+
+            // We can find the transformation of the vertices in two ways:
+            // (ancestor absolute transform) * (mesh relative transform to ancestor)
+            // (ancestor absolute transform) * (mesh relative bone transformation to ancestor)
+
+            // We assert that the mesh relative transform to ancestor is identity
+            // Otherwise it is not clear how this transform should interact with the bone transforms
+            assert(node->mTransformation.IsIdentity());
+
+            // Ancestor absolute transform is considered to be the instance transform
+            // (the ancestor is the root of the instance)
+            modelToSceneNodeIndex[animatedModelIndex] = sceneNodeIndices[ancestor];
+
+            // We set the bone transforms to be relative the the ancestor
+            for (int j = 0; j < node->mParent->mNumChildren; j++)
+                sceneBuilder.SetAbsoluteTransform(sceneNodeIndices.at(node->mParent->mChildren[j]));
         }
 
         for (int i = 0; i < node->mNumMeshes; i++)
-            modelToMeshInfos[modelIndex].emplace_back(
-                meshToGeometry[node->mMeshes[i]],
-                materialIndexMap[scene->mMeshes[node->mMeshes[i]]->mMaterialIndex], totalTransform
-            );
+        {
+            const uint32_t meshIndex = node->mMeshes[i];
+            const aiMesh *mesh = scene->mMeshes[meshIndex];
 
-        for (int i = 0; i < node->mNumChildren; i++)
-            stack.emplace(node->mChildren[i], totalTransform, modelIndex, sceneNodeIndex, depth + 1);
+            // Assert that the mesh's armature is in fact the child of the assumed ancestor
+            const aiNode *ancestor = node->mParent;
+            for (int j = 0; j < mesh->mNumBones; j++)
+                assert(ancestor->FindNode(mesh->mBones[j]->mArmature->mName) != nullptr);
+
+            if (CheckAnimated(mesh))
+                modelToAnimatedMeshInfos[animatedModelIndex].emplace_back(
+                    meshToGeometry[meshIndex], materialIndexMap[mesh->mMaterialIndex], glm::mat4(1.0f)
+                );
+        }
     }
 
     // TODO: Combine models into one if their meshInfos are the same
 
     for (int i = 0; i < modelToMeshInfos.size(); i++)
+    {
         if (!modelToMeshInfos[i].empty())
-            sceneBuilder.AddModelInstance(sceneBuilder.AddModel(modelToMeshInfos[i]), sceneNodeIndices[i]);
+            sceneBuilder.AddModelInstance(
+                sceneBuilder.AddModel(modelToMeshInfos[i]), modelToSceneNodeIndex[i]
+            );
 
-    return sceneNodeToIndex;
+        if (!modelToAnimatedMeshInfos[i].empty())
+            sceneBuilder.AddModelInstance(
+                sceneBuilder.AddModel(modelToAnimatedMeshInfos[i]), modelToSceneNodeIndex[i]
+            );
+    }
 }
- 
+
 void LoadAnimations(
     SceneBuilder &sceneBuilder, const aiScene *scene,
     const std::unordered_map<const aiNode *, uint32_t> &sceneNodeIndices
@@ -361,23 +538,6 @@ void LoadAnimations(
             outAnimNode.Positions.Keys.reserve(animNode->mNumPositionKeys);
             outAnimNode.Rotations.Keys.reserve(animNode->mNumRotationKeys);
             outAnimNode.Scales.Keys.reserve(animNode->mNumScalingKeys);
-
-            {
-                aiQuaternion rotation;
-                aiVector3D position, scaling;
-                node->mTransformation.Decompose(scaling, rotation, position);
-
-                if (animNode->mPositionKeys[0].mTime != 0.0f)
-                    outAnimNode.Positions.Keys.emplace_back(
-                        TrivialCopy<aiVector3D, glm::vec3>(position), 0.0f
-                    );
-                if (animNode->mRotationKeys[0].mTime != 0.0f)
-                    outAnimNode.Rotations.Keys.emplace_back(
-                        glm::quat(rotation.w, rotation.x, rotation.y, rotation.z), 0.0f
-                    );
-                if (animNode->mScalingKeys[0].mTime != 0.0f)
-                    outAnimNode.Scales.Keys.emplace_back(TrivialCopy<aiVector3D, glm::vec3>(position), 0.0f);
-            }
 
             for (int k = 0; k < animNode->mNumPositionKeys; k++)
             {
@@ -437,7 +597,7 @@ void LoadLights(
     {
         const aiLight *light = scene->mLights[i];
 
-        // assert(light->mType == aiLightSource_POINT);
+        // TODO: assert(light->mType == aiLightSource_POINT);
         assert(light->mColorAmbient == light->mColorDiffuse && light->mColorDiffuse == light->mColorSpecular);
 
         logger::info("Light {} ({})", light->mName.C_Str(), static_cast<uint32_t>(light->mType));
@@ -505,7 +665,8 @@ std::shared_ptr<Scene> AssetImporter::LoadScene(const std::string &name, const s
 
     const aiScene *scene = nullptr;
     {
-        unsigned int flags = aiProcess_Triangulate | aiProcess_FlipUVs | aiProcess_CalcTangentSpace;
+        unsigned int flags = aiProcess_Triangulate | aiProcess_FlipUVs | aiProcess_CalcTangentSpace |
+                             aiProcess_LimitBoneWeights | aiProcess_GenNormals | aiProcess_PopulateArmatureData;
 #ifdef NDEBUG
         flags |= aiProcess_JoinIdenticalVertices | aiProcess_ImproveCacheLocality | aiProcess_OptimizeMeshes;
 #endif
@@ -530,11 +691,19 @@ std::shared_ptr<Scene> AssetImporter::LoadScene(const std::string &name, const s
 
     SceneBuilder sceneBuilder;
 
-    std::vector<uint32_t> materialIndexMap = LoadMaterials(path, sceneBuilder, scene);
-    std::vector<uint32_t> meshToGeometry = LoadMeshes(sceneBuilder, path, scene);
-    std::unordered_set<const aiNode *> dynamicNodes = FindDynamicNodes(scene);
+    std::vector<const aiNode *> nodes;
     std::unordered_map<const aiNode *, uint32_t> sceneNodeIndices =
-        LoadSceneHierarchy(sceneBuilder, scene, meshToGeometry, materialIndexMap, dynamicNodes);
+        LoadSceneNodes(sceneBuilder, scene, nodes);
+    std::vector<uint32_t> materialIndexMap = LoadMaterials(path, sceneBuilder, scene);
+
+    std::unordered_set<const aiNode *> armatures;
+    std::vector<uint32_t> meshToGeometry = LoadMeshes(sceneBuilder, path, scene, sceneNodeIndices, armatures);
+    std::unordered_set<const aiNode *> dynamicNodes = FindDynamicNodes(scene);
+
+    LoadModels(
+        sceneBuilder, scene, sceneNodeIndices, dynamicNodes, armatures, nodes, materialIndexMap,
+        meshToGeometry
+    );
 
     LoadAnimations(sceneBuilder, scene, sceneNodeIndices);
     

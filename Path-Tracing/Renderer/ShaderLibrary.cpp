@@ -25,6 +25,8 @@ shaderc_shader_kind ToShaderKind(vk::ShaderStageFlagBits stage)
         return shaderc_miss_shader;
     case vk::ShaderStageFlagBits::eAnyHitKHR:
         return shaderc_anyhit_shader;
+    case vk::ShaderStageFlagBits::eCompute:
+        return shaderc_compute_shader;
     default:
         throw error("Unsupported shader stage");
     }
@@ -88,6 +90,14 @@ Shader::Shader(Shader &&shader) noexcept
       m_Code(std::move(shader.m_Code)), m_Module(shader.m_Module)
 {
     shader.m_IsMoved = true;
+}
+
+vk::PipelineShaderStageCreateInfo Shader::GetStageCreateInfo(
+    const shaderc::Compiler &compiler, const shaderc::CompileOptions &options, Includer *includer
+)
+{
+    const auto module = GetModule(compiler, options, includer);
+    return vk::PipelineShaderStageCreateInfo(vk::PipelineShaderStageCreateFlags(), m_Stage, module, "main");
 }
 
 Shader::~Shader() noexcept
@@ -225,7 +235,6 @@ ShaderLibrary::~ShaderLibrary() = default;
 ShaderId ShaderLibrary::AddShader(std::filesystem::path path, vk::ShaderStageFlagBits stage)
 {
     m_Shaders.emplace_back(std::move(path), stage);
-    m_Stages.emplace_back(vk::PipelineShaderStageCreateFlags(), stage, nullptr, "main");
     return m_Shaders.size() - 1;
 }
 
@@ -238,27 +247,33 @@ void ShaderLibrary::ResizeGroups(uint32_t size)
 void ShaderLibrary::AddGeneralGroup(uint32_t groupIndex, ShaderId shaderId)
 {
     ResizeGroups(groupIndex + 1);
+    m_RaytracingShaderIds.insert(shaderId);
     m_Groups[groupIndex] = { vk::RayTracingShaderGroupTypeKHR::eGeneral, static_cast<uint32_t>(shaderId) };
 }
 
 void ShaderLibrary::AddHitGroup(uint32_t groupIndex, ShaderId closestHitId, ShaderId anyHitId)
 {
     ResizeGroups(groupIndex + 1);
+    m_RaytracingShaderIds.insert(closestHitId);
+    m_RaytracingShaderIds.insert(anyHitId);
     m_Groups[groupIndex] = { vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup, vk::ShaderUnusedKHR,
                              static_cast<uint32_t>(closestHitId), static_cast<uint32_t>(anyHitId) };
 }
 
-vk::Pipeline ShaderLibrary::CreatePipeline(vk::PipelineLayout layout)
+vk::Pipeline ShaderLibrary::CreateRaytracingPipeline(vk::PipelineLayout layout)
 {
-    for (int i = 0; i < m_Shaders.size(); i++)
+    std::vector<vk::PipelineShaderStageCreateInfo> shaderStages;
+
+    for (ShaderId shaderId : m_RaytracingShaderIds)
     {
-        auto module = m_Shaders[i].GetModule(m_Compiler, m_Options, m_Includer);
-        if (module == nullptr)
+        const auto createInfo = m_Shaders[shaderId].GetStageCreateInfo(m_Compiler, m_Options, m_Includer);
+        if (createInfo.module == nullptr)
             throw error("Pipeline creation failed!");
-        m_Stages[i].setModule(module);
+
+        shaderStages.push_back(createInfo);
     }
 
-    vk::RayTracingPipelineCreateInfoKHR createInfo(vk::PipelineCreateFlags(), m_Stages, m_Groups, 1);
+    vk::RayTracingPipelineCreateInfoKHR createInfo(vk::PipelineCreateFlags(), shaderStages, m_Groups, 1);
     createInfo.setLayout(layout);
 
     vk::ResultValue<vk::Pipeline> result = DeviceContext::GetLogical().createRayTracingPipelineKHR(
@@ -267,7 +282,19 @@ vk::Pipeline ShaderLibrary::CreatePipeline(vk::PipelineLayout layout)
 
     assert(result.result == vk::Result::eSuccess);
 
-    logger::info("Pipeline creation successfull!");
+    logger::info("Raytracing pipeline creation successfull!");
+    return result.value;
+}
+
+vk::Pipeline ShaderLibrary::CreateComputePipeline(vk::PipelineLayout layout, ShaderId shaderId)
+{
+    const auto stageCreateInfo = m_Shaders[shaderId].GetStageCreateInfo(m_Compiler, m_Options, m_Includer);
+    vk::ComputePipelineCreateInfo createInfo(vk::PipelineCreateFlags(), stageCreateInfo, layout);
+
+    auto result = DeviceContext::GetLogical().createComputePipeline(nullptr, createInfo);
+    assert(result.result == vk::Result::eSuccess);
+
+    logger::info("Compute pipeline creation successfull!");
     return result.value;
 }
 

@@ -121,6 +121,51 @@ vk::DeviceSize Buffer::GetSize() const
     return m_Size;
 }
 
+vk::BufferMemoryBarrier2 Buffer::GetBarrier(vk::PipelineStageFlagBits2 src, vk::PipelineStageFlagBits2 dst)
+    const
+{
+    return vk::BufferMemoryBarrier2(
+        src, GetAccessFlagsSrc(src), dst, GetAccessFlagsDst(dst), vk::QueueFamilyIgnored,
+        vk::QueueFamilyIgnored, m_Handle, 0, m_Size
+    );
+}
+
+void Buffer::AddBarrier(
+    vk::CommandBuffer commandBuffer, vk::PipelineStageFlagBits2 src, vk::PipelineStageFlagBits2 dst
+) const
+{
+    vk::BufferMemoryBarrier2 barrier = GetBarrier(src, dst);
+    vk::DependencyInfo info;
+    info.setBufferMemoryBarriers(barrier);
+    commandBuffer.pipelineBarrier2(info);
+}
+
+vk::AccessFlagBits2 Buffer::GetAccessFlagsSrc(vk::PipelineStageFlagBits2 stage)
+{
+    switch (stage)
+    {
+    case vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR:
+        return vk::AccessFlagBits2::eAccelerationStructureWriteKHR;
+    case vk::PipelineStageFlagBits2::eComputeShader:
+        return vk::AccessFlagBits2::eShaderStorageWrite;
+    default:
+        throw error("Pipeline stage not supported");
+    }
+}
+
+vk::AccessFlagBits2 Buffer::GetAccessFlagsDst(vk::PipelineStageFlagBits2 stage)
+{
+    switch (stage)
+    {
+    case vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR:
+        return vk::AccessFlagBits2::eAccelerationStructureReadKHR;
+    case vk::PipelineStageFlagBits2::eRayTracingShaderKHR:
+        return vk::AccessFlagBits2::eAccelerationStructureReadKHR;
+    default:
+        throw error("Pipeline stage not supported");
+    }
+}
+
 void Buffer::SetDebugName(const std::string &name) const
 {
     Utils::SetDebugName(m_Handle, name);
