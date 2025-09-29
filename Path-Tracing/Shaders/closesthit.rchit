@@ -6,28 +6,28 @@
 #include "ShaderRendererTypes.incl"
 #include "common.glsl"
 
+layout(constant_id = RenderModeConstantId) const uint s_RenderMode = RenderModeColor;
+layout(constant_id = HitGroupFlagsConstantId) const uint s_HitGroupFlags = HitGroupFlagsNone;
+
 layout(binding = 0, set = 0) uniform accelerationStructureEXT u_TopLevelAS;
 
-layout(binding = 3, set = 0) uniform MainBlock {
-	ClosestHitUniformData mainUniform;
-};
+layout(binding = 3, set = 0) uniform sampler2D textures[];
 
-layout(binding = 4, set = 0) uniform sampler2D textures[];
-
-layout(binding = 5, set = 0) readonly buffer TransformBuffer {
+layout(binding = 4, set = 0) readonly buffer TransformBuffer {
 	mat3x4[] transforms;
 };
 
-layout(binding = 6, set = 0) readonly buffer GeometryBuffer {
+layout(binding = 5, set = 0) readonly buffer GeometryBuffer {
 	Geometry[] geometries;
 };
 
-layout(binding = 7, set = 0) readonly buffer MaterialBuffer {
+layout(binding = 6, set = 0) readonly buffer MaterialBuffer {
 	Material[] materials;
 };
 
-layout(binding = 8, set = 0) uniform LightsBuffer {
-	Light[MaxLightCount] lights;
+layout(binding = 7, set = 0) uniform LightsBuffer {
+    uint u_lightCount;
+	Light[MaxLightCount] u_lights;
 };
 
 layout(shaderRecordEXT, std430) buffer SBT {
@@ -92,7 +92,7 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0)
 
 bool checkOccluded(Light light, vec3 position)
 {
-	if ((mainUniform.u_Flags & ClosestHitFlagsDisableShadows) != ClosestHitFlagsNone)
+	if ((s_HitGroupFlags & HitGroupFlagsDisableShadows) != HitGroupFlagsNone)
 		return false;
 
 	vec3 direction = normalize(light.Position - position);
@@ -158,13 +158,13 @@ void main()
 	const Vertex vertex = transform(originalVertex, sbt.TransformIndex);
 
 	// TODO: Calculate the LOD properly
-	const float lod = (mainUniform.u_Flags & ClosestHitFlagsDisableMipMaps) != ClosestHitFlagsNone ? 0.0f : log2(gl_RayTmaxEXT);
+	const float lod = (s_HitGroupFlags & HitGroupFlagsDisableMipMaps) != HitGroupFlagsNone ? 0.0f : log2(gl_RayTmaxEXT);
 
 	const Material material = materials[sbt.MaterialIndex];
-	const vec3 color = textureLod(textures[GetColorTextureIndex(mainUniform.u_EnabledTextures, material)], vertex.TexCoords, lod).xyz;
-	const vec3 normal = textureLod(textures[GetNormalTextureIndex(mainUniform.u_EnabledTextures, material)], vertex.TexCoords, lod).xyz;
-	const float roughness = textureLod(textures[GetRoughnessTextureIndex(mainUniform.u_EnabledTextures, material)], vertex.TexCoords, lod).y;
-	const float metalness = textureLod(textures[GetMetalicTextureIndex(mainUniform.u_EnabledTextures, material)], vertex.TexCoords, lod).z;
+	const vec3 color = textureLod(textures[GetColorTextureIndex(s_HitGroupFlags, material)], vertex.TexCoords, lod).xyz;
+	const vec3 normal = textureLod(textures[GetNormalTextureIndex(s_HitGroupFlags, material)], vertex.TexCoords, lod).xyz;
+	const float roughness = textureLod(textures[GetRoughnessTextureIndex(s_HitGroupFlags, material)], vertex.TexCoords, lod).y;
+	const float metalness = textureLod(textures[GetMetalicTextureIndex(s_HitGroupFlags, material)], vertex.TexCoords, lod).z;
 
 	const vec3 viewDir = gl_WorldRayDirectionEXT;
 	const vec3 V = -normalize(viewDir);
@@ -173,13 +173,13 @@ void main()
 
 	const float ambient = 0.05f;
 	vec3 totalLight = color * ambient;
-	for (uint lightIndex = 0; lightIndex < mainUniform.u_LightCount; lightIndex++)
+	for (uint lightIndex = 0; lightIndex < u_lightCount; lightIndex++)
 	{
-		const vec3 lightContribution = computeLightContribution(lights[lightIndex], vertex.Position, V, N, TBN, color, roughness, metalness);
+		const vec3 lightContribution = computeLightContribution(u_lights[lightIndex], vertex.Position, V, N, TBN, color, roughness, metalness);
 		totalLight += lightContribution;
 	}
 
-	switch (mainUniform.u_RenderMode)
+	switch (s_RenderMode)
 	{
 	case RenderModeColor:
 		hitValue = totalLight;
@@ -194,7 +194,7 @@ void main()
 		hitValue = vec3(vertex.TexCoords, 0.0f);
 		break;
 	case RenderModeMips:
-		hitValue = vec3(floor(lod) / textureQueryLevels(textures[GetColorTextureIndex(mainUniform.u_EnabledTextures, material)]));
+		hitValue = vec3(floor(lod) / textureQueryLevels(textures[GetColorTextureIndex(s_HitGroupFlags, material)]));
 		break;
 	case RenderModeGeometry:
 		hitValue = getRandomColor(gl_GeometryIndexEXT);

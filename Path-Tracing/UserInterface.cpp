@@ -25,10 +25,9 @@ namespace
 {
 
 vk::PresentModeKHR s_PresentMode = vk::PresentModeKHR::eFifo;
-Shaders::EnabledTextureFlags s_EnabledTextures = Shaders::TexturesEnableAll;
-Shaders::RenderModeFlags s_RenderMode = Shaders::RenderModeColor;
-Shaders::RaygenFlags s_RaygenFlags = Shaders::RaygenFlagsNone;
-Shaders::ClosestHitFlags s_ClosestHitFlags = Shaders::ClosestHitFlagsNone;
+Shaders::SpecializationConstant s_RenderMode = Shaders::RenderModeColor;
+Shaders::SpecializationConstant s_RaygenFlags = Shaders::RaygenFlagsNone;
+Shaders::SpecializationConstant s_HitGroupFlags = Shaders::HitGroupFlagsNone;
 const char *s_SceneChange = nullptr;
 
 void CheckVkResult(VkResult err)
@@ -111,26 +110,6 @@ vk::PresentModeKHR UserInterface::GetPresentMode()
     return s_PresentMode;
 }
 
-Shaders::EnabledTextureFlags UserInterface::GetEnabledTextures()
-{
-    return s_EnabledTextures;
-}
-
-Shaders::RenderModeFlags UserInterface::GetRenderMode()
-{
-    return s_RenderMode;
-}
-
-Shaders::RaygenFlags UserInterface::GetRaygenFlags()
-{
-    return s_RaygenFlags;
-}
-
-Shaders::ClosestHitFlags UserInterface::GetClosestHitFlags()
-{
-    return s_ClosestHitFlags;
-}
-
 const char *UserInterface::SceneChange()
 {
     const char *ret = s_SceneChange;
@@ -141,6 +120,63 @@ const char *UserInterface::SceneChange()
 float UserInterface::GetExposure()
 {
     return std::pow(2.0f, s_Exposure);
+}
+
+namespace
+{
+
+struct Flag
+{
+    const Shaders::SpecializationConstant Value;
+    const char *Name;
+    bool IsEnabled = false;
+};
+
+bool displayFlags(Shaders::SpecializationConstant &bitmask, std::span<const Flag> flags)
+{
+    bool changed = false;
+    for (int i = 0; i < flags.size(); i++)
+    {
+        const Flag &flag = flags[i];
+
+        ImGui::PushID(i);
+        bool isEnabled = bitmask & flag.Value;
+        if (ImGui::Checkbox(flag.Name, &isEnabled))
+        {
+            bitmask ^= flag.Value;
+            changed = true;
+        }
+        ImGui::PopID();
+    }
+
+    return changed;
+}
+
+struct Mode
+{
+    const Shaders::SpecializationConstant Value;
+    const char *Name;
+};
+
+bool displayModes(Shaders::SpecializationConstant &value, std::span<const Mode> modes)
+{
+    bool changed = false;
+    for (int i = 0; i < modes.size(); i++)
+    {
+        const Mode &mode = modes[i];
+
+        ImGui::PushID(i);
+        if (ImGui::RadioButton(mode.Name, s_RenderMode == mode.Value))
+        {
+            s_RenderMode = mode.Value;
+            changed = true;
+        }
+        ImGui::PopID();
+    }
+
+    return changed;
+}
+
 }
 
 void UserInterface::DefineUI()
@@ -182,63 +218,43 @@ void UserInterface::DefineUI()
         ImGui::EndCombo();
     }
 
-    static constexpr Shaders::EnabledTextureFlags textureFlags[] = {
-        Shaders::TexturesEnableColor,
-        Shaders::TexturesEnableNormal,
-        Shaders::TexturesEnableMetalic,
-        Shaders::TexturesEnableRoughness,
-    };
-    static constexpr const char *textureNames[] = {
-        "Color Texture",
-        "Normal Texture",
-        "Metalic Texture",
-        "Roughness Texture",
-    };
+    static constexpr std::array<Flag, 2> raygenFlags = { {
+        { Shaders::RaygenFlagsForceOpaque, "Force Opaque" },
+        { Shaders::RaygenFlagsCullBackFaces, "Cull Back Faces" },
+    } };
 
-    // FIX: If you change the starting flags this will be out of sync
-    static bool isTextureEnabled[] = { true, true, true, true };
+    static constexpr std::array<Flag, 6> HitGroupFlags = { {
+        { Shaders::HitGroupFlagsDisableColorTexture, "Disable Color Texture" },
+        { Shaders::HitGroupFlagsDisableNormalTexture, "Disable Normal Texture" },
+        { Shaders::HitGroupFlagsDisableRoughnessTexture, "Disable Roughness Texture" },
+        { Shaders::HitGroupFlagsDisableMetalicTexture, "Disable Metalic Texture" },
+        { Shaders::HitGroupFlagsDisableMipMaps, "Disable Mip Maps" },
+        { Shaders::HitGroupFlagsDisableShadows, "Disable Shadows" },
+    } };
 
-    for (int i = 0; i < 4; i++)
-    {
-        ImGui::PushID(i);
-        if (ImGui::Checkbox(textureNames[i], &isTextureEnabled[i]))
-            s_EnabledTextures ^= textureFlags[i];
-        ImGui::PopID();
-    }
+    static constexpr std::array<Mode, 8> renderModes = { {
+        { Shaders::RenderModeColor, "Color" },
+        { Shaders::RenderModeWorldPosition, "World Position" },
+        { Shaders::RenderModeNormal, "Normal" },
+        { Shaders::RenderModeTextureCoords, "Texture Coords" },
+        { Shaders::RenderModeMips, "Mips" },
+        { Shaders::RenderModeGeometry, "Geometry" },
+        { Shaders::RenderModePrimitive, "Primitive" },
+        { Shaders::RenderModeInstance, "Instance" },
+    } };
 
-    static constexpr Shaders::RenderModeFlags renderModes[] = {
-        Shaders::RenderModeColor,         Shaders::RenderModeWorldPosition, Shaders::RenderModeNormal,
-        Shaders::RenderModeTextureCoords, Shaders::RenderModeMips,          Shaders::RenderModeGeometry,
-        Shaders::RenderModePrimitive,     Shaders::RenderModeInstance,
-    };
+    bool changed = false;
+    changed |= displayFlags(s_HitGroupFlags, HitGroupFlags);
+    changed |= displayFlags(s_RaygenFlags, raygenFlags);
 
-    static constexpr const char *renderModeNames[] = {
-        "Color", "World Position", "Normal", "TextureCoords", "Mips", "Geometry", "Primitive", "Instance",
-    };
+    changed |= displayModes(s_RenderMode, renderModes);
 
-    for (int i = 0; i < 8; i++)
-    {
-        ImGui::PushID(i);
-        if (ImGui::RadioButton(renderModeNames[i], s_RenderMode == renderModes[i]))
-            s_RenderMode = renderModes[i];
-        ImGui::PopID();
-    }
-
-    static bool forceOpaque;
-    if (ImGui::Checkbox("Force Opaque", &forceOpaque))
-        s_RaygenFlags ^= Shaders::RaygenFlagsForceOpaque;
-
-    static bool cullBackFaces;
-    if (ImGui::Checkbox("Cull Back Faces", &cullBackFaces))
-        s_RaygenFlags ^= Shaders::RaygenFlagsCullBackFaces;
-
-    static bool disableMipMaps;
-    if (ImGui::Checkbox("Disable Mip Maps", &disableMipMaps))
-        s_ClosestHitFlags ^= Shaders::ClosestHitFlagsDisableMipMaps;
-
-    static bool disableShadows;
-    if (ImGui::Checkbox("Disable Shadows", &disableShadows))
-        s_ClosestHitFlags ^= Shaders::ClosestHitFlagsDisableShadows;
+    if (changed)
+        Renderer::UpdateSpecializations(Shaders::SpecializationData {
+            .RenderMode = s_RenderMode,
+            .RaygenFlags = s_RaygenFlags,
+            .HitGroupFlags = s_HitGroupFlags,
+        });
 
     if (ImGui::BeginListBox("Scene"))
     {

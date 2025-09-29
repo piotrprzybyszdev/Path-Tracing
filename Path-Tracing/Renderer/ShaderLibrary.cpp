@@ -70,13 +70,18 @@ FileInfo ReadFile(const std::filesystem::path &path)
 
 std::filesystem::path Shader::ToOutputPath(const std::filesystem::path &path)
 {
-    std::filesystem::path outputPath = path;
 #ifndef NDEBUG
-    outputPath.replace_extension(".spvd");
+    return ToBinaryPath(path, ".spvd");
 #else
-    outputPath.replace_extension(".spv");
+    return ToBinaryPath(path, ".spv");
 #endif
-    return outputPath;
+}
+
+std::filesystem::path Shader::ToBinaryPath(
+    const std::filesystem::path &path, const std::filesystem::path &extension
+)
+{
+    return ShaderLibrary::g_ShaderCachePath / path.filename().replace_extension(extension);
 }
 
 Shader::Shader(std::filesystem::path path, vk::ShaderStageFlagBits stage)
@@ -92,12 +97,19 @@ Shader::Shader(Shader &&shader) noexcept
     shader.m_IsMoved = true;
 }
 
-vk::PipelineShaderStageCreateInfo Shader::GetStageCreateInfo(
-    const shaderc::Compiler &compiler, const shaderc::CompileOptions &options, Includer *includer
-)
+vk::ShaderStageFlagBits Shader::GetStage() const
 {
-    const auto module = GetModule(compiler, options, includer);
-    return vk::PipelineShaderStageCreateInfo(vk::PipelineShaderStageCreateFlags(), m_Stage, module, "main");
+    return m_Stage;
+}
+
+const std::filesystem::path &Shader::GetPath() const
+{
+    return m_Path;
+}
+
+bool Shader::HasChanged() const
+{
+    return ComputeUpdateTime() > m_UpdateTime;
 }
 
 Shader::~Shader() noexcept
@@ -137,6 +149,10 @@ std::filesystem::file_time_type Shader::ComputeUpdateTime() const
 
 void Shader::UpdateModule(std::span<const uint32_t> code, std::filesystem::file_time_type updateTime)
 {
+    // Shaders are reflected only once
+    if (m_Module == nullptr)
+        Reflect(code);
+
     vk::ShaderModuleCreateInfo createInfo(vk::ShaderModuleCreateFlags(), code);
     DeviceContext::GetLogical().destroyShaderModule(m_Module);
     m_Module = DeviceContext::GetLogical().createShaderModule(createInfo);
@@ -145,7 +161,66 @@ void Shader::UpdateModule(std::span<const uint32_t> code, std::filesystem::file_
     m_UpdateTime = updateTime;
 }
 
-vk::ShaderModule Shader::GetModule(
+void Shader::Reflect(
+    const spirv_cross::Compiler &compiler, std::span<const spirv_cross::Resource> resources,
+    vk::DescriptorType descriptorType
+)
+{
+    for (const spirv_cross::Resource &resource : resources)
+    {
+        const uint32_t set = compiler.get_decoration(resource.id, spv::DecorationDescriptorSet);
+        const uint32_t binding = compiler.get_decoration(resource.id, spv::DecorationBinding);
+        const spirv_cross::SPIRType &type = compiler.get_type(resource.type_id);
+
+        assert(set == 0);  // TODO: Support multiple sets
+
+        m_SetLayoutBindings.emplace_back(binding, descriptorType, 1, m_Stage);
+        logger::debug(
+            "{} ({}): {}, set = {}, binding = {}", m_Path.string(), vk::to_string(m_Stage),
+            vk::to_string(descriptorType), set, binding
+        );
+    }
+}
+
+void Shader::Reflect(std::span<const uint32_t> code)
+{
+    spirv_cross::Compiler compiler(code.data(), code.size());
+
+    spirv_cross::ShaderResources resources = compiler.get_shader_resources();
+
+    Reflect(compiler, resources.acceleration_structures, vk::DescriptorType::eAccelerationStructureKHR);
+    Reflect(compiler, resources.sampled_images, vk::DescriptorType::eCombinedImageSampler);
+    Reflect(compiler, resources.storage_buffers, vk::DescriptorType::eStorageBuffer);
+    Reflect(compiler, resources.storage_images, vk::DescriptorType::eStorageImage);
+    Reflect(compiler, resources.uniform_buffers, vk::DescriptorType::eUniformBuffer);
+    
+    if (!resources.push_constant_buffers.empty())
+    {
+        auto &pushConstants = resources.push_constant_buffers.front();
+
+        const auto ranges = compiler.get_active_buffer_ranges(pushConstants.id);
+        assert(ranges.size() == 1);
+
+        const auto &range = ranges.front();
+
+        m_PushConstants = { m_Stage, static_cast<uint32_t>(range.offset),
+                            static_cast<uint32_t>(range.range) };
+        logger::debug(
+            "{} ({}): PC offset = {}, size = {}", m_Path.string(), vk::to_string(m_Stage), range.offset,
+            range.range
+        );
+    }
+
+    auto specializationConstants = compiler.get_specialization_constants();
+    for (const auto &specialization : specializationConstants)
+    {
+        const uint32_t id = specialization.constant_id;
+        m_SpecializationConstantIds.push_back(id);
+        logger::debug("{} ({}): SC id = {}", m_Path.string(), vk::to_string(m_Stage), id);
+    }
+}
+
+bool Shader::RecompileIfChanged(
     const shaderc::Compiler &compiler, const shaderc::CompileOptions &options, Includer *includer
 )
 {
@@ -153,7 +228,7 @@ vk::ShaderModule Shader::GetModule(
     if (updateTime <= m_UpdateTime)
     {
         logger::debug("{} is up to date", m_Path.string());
-        return m_Module;
+        return false;
     }
 
     logger::trace("Recomputing dependencies of {}", m_Path.string());
@@ -173,7 +248,7 @@ vk::ShaderModule Shader::GetModule(
         logger::error(preprocessResult.GetErrorMessage());
         if (m_Module != nullptr)
             logger::warn("Using old version of the shader: {}", m_Path.string());
-        return m_Module;
+        return false;
     }
 
     includer->IncludedFiles.swap(m_IncludedPaths);
@@ -189,7 +264,7 @@ vk::ShaderModule Shader::GetModule(
             logger::info("Loading {} from disk", m_OutputPath.string());
             FileInfo info = ReadFile(m_OutputPath);
             UpdateModule(SpanCast<const char, const uint32_t>(info.Buffer), outputTime);
-            return m_Module;
+            return true;
         }
     }
 
@@ -204,22 +279,38 @@ vk::ShaderModule Shader::GetModule(
         logger::error(compileResult.GetErrorMessage());
         if (m_Module != nullptr)
             logger::warn("Using old version of the shader: {}", m_Path.string());
-        return m_Module;
+        return false;
     }
 
     logger::info("Shader {} compiled successfully!", m_Path.string());
 
     UpdateModule(std::span(compileResult), updateTime);
-    return m_Module;
+    return true;
+}
+
+vk::PipelineShaderStageCreateInfo Shader::GetStageCreateInfo() const
+{
+    return vk::PipelineShaderStageCreateInfo(vk::PipelineShaderStageCreateFlags(), m_Stage, m_Module, "main");
+}
+
+std::span<const vk::DescriptorSetLayoutBinding> Shader::GetSetLayoutBindings() const
+{
+    return m_SetLayoutBindings;
+}
+
+vk::PushConstantRange Shader::GetPushConstants() const
+{
+    return m_PushConstants;
+}
+
+std::span<const uint32_t> Shader::GetSpecializationConstantIds() const
+{
+    return m_SpecializationConstantIds;
 }
 
 ShaderLibrary::ShaderLibrary()
 {
     assert(m_Compiler.IsValid() == true);
-
-    auto includer = std::make_unique<Includer>();
-    m_Includer = includer.get();
-    m_Options.SetIncluder(std::move(includer));
 
     m_Options.SetTargetEnvironment(shaderc_target_env_vulkan, Application::GetVulkanApiVersion());
 #ifndef NDEBUG
@@ -228,6 +319,16 @@ ShaderLibrary::ShaderLibrary()
 #else
     m_Options.SetOptimizationLevel(shaderc_optimization_level_performance);
 #endif
+
+    auto includer = std::make_unique<Includer>();
+    m_Includer = includer.get();
+    m_Options.SetIncluder(std::move(includer));
+
+    if (!std::filesystem::is_directory(g_ShaderCachePath))
+    {
+        std::filesystem::remove(g_ShaderCachePath);
+        std::filesystem::create_directory(g_ShaderCachePath);
+    }
 }
 
 ShaderLibrary::~ShaderLibrary() = default;
@@ -238,65 +339,26 @@ ShaderId ShaderLibrary::AddShader(std::filesystem::path path, vk::ShaderStageFla
     return m_Shaders.size() - 1;
 }
 
-uint32_t ShaderLibrary::AddGeneralGroup(ShaderId shaderId)
+const Shader &ShaderLibrary::GetShader(ShaderId id) const
 {
-    assert(shaderId != g_UnusedShaderId);
-    m_RaytracingShaderIds.insert(shaderId);
-    m_Groups.emplace_back(vk::RayTracingShaderGroupTypeKHR::eGeneral, static_cast<uint32_t>(shaderId));
-    return m_Groups.size() - 1;
+    return m_Shaders[id];
 }
 
-uint32_t ShaderLibrary::AddHitGroup(ShaderId closestHitId, ShaderId anyHitId)
+void ShaderLibrary::CompileShaders()
 {
-    if (closestHitId != g_UnusedShaderId)
-        m_RaytracingShaderIds.insert(closestHitId);
-    if (anyHitId != g_UnusedShaderId)
-        m_RaytracingShaderIds.insert(anyHitId);
-
-    m_Groups.emplace_back(
-        vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup, vk::ShaderUnusedKHR,
-        static_cast<uint32_t>(closestHitId), static_cast<uint32_t>(anyHitId)
-    );
-    return m_Groups.size() - 1;
+    for (Shader &shader : m_Shaders)
+        shader.RecompileIfChanged(m_Compiler, m_Options, m_Includer);
 }
 
-vk::Pipeline ShaderLibrary::CreateRaytracingPipeline(vk::PipelineLayout layout)
+std::vector<bool> ShaderLibrary::RecompileChanged(std::span<const ShaderId> shaderIds)
 {
-    std::vector<vk::PipelineShaderStageCreateInfo> shaderStages;
+    std::vector<bool> upToDate;
+   
+    std::ranges::transform(shaderIds, std::back_inserter(upToDate), [this](ShaderId id) {
+        return !m_Shaders[id].RecompileIfChanged(m_Compiler, m_Options, m_Includer);
+    });
 
-    for (ShaderId shaderId : m_RaytracingShaderIds)
-    {
-        const auto createInfo = m_Shaders[shaderId].GetStageCreateInfo(m_Compiler, m_Options, m_Includer);
-        if (createInfo.module == nullptr)
-            throw error("Pipeline creation failed!");
-
-        shaderStages.push_back(createInfo);
-    }
-
-    assert(DeviceContext::GetRayTracingPipelineProperties().maxRayRecursionDepth >= 2);
-    vk::RayTracingPipelineCreateInfoKHR createInfo(vk::PipelineCreateFlags(), shaderStages, m_Groups, 2);
-    createInfo.setLayout(layout);
-
-    vk::ResultValue<vk::Pipeline> result = DeviceContext::GetLogical().createRayTracingPipelineKHR(
-        nullptr, nullptr, createInfo, nullptr, Application::GetDispatchLoader()
-    );
-
-    assert(result.result == vk::Result::eSuccess);
-
-    logger::info("Raytracing pipeline creation successfull!");
-    return result.value;
-}
-
-vk::Pipeline ShaderLibrary::CreateComputePipeline(vk::PipelineLayout layout, ShaderId shaderId)
-{
-    const auto stageCreateInfo = m_Shaders[shaderId].GetStageCreateInfo(m_Compiler, m_Options, m_Includer);
-    vk::ComputePipelineCreateInfo createInfo(vk::PipelineCreateFlags(), stageCreateInfo, layout);
-
-    auto result = DeviceContext::GetLogical().createComputePipeline(nullptr, createInfo);
-    assert(result.result == vk::Result::eSuccess);
-
-    logger::info("Compute pipeline creation successfull!");
-    return result.value;
+    return upToDate;
 }
 
 shaderc_include_result *Includer::GetInclude(
@@ -305,7 +367,6 @@ shaderc_include_result *Includer::GetInclude(
 )
 {
     std::filesystem::path path;
-    FileInfo *fileInfo = nullptr;
 
     try
     {
@@ -313,7 +374,7 @@ shaderc_include_result *Includer::GetInclude(
     }
     catch (const error &err)
     {
-        fileInfo = new FileInfo();
+        FileInfo *fileInfo = new FileInfo();
         fileInfo->Path = err.what();
         return new shaderc_include_result {
             "", 0, fileInfo->Path.c_str(), fileInfo->Path.size(), fileInfo,
@@ -323,16 +384,17 @@ shaderc_include_result *Includer::GetInclude(
     if (IncludedFiles.contains(path))
     {
         // File was already included - return empty file as to not include it twice (#pragma once)
-        const auto &strpath = m_Cache[path].Path;
-        return new shaderc_include_result { strpath.c_str(), strpath.size(), nullptr, 0, nullptr };
+        FileInfo *fileInfo = new FileInfo();
+        fileInfo->Path = path.string();
+        return new shaderc_include_result { fileInfo->Path.c_str(), fileInfo->Path.size(), nullptr, 0,
+                                            fileInfo };
     }
 
-    auto it = m_Cache.find(path);
-    if (it == m_Cache.end() || it->second.Time < std::filesystem::last_write_time(path))
-        m_Cache[path] = ReadFile(path);
+    if (!m_Cache.Contains(path) || m_Cache.Get(path).Time < std::filesystem::last_write_time(path))
+        auto _ = m_Cache.Insert(path, ReadFile(path));
 
     IncludedFiles.insert(path);
-    fileInfo = &m_Cache[path];
+    const FileInfo *fileInfo = &m_Cache.Get(path);
 
     return new shaderc_include_result { fileInfo->Path.c_str(), fileInfo->Path.size(),
                                         fileInfo->Buffer.data(), fileInfo->Buffer.size(), nullptr };

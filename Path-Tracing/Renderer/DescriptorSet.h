@@ -72,6 +72,8 @@ public:
     DescriptorSetBuilder(const DescriptorSetBuilder &) = delete;
     DescriptorSetBuilder &operator=(const DescriptorSetBuilder &) = delete;
 
+    DescriptorSetBuilder(DescriptorSetBuilder &&descriptorSetBuilder) noexcept;
+
     DescriptorSetBuilder &SetDescriptor(vk::DescriptorSetLayoutBinding binding, bool partial = false);
 
     [[nodiscard]] vk::DescriptorSetLayout CreateLayout();

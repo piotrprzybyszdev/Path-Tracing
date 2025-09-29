@@ -24,21 +24,14 @@
 namespace PathTracing
 {
 
-Shaders::RenderModeFlags Renderer::s_RenderMode = Shaders::RenderModeColor;
-Shaders::EnabledTextureFlags Renderer::s_EnabledTextures = Shaders::TexturesEnableAll;
-Shaders::RaygenFlags Renderer::s_RaygenFlags = Shaders::RaygenFlagsNone;
-Shaders::MissFlags Renderer::s_MissFlags = Shaders::MissFlagsNone;
-Shaders::ClosestHitFlags Renderer::s_ClosestHitFlags = Shaders::ClosestHitFlagsNone;
 float Renderer::s_Exposure = 1.0f;
 
 const Swapchain *Renderer::s_Swapchain = nullptr;
 
-uint32_t Renderer::s_RaygenGroupIndex = 0;
-uint32_t Renderer::s_PrimaryRayMissIndex = 0;
-uint32_t Renderer::s_OcclusionRayMissIndex = 0;
-uint32_t Renderer::s_PrimaryRayHitIndex = 0;
-uint32_t Renderer::s_OcclusionRayHitIndex = 0;
-uint32_t Renderer::s_HitGroupCount = 2;
+Renderer::ShaderIds Renderer::s_Shaders = {};
+Renderer::RaytracingConfig Renderer::s_RaytracingConfig = {};
+
+Shaders::SpecializationData Renderer::s_ShaderSpecialization = {};
 
 std::vector<Renderer::RenderingResources> Renderer::s_RenderingResources = {};
 
@@ -49,17 +42,11 @@ std::unique_ptr<Renderer::SceneData> Renderer::s_SceneData = nullptr;
 std::vector<Image> Renderer::s_Textures = {};
 std::vector<uint32_t> Renderer::s_TextureMap = {};
 
-std::unique_ptr<DescriptorSetBuilder> Renderer::s_DescriptorSetBuilder = nullptr;
-std::unique_ptr<DescriptorSetBuilder> Renderer::s_SkinningDescriptorSetBuilder = nullptr;
-std::unique_ptr<DescriptorSet> Renderer::s_DescriptorSet = nullptr;
-std::unique_ptr<DescriptorSet> Renderer::s_SkinningDescriptorSet = nullptr;
 std::mutex Renderer::s_DescriptorSetMutex = {};
 std::unique_ptr<TextureUploader> Renderer::s_TextureUploader = nullptr;
 
-vk::PipelineLayout Renderer::s_PipelineLayout = nullptr;
-vk::PipelineLayout Renderer::s_SkinningPipelineLayout = nullptr;
-vk::Pipeline Renderer::s_Pipeline = nullptr;
-vk::Pipeline Renderer::s_SkinningPipeline = nullptr;
+std::unique_ptr<RaytracingPipeline> Renderer::s_RaytracingPipeline = nullptr;
+std::unique_ptr<ComputePipeline> Renderer::s_SkinningPipeline = nullptr;
 
 std::unique_ptr<BufferBuilder> Renderer::s_BufferBuilder = nullptr;
 std::unique_ptr<ImageBuilder> Renderer::s_ImageBuilder = nullptr;
@@ -69,8 +56,6 @@ std::unique_ptr<Buffer> Renderer::s_StagingBuffer = nullptr;
 vk::Sampler Renderer::s_TextureSampler = nullptr;
 
 std::unique_ptr<ShaderLibrary> Renderer::s_ShaderLibrary = nullptr;
-
-ShaderId Renderer::s_SkinningShaderId = -1;
 
 void Renderer::Init(const Swapchain *swapchain)
 {
@@ -93,28 +78,7 @@ void Renderer::Init(const Swapchain *swapchain)
         Utils::SetDebugName(s_TextureSampler, "Texture Sampler");
     }
 
-    {
-        s_ShaderLibrary = std::make_unique<ShaderLibrary>();
-
-        const ShaderId raygenId =
-            s_ShaderLibrary->AddShader("Shaders/raygen.rgen", vk::ShaderStageFlagBits::eRaygenKHR);
-        const ShaderId missId =
-            s_ShaderLibrary->AddShader("Shaders/miss.rmiss", vk::ShaderStageFlagBits::eMissKHR);
-        const ShaderId closestHitId =
-            s_ShaderLibrary->AddShader("Shaders/closesthit.rchit", vk::ShaderStageFlagBits::eClosestHitKHR);
-        const ShaderId anyHitId =
-            s_ShaderLibrary->AddShader("Shaders/anyhit.rahit", vk::ShaderStageFlagBits::eAnyHitKHR);
-        const ShaderId occlusionMissId =
-            s_ShaderLibrary->AddShader("Shaders/occlusion.rmiss", vk::ShaderStageFlagBits::eMissKHR);
-        s_SkinningShaderId =
-            s_ShaderLibrary->AddShader("Shaders/skinning.comp", vk::ShaderStageFlagBits::eCompute);
-
-        s_RaygenGroupIndex = s_ShaderLibrary->AddGeneralGroup(raygenId);
-        s_PrimaryRayMissIndex = s_ShaderLibrary->AddGeneralGroup(missId);
-        s_OcclusionRayMissIndex = s_ShaderLibrary->AddGeneralGroup(occlusionMissId);
-        s_PrimaryRayHitIndex = s_ShaderLibrary->AddHitGroup(closestHitId, anyHitId);
-        s_OcclusionRayHitIndex = s_ShaderLibrary->AddHitGroup(ShaderLibrary::g_UnusedShaderId, anyHitId);
-    }
+    CreatePipelines();
 
     {
 #ifndef NDEBUG
@@ -156,16 +120,9 @@ void Renderer::Shutdown()
         DeviceContext::GetLogical().destroyCommandPool(res.CommandPool);
     s_RenderingResources.clear();
 
+    s_SkinningPipeline.reset();
+    s_RaytracingPipeline.reset();
     s_ShaderLibrary.reset();
-
-    DeviceContext::GetLogical().destroyPipeline(s_Pipeline);
-    DeviceContext::GetLogical().destroyPipeline(s_SkinningPipeline);
-    DeviceContext::GetLogical().destroyPipelineLayout(s_PipelineLayout);
-    DeviceContext::GetLogical().destroyPipelineLayout(s_SkinningPipelineLayout);
-    s_DescriptorSet.reset();
-    s_SkinningDescriptorSet.reset();
-    s_DescriptorSetBuilder.reset();
-    s_SkinningDescriptorSetBuilder.reset();
 
     s_TextureMap.clear();
     s_Textures.clear();
@@ -194,13 +151,13 @@ void Renderer::UpdateSceneData()
             vk::BufferUsageFlagBits::eShaderDeviceAddress | vk::BufferUsageFlagBits::eTransferDst
         );
 
-        const auto &vertices = s_SceneData->Scene->GetVertices();
+        const auto &vertices = s_SceneData->Handle->GetVertices();
         s_SceneData->VertexBuffer = CreateDeviceBuffer(vertices, "Vertex Buffer");
 
-        const auto &indices = s_SceneData->Scene->GetIndices();
+        const auto &indices = s_SceneData->Handle->GetIndices();
         s_SceneData->IndexBuffer = CreateDeviceBuffer(indices, "Index Buffer");
 
-        const auto &animatedIndices = s_SceneData->Scene->GetAnimatedIndices();
+        const auto &animatedIndices = s_SceneData->Handle->GetAnimatedIndices();
         s_SceneData->AnimatedIndexBuffer = CreateDeviceBuffer(animatedIndices, "Animated Index Buffer");
 
         s_BufferBuilder->ResetFlags().SetUsageFlags(
@@ -209,25 +166,25 @@ void Renderer::UpdateSceneData()
             vk::BufferUsageFlagBits::eTransferDst
         );
 
-        const auto &transforms = s_SceneData->Scene->GetTransforms();
+        const auto &transforms = s_SceneData->Handle->GetTransforms();
         s_SceneData->TransformBuffer = CreateDeviceBuffer(transforms, "Transform Buffer");
 
         s_BufferBuilder->ResetFlags().SetUsageFlags(
             vk::BufferUsageFlagBits::eShaderDeviceAddress | vk::BufferUsageFlagBits::eTransferDst
         );
 
-        const auto &animVertices = s_SceneData->Scene->GetAnimatedVertices();
+        const auto &animVertices = s_SceneData->Handle->GetAnimatedVertices();
         s_SceneData->AnimatedVertexBuffer = CreateDeviceBuffer(animVertices, "Animated Vertex Buffer");
 
-        const auto &geometries = s_SceneData->Scene->GetGeometries();
+        const auto &geometries = s_SceneData->Handle->GetGeometries();
         uint32_t totalAnimatedVertexCount = 0;
         uint32_t animatedGeometryCount = 0;
 
         std::vector<uint32_t> animatedVertexMap;
         animatedVertexMap.reserve(totalAnimatedVertexCount);
 
-        const auto &instances = s_SceneData->Scene->GetModelInstances();
-        const auto &models = s_SceneData->Scene->GetModels();
+        const auto &instances = s_SceneData->Handle->GetModelInstances();
+        const auto &models = s_SceneData->Handle->GetModels();
         for (const auto &instance : instances)
             for (const auto &mesh : models[instance.ModelIndex].Meshes)
             {
@@ -249,7 +206,7 @@ void Renderer::UpdateSceneData()
         s_SceneData->AnimatedVertexMapBuffer =
             CreateDeviceBuffer(std::span(animatedVertexMap), "Animated Vertex Map Buffer");
 
-        const auto &materials = s_SceneData->Scene->GetMaterials();
+        const auto &materials = s_SceneData->Handle->GetMaterials();
         s_SceneData->MaterialBuffer = CreateDeviceBuffer(materials, "Material Buffer");
 
         s_SceneData->Geometries.clear();
@@ -284,10 +241,13 @@ void Renderer::UpdateSceneData()
             CreateSceneRenderingResources(s_RenderingResources[i], i);
     }
 
-    auto models = s_SceneData->Scene->GetModels();
+    auto models = s_SceneData->Handle->GetModels();
     s_SceneData->SceneShaderBindingTable = std::make_unique<ShaderBindingTable>(
-        s_RaygenGroupIndex, std::vector<uint32_t> { s_PrimaryRayMissIndex, s_OcclusionRayMissIndex },
-        std::vector<uint32_t> { s_PrimaryRayHitIndex, s_OcclusionRayHitIndex }
+        s_RaytracingConfig.RaygenGroupIndex,
+        std::vector<uint32_t> { s_RaytracingConfig.PrimaryRayMissIndex,
+                                s_RaytracingConfig.OcclusionRayMissIndex },
+        std::vector<uint32_t> { s_RaytracingConfig.PrimaryRayHitIndex,
+                                s_RaytracingConfig.OcclusionRayHitIndex }
     );
     for (const auto &model : models)
         for (const auto &mesh : model.Meshes)
@@ -297,25 +257,25 @@ void Renderer::UpdateSceneData()
             s_SceneData->SceneShaderBindingTable->AddRecord(buffers);
         }
 
-    const auto &skybox = s_SceneData->Scene->GetSkybox();
-    s_MissFlags &= ~(Shaders::MissFlagsSkybox2D | Shaders::MissFlagsSkyboxCube);
+    const auto &skybox = s_SceneData->Handle->GetSkybox();
+    s_ShaderSpecialization.MissFlags &= ~(Shaders::MissFlagsSkybox2D | Shaders::MissFlagsSkyboxCube);
     switch (skybox.index())
     {
     case 0:
         break;
     case 1:
         s_SceneData->Skybox = s_TextureUploader->UploadSkyboxBlocking(std::get<Skybox2D>(skybox));
-        s_MissFlags |= Shaders::MissFlagsSkybox2D;
+        s_ShaderSpecialization.MissFlags |= Shaders::MissFlagsSkybox2D;
         break;
     case 2:
         s_SceneData->Skybox = s_TextureUploader->UploadSkyboxBlocking(std::get<SkyboxCube>(skybox));
-        s_MissFlags |= Shaders::MissFlagsSkyboxCube;
+        s_ShaderSpecialization.MissFlags |= Shaders::MissFlagsSkyboxCube;
         break;
     default:
         throw error("Unhandled skybox type");
     }
 
-    const auto &textures = s_SceneData->Scene->GetTextures();
+    const auto &textures = s_SceneData->Handle->GetTextures();
 
     s_Textures.resize(Shaders::SceneTextureOffset + textures.size());
     s_TextureMap.resize(Shaders::SceneTextureOffset + textures.size());
@@ -325,24 +285,23 @@ void Renderer::UpdateSceneData()
         s_TextureMap[mapIndex] = Scene::GetDefaultTextureIndex(textures[i].Type);
     }
 
-    if (SetupPipeline())
-        RecreateDescriptorSet();
+    RecreateDescriptorSet();
 
-    s_TextureUploader->UploadTextures(s_SceneData->Scene);
+    s_TextureUploader->UploadTextures(s_SceneData->Handle);
 
-    s_SceneData->SceneShaderBindingTable->Upload(s_Pipeline);
+    s_SceneData->SceneShaderBindingTable->Upload(s_RaytracingPipeline->GetHandle());
 }
 
 void Renderer::UpdateTexture(uint32_t index)
 {
     s_TextureMap[index] = index;
 
-    if (s_DescriptorSet == nullptr)
+    if (s_RaytracingPipeline->GetDescriptorSet() == nullptr)
         return;
 
     for (uint32_t frameIndex = 0; frameIndex < s_RenderingResources.size(); frameIndex++)
-        s_DescriptorSet->UpdateImage(
-            4, frameIndex, s_Textures[index], s_TextureSampler, vk::ImageLayout::eShaderReadOnlyOptimal, index
+        s_RaytracingPipeline->GetDescriptorSet()->UpdateImage(
+            3, frameIndex, s_Textures[index], s_TextureSampler, vk::ImageLayout::eShaderReadOnlyOptimal, index
         );
 }
 
@@ -368,82 +327,70 @@ uint32_t Renderer::AddDefaultTexture(glm::u8vec4 value, std::string &&name)
     return s_Textures.size() - 1;
 }
 
-bool Renderer::SetupPipeline()
+void Renderer::CreatePipelines()
 {
-    s_DescriptorSetBuilder = std::make_unique<DescriptorSetBuilder>();
-    s_SkinningDescriptorSetBuilder = std::make_unique<DescriptorSetBuilder>();
+    Timer timer("Pipeline Create");
 
-    s_DescriptorSetBuilder
-        ->SetDescriptor({ 0, vk::DescriptorType::eAccelerationStructureKHR, 1,
-                          vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR })
-        .SetDescriptor({ 1, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eRaygenKHR })
-        .SetDescriptor({ 2, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eRaygenKHR })
-        .SetDescriptor({ 3, vk::DescriptorType::eUniformBuffer, 1,
-                         vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eAnyHitKHR })
-        .SetDescriptor(
-            { 4, vk::DescriptorType::eCombinedImageSampler, static_cast<uint32_t>(s_TextureMap.size()),
-              vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eAnyHitKHR },
-            true
-        )
-        .SetDescriptor({ 5, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eClosestHitKHR })
-        .SetDescriptor({ 6, vk::DescriptorType::eStorageBuffer, 1,
-                         vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eAnyHitKHR })
-        .SetDescriptor({ 7, vk::DescriptorType::eStorageBuffer, 1,
-                         vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eAnyHitKHR })
-        .SetDescriptor({ 8, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eClosestHitKHR })
-        .SetDescriptor({ 9, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eMissKHR })
-        .SetDescriptor(
-            { 10, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eMissKHR }, true
-        )
-        .SetDescriptor(
-            { 11, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eMissKHR }, true
-        );
+    s_ShaderLibrary = std::make_unique<ShaderLibrary>();
 
-    s_SkinningDescriptorSetBuilder
-        ->SetDescriptor({ 0, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eCompute })
-        .SetDescriptor({ 1, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute });
+    s_Shaders.Raygen = s_ShaderLibrary->AddShader("Shaders/raygen.rgen", vk::ShaderStageFlagBits::eRaygenKHR);
+    s_Shaders.Miss = s_ShaderLibrary->AddShader("Shaders/miss.rmiss", vk::ShaderStageFlagBits::eMissKHR);
+    s_Shaders.ClosestHit =
+        s_ShaderLibrary->AddShader("Shaders/closesthit.rchit", vk::ShaderStageFlagBits::eClosestHitKHR);
+    s_Shaders.AnyHit =
+        s_ShaderLibrary->AddShader("Shaders/anyhit.rahit", vk::ShaderStageFlagBits::eAnyHitKHR);
+    s_Shaders.OcclusionMiss =
+        s_ShaderLibrary->AddShader("Shaders/occlusion.rmiss", vk::ShaderStageFlagBits::eMissKHR);
+    s_Shaders.SkinningCompute =
+        s_ShaderLibrary->AddShader("Shaders/skinning.comp", vk::ShaderStageFlagBits::eCompute);
 
-    bool isRecreated = s_PipelineLayout != nullptr;
-    if (isRecreated)
+    s_ShaderLibrary->CompileShaders();
+
     {
-        DeviceContext::GetLogical().destroyPipeline(s_Pipeline);
-        DeviceContext::GetLogical().destroyPipeline(s_SkinningPipeline);
-        DeviceContext::GetLogical().destroyPipelineLayout(s_PipelineLayout);
-        DeviceContext::GetLogical().destroyPipelineLayout(s_SkinningPipelineLayout);
+        RaytracingPipelineBuilder builder(*s_ShaderLibrary);
+
+        s_RaytracingConfig.RaygenGroupIndex = builder.AddGeneralGroup(s_Shaders.Raygen);
+        s_RaytracingConfig.PrimaryRayMissIndex = builder.AddGeneralGroup(s_Shaders.Miss);
+        s_RaytracingConfig.OcclusionRayMissIndex = builder.AddGeneralGroup(s_Shaders.OcclusionMiss);
+        s_RaytracingConfig.PrimaryRayHitIndex = builder.AddHitGroup(s_Shaders.ClosestHit, s_Shaders.AnyHit);
+        s_RaytracingConfig.OcclusionRayHitIndex =
+            builder.AddHitGroup(ShaderLibrary::g_UnusedShaderId, s_Shaders.AnyHit);
+
+        builder.AddHintIsPartial(3, true);
+        builder.AddHintIsPartial(8, true);
+        builder.AddHintIsPartial(9, true);
+        builder.AddHintSize(3, Shaders::MaxTextureCount);
+
+        s_RaytracingPipeline = builder.CreatePipelineUnique();
     }
 
     {
-        std::array<vk::DescriptorSetLayout, 1> layouts = { s_DescriptorSetBuilder->CreateLayout() };
-        vk::PipelineLayoutCreateInfo createInfo(vk::PipelineLayoutCreateFlags(), layouts);
-        s_PipelineLayout = DeviceContext::GetLogical().createPipelineLayout(createInfo);
+        ComputePipelineBuilder builder(*s_ShaderLibrary, s_Shaders.SkinningCompute);
+        s_SkinningPipeline = builder.CreatePipelineUnique();
     }
 
-    {
-        std::array<vk::DescriptorSetLayout, 1> layouts = { s_SkinningDescriptorSetBuilder->CreateLayout() };
-        vk::PushConstantRange pushConstants(vk::ShaderStageFlagBits::eCompute, 0, 16);
-        vk::PipelineLayoutCreateInfo createInfo(vk::PipelineLayoutCreateFlags(), layouts, pushConstants);
-        s_SkinningPipelineLayout = DeviceContext::GetLogical().createPipelineLayout(createInfo);
-    }
-
-    s_Pipeline = s_ShaderLibrary->CreateRaytracingPipeline(s_PipelineLayout);
-    s_SkinningPipeline = s_ShaderLibrary->CreateComputePipeline(s_SkinningPipelineLayout, s_SkinningShaderId);
-    if (s_Pipeline == nullptr)
-        throw error("Failed to create raytracing pipeline");
-    if (s_SkinningPipeline == nullptr)
-        throw error("Failed to create mesh skinning pipeline");
-
-    return isRecreated;
+    s_RaytracingPipeline->Update(s_ShaderSpecialization);
+    s_SkinningPipeline->Update(s_ShaderSpecialization);
 }
 
 void Renderer::ReloadShaders()
 {
     DeviceContext::GetGraphicsQueue().WaitIdle();
-    DeviceContext::GetLogical().destroyPipeline(s_Pipeline);
-    DeviceContext::GetLogical().destroyPipeline(s_SkinningPipeline);
-    s_Pipeline = s_ShaderLibrary->CreateRaytracingPipeline(s_PipelineLayout);
-    s_SkinningPipeline = s_ShaderLibrary->CreateComputePipeline(s_SkinningPipelineLayout, s_SkinningShaderId);
 
-    s_SceneData->SceneShaderBindingTable->Upload(s_Pipeline);
+    s_RaytracingPipeline->Update(s_ShaderSpecialization);
+    s_SkinningPipeline->Update(s_ShaderSpecialization);
+
+    s_SceneData->SceneShaderBindingTable->Upload(s_RaytracingPipeline->GetHandle());
+}
+
+void Renderer::UpdateSpecializations(Shaders::SpecializationData data)
+{
+    data.MissFlags = s_ShaderSpecialization.MissFlags;
+    s_ShaderSpecialization = data;
+
+    DeviceContext::GetGraphicsQueue().WaitIdle();
+    s_RaytracingPipeline->Update(data);
+    s_SceneData->SceneShaderBindingTable->Upload(s_RaytracingPipeline->GetHandle());
 }
 
 void Renderer::RecordCommandBuffer(const RenderingResources &resources)
@@ -457,10 +404,13 @@ void Renderer::RecordCommandBuffer(const RenderingResources &resources)
     {
         Utils::DebugLabel label(commandBuffer, "Path tracing pass", { 0.35f, 0.9f, 0.29f, 1.0f });
 
-        commandBuffer.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, s_Pipeline);
+        commandBuffer.bindPipeline(
+            vk::PipelineBindPoint::eRayTracingKHR, s_RaytracingPipeline->GetHandle()
+        );
         commandBuffer.bindDescriptorSets(
-            vk::PipelineBindPoint::eRayTracingKHR, s_PipelineLayout, 0,
-            { s_DescriptorSet->GetSet(s_Swapchain->GetCurrentFrameInFlightIndex()) }, {}
+            vk::PipelineBindPoint::eRayTracingKHR, s_RaytracingPipeline->GetLayout(), 0,
+            { s_RaytracingPipeline->GetDescriptorSet()->GetSet(s_Swapchain->GetCurrentFrameInFlightIndex()) },
+            {}
         );
 
         commandBuffer.traceRaysKHR(
@@ -520,16 +470,16 @@ void Renderer::RecordCommandBuffer(const RenderingResources &resources)
 
 void Renderer::UpdateAnimatedVertices(const RenderingResources &resources)
 {
-    if (!s_SceneData->Scene->HasSkeletalAnimations())
+    if (!s_SceneData->Handle->HasSkeletalAnimations())
         return;
 
-    resources.BoneTransformUniformBuffer.Upload(s_SceneData->Scene->GetBoneTransforms());
+    resources.BoneTransformUniformBuffer.Upload(s_SceneData->Handle->GetBoneTransforms());
 
     vk::CommandBuffer commandBuffer = resources.CommandBuffer;
     {
         Utils::DebugLabel label(commandBuffer, "Compute Skinning pass", { 0.32f, 0.20f, 0.92f, 1.0f });
 
-        commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, s_SkinningPipeline);
+        commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, s_SkinningPipeline->GetHandle());
 
         Shaders::SkinningPushConstants pushConstants = {
             s_SceneData->AnimatedVertexBuffer.GetDeviceAddress(),
@@ -537,12 +487,12 @@ void Renderer::UpdateAnimatedVertices(const RenderingResources &resources)
         };
 
         commandBuffer.pushConstants(
-            s_SkinningPipelineLayout, vk::ShaderStageFlagBits::eCompute, 0u,
+            s_SkinningPipeline->GetLayout(), vk::ShaderStageFlagBits::eCompute, 0u,
             sizeof(Shaders::SkinningPushConstants), &pushConstants
         );
         commandBuffer.bindDescriptorSets(
-            vk::PipelineBindPoint::eCompute, s_SkinningPipelineLayout, 0,
-            { s_SkinningDescriptorSet->GetSet(s_Swapchain->GetCurrentFrameInFlightIndex()) }, {}
+            vk::PipelineBindPoint::eCompute, s_SkinningPipeline->GetLayout(), 0,
+            { s_SkinningPipeline->GetDescriptorSet()->GetSet(s_Swapchain->GetCurrentFrameInFlightIndex()) }, {}
         );
 
         const uint32_t groupCount = std::ceil(
@@ -560,15 +510,16 @@ void Renderer::UpdateAnimatedVertices(const RenderingResources &resources)
 void Renderer::CreateSceneRenderingResources(RenderingResources &res, uint32_t frameIndex)
 {
     s_BufferBuilder->ResetFlags().SetUsageFlags(vk::BufferUsageFlagBits::eUniformBuffer);
-    res.LightCount = s_SceneData->Scene->GetLights().size();
+    res.LightCount = s_SceneData->Handle->GetLights().size();
     res.LightUniformBuffer = s_BufferBuilder->CreateHostBuffer(
-        s_SceneData->Scene->GetLights(), std::format("Light Uniform Buffer {}", frameIndex)
+        RenderingResources::s_LightArrayOffset + s_SceneData->Handle->GetLights().size_bytes(),
+        std::format("Light Uniform Buffer {}", frameIndex)
     );
 
-    if (s_SceneData->Scene->HasSkeletalAnimations())
+    if (s_SceneData->Handle->HasSkeletalAnimations())
     {
         res.BoneTransformUniformBuffer = s_BufferBuilder->CreateHostBuffer(
-            s_SceneData->Scene->GetBoneTransforms(), std::format("Bone Transform Buffer {}", frameIndex)
+            s_SceneData->Handle->GetBoneTransforms(), std::format("Bone Transform Buffer {}", frameIndex)
         );
 
         s_BufferBuilder->ResetFlags().SetUsageFlags(
@@ -603,10 +554,10 @@ Image Renderer::CreateStorageImage(vk::Extent2D extent)
 
 void Renderer::CreateGeometryBuffer(RenderingResources &resources)
 {
-    const auto &instances = s_SceneData->Scene->GetModelInstances();
-    const auto &models = s_SceneData->Scene->GetModels();
-    const auto &geometries = s_SceneData->Scene->GetGeometries();
-    
+    const auto &instances = s_SceneData->Handle->GetModelInstances();
+    const auto &models = s_SceneData->Handle->GetModels();
+    const auto &geometries = s_SceneData->Handle->GetGeometries();
+
     auto modifyGeometries = [&instances, &models, &geometries](vk::DeviceAddress address, int sign) {
         uint32_t geometryIndex = s_SceneData->AnimatedGeometriesOffset;
         for (const auto &instance : instances)
@@ -618,7 +569,7 @@ void Renderer::CreateGeometryBuffer(RenderingResources &resources)
                 }
     };
 
-    if (s_SceneData->Scene->HasSkeletalAnimations())
+    if (s_SceneData->Handle->HasSkeletalAnimations())
         modifyGeometries(resources.OutAnimatedVertexBuffer.GetDeviceAddress(), 1);
 
     s_BufferBuilder->ResetFlags().SetUsageFlags(
@@ -626,7 +577,7 @@ void Renderer::CreateGeometryBuffer(RenderingResources &resources)
     );
     resources.GeometryBuffer = CreateDeviceBuffer(std::span(s_SceneData->Geometries), "Geometry Buffer");
 
-    if (s_SceneData->Scene->HasSkeletalAnimations())
+    if (s_SceneData->Handle->HasSkeletalAnimations())
         modifyGeometries(resources.OutAnimatedVertexBuffer.GetDeviceAddress(), -1);
 }
 
@@ -639,7 +590,7 @@ void Renderer::CreateAccelerationStructure(RenderingResources &resources)
     resources.SceneAccelerationStructure = std::make_unique<AccelerationStructure>(
         getAddress(s_SceneData->VertexBuffer), getAddress(s_SceneData->IndexBuffer),
         getAddress(resources.OutAnimatedVertexBuffer), getAddress(s_SceneData->AnimatedIndexBuffer),
-        getAddress(s_SceneData->TransformBuffer), s_SceneData->Scene, s_HitGroupCount
+        getAddress(s_SceneData->TransformBuffer), s_SceneData->Handle, s_RaytracingConfig.HitGroupCount
     );
 }
 
@@ -652,7 +603,9 @@ void Renderer::OnResize(vk::Extent2D extent)
         res.StorageImage.SetDebugName(std::format("Storage Image {}", i));
 
         std::lock_guard lock(s_DescriptorSetMutex);
-        s_DescriptorSet->UpdateImage(1, i, res.StorageImage, vk::Sampler(), vk::ImageLayout::eGeneral);
+        s_RaytracingPipeline->GetDescriptorSet()->UpdateImage(
+            1, i, res.StorageImage, vk::Sampler(), vk::ImageLayout::eGeneral
+        );
     }
 }
 
@@ -682,12 +635,6 @@ void Renderer::OnInFlightCountChange()
         res.RaygenUniformBuffer = s_BufferBuilder->CreateHostBuffer(
             sizeof(Shaders::RaygenUniformData), std::format("Raygen Uniform Buffer {}", frameIndex)
         );
-        res.MissUniformBuffer = s_BufferBuilder->CreateHostBuffer(
-            sizeof(Shaders::MissUniformData), std::format("Miss Uniform Buffer {}", frameIndex)
-        );
-        res.ClosestHitUniformBuffer = s_BufferBuilder->CreateHostBuffer(
-            sizeof(Shaders::ClosestHitUniformData), std::format("Closest Hit Uniform Buffer {}", frameIndex)
-        );
 
         CreateSceneRenderingResources(res, frameIndex);
 
@@ -701,43 +648,46 @@ void Renderer::RecreateDescriptorSet()
 {
     DeviceContext::GetGraphicsQueue().WaitIdle();
 
+    if (s_RenderingResources.empty())
+        return;
+
     std::lock_guard lock(s_DescriptorSetMutex);
-    s_DescriptorSet = s_DescriptorSetBuilder->CreateSetUnique(s_RenderingResources.size());
-    s_SkinningDescriptorSet = s_SkinningDescriptorSetBuilder->CreateSetUnique(s_RenderingResources.size());
+    s_RaytracingPipeline->CreateDescriptorSet(s_RenderingResources.size());
+    s_SkinningPipeline->CreateDescriptorSet(s_RenderingResources.size());
+    DescriptorSet *raytracingDescriptorSet = s_RaytracingPipeline->GetDescriptorSet();
+    DescriptorSet *skinningDescriptorSet = s_SkinningPipeline->GetDescriptorSet();
 
     for (uint32_t frameIndex = 0; frameIndex < s_RenderingResources.size(); frameIndex++)
     {
         const RenderingResources &res = s_RenderingResources[frameIndex];
 
-        s_DescriptorSet->UpdateAccelerationStructures(
+        raytracingDescriptorSet->UpdateAccelerationStructures(
             0, frameIndex, { res.SceneAccelerationStructure->GetTlas() }
         );
-        s_DescriptorSet->UpdateImage(
+        raytracingDescriptorSet->UpdateImage(
             1, frameIndex, res.StorageImage, vk::Sampler(), vk::ImageLayout::eGeneral
         );
-        s_DescriptorSet->UpdateBuffer(2, frameIndex, res.RaygenUniformBuffer);
-        s_DescriptorSet->UpdateBuffer(3, frameIndex, res.ClosestHitUniformBuffer);
-        s_DescriptorSet->UpdateImageArray(
-            4, frameIndex, s_Textures, s_TextureMap, s_TextureSampler, vk::ImageLayout::eShaderReadOnlyOptimal
+        raytracingDescriptorSet->UpdateBuffer(2, frameIndex, res.RaygenUniformBuffer);
+        raytracingDescriptorSet->UpdateImageArray(
+            3, frameIndex, s_Textures, s_TextureMap, s_TextureSampler, vk::ImageLayout::eShaderReadOnlyOptimal
         );
-        s_DescriptorSet->UpdateBuffer(5, frameIndex, s_SceneData->TransformBuffer);
-        s_DescriptorSet->UpdateBuffer(6, frameIndex, res.GeometryBuffer);
-        s_DescriptorSet->UpdateBuffer(7, frameIndex, s_SceneData->MaterialBuffer);
-        s_DescriptorSet->UpdateBuffer(8, frameIndex, res.LightUniformBuffer);
-        s_DescriptorSet->UpdateBuffer(9, frameIndex, res.MissUniformBuffer);
-        if ((s_MissFlags & Shaders::MissFlagsSkybox2D) != Shaders::MissFlagsNone)
-            s_DescriptorSet->UpdateImage(
-                10, frameIndex, s_SceneData->Skybox, s_TextureSampler, vk::ImageLayout::eShaderReadOnlyOptimal
+        raytracingDescriptorSet->UpdateBuffer(4, frameIndex, s_SceneData->TransformBuffer);
+        raytracingDescriptorSet->UpdateBuffer(5, frameIndex, res.GeometryBuffer);
+        raytracingDescriptorSet->UpdateBuffer(6, frameIndex, s_SceneData->MaterialBuffer);
+        raytracingDescriptorSet->UpdateBuffer(7, frameIndex, res.LightUniformBuffer);
+        if ((s_ShaderSpecialization.MissFlags & Shaders::MissFlagsSkybox2D) != Shaders::MissFlagsNone)
+            raytracingDescriptorSet->UpdateImage(
+                8, frameIndex, s_SceneData->Skybox, s_TextureSampler, vk::ImageLayout::eShaderReadOnlyOptimal
             );
-        if ((s_MissFlags & Shaders::MissFlagsSkyboxCube) != Shaders::MissFlagsNone)
-            s_DescriptorSet->UpdateImage(
-                11, frameIndex, s_SceneData->Skybox, s_TextureSampler, vk::ImageLayout::eShaderReadOnlyOptimal
+        if ((s_ShaderSpecialization.MissFlags & Shaders::MissFlagsSkyboxCube) != Shaders::MissFlagsNone)
+            raytracingDescriptorSet->UpdateImage(
+                9, frameIndex, s_SceneData->Skybox, s_TextureSampler, vk::ImageLayout::eShaderReadOnlyOptimal
             );
 
-        if (s_SceneData->Scene->HasSkeletalAnimations())
+        if (s_SceneData->Handle->HasSkeletalAnimations())
         {
-            s_SkinningDescriptorSet->UpdateBuffer(0, frameIndex, res.BoneTransformUniformBuffer);
-            s_SkinningDescriptorSet->UpdateBuffer(1, frameIndex, s_SceneData->AnimatedVertexMapBuffer);
+            skinningDescriptorSet->UpdateBuffer(0, frameIndex, res.BoneTransformUniformBuffer);
+            skinningDescriptorSet->UpdateBuffer(1, frameIndex, s_SceneData->AnimatedVertexMapBuffer);
         }
     }
 }
@@ -750,26 +700,22 @@ void Renderer::OnUpdate(float /* timeStep */)
 
 void Renderer::Render(const Camera &camera)
 {
-    s_SkinningDescriptorSet->FlushUpdate(s_Swapchain->GetCurrentFrameInFlightIndex());
+    s_SkinningPipeline->GetDescriptorSet()->FlushUpdate(s_Swapchain->GetCurrentFrameInFlightIndex());
 
     {
         std::lock_guard lock(s_DescriptorSetMutex);
-        s_DescriptorSet->FlushUpdate(s_Swapchain->GetCurrentFrameInFlightIndex());
+        s_RaytracingPipeline->GetDescriptorSet()->FlushUpdate(s_Swapchain->GetCurrentFrameInFlightIndex());
     }
 
     const Swapchain::SynchronizationObjects &sync = s_Swapchain->GetCurrentSyncObjects();
     const RenderingResources &res = s_RenderingResources[s_Swapchain->GetCurrentFrameInFlightIndex()];
 
     Shaders::RaygenUniformData rgenData = { camera.GetInvViewMatrix(), camera.GetInvProjectionMatrix(),
-                                            s_RaygenFlags, s_Exposure };
-    Shaders::ClosestHitUniformData rchitData = { s_RenderMode, s_EnabledTextures, s_ClosestHitFlags,
-                                                 res.LightCount };
-    Shaders::MissUniformData missData = { s_MissFlags };
+                                            s_Exposure };
 
     res.RaygenUniformBuffer.Upload(&rgenData);
-    res.MissUniformBuffer.Upload(&missData);
-    res.ClosestHitUniformBuffer.Upload(&rchitData);
-    res.LightUniformBuffer.Upload(s_SceneData->Scene->GetLights());
+    res.LightUniformBuffer.Upload(ToByteSpan(res.LightCount));
+    res.LightUniformBuffer.Upload(s_SceneData->Handle->GetLights(), RenderingResources::s_LightArrayOffset);
 
     res.CommandBuffer.reset();
     res.CommandBuffer.begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));

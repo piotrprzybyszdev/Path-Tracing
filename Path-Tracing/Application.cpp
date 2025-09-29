@@ -262,10 +262,6 @@ void Application::Run()
                 }
 
                 SceneManager::GetActiveScene()->Update(timeStep);
-                Renderer::s_EnabledTextures = UserInterface::GetEnabledTextures();
-                Renderer::s_RenderMode = UserInterface::GetRenderMode();
-                Renderer::s_RaygenFlags = UserInterface::GetRaygenFlags();
-                Renderer::s_ClosestHitFlags = UserInterface::GetClosestHitFlags();
                 Renderer::s_Exposure = UserInterface::GetExposure();
                 Renderer::OnUpdate(timeStep);
             }

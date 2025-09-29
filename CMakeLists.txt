@@ -35,24 +35,11 @@ if (MSVC)
     set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT "Path-Tracing")
 endif()
 
+include(${CMAKE_SOURCE_DIR}/cmake/Utils.cmake)
+
 set(ASSETS textures/PavingStones textures/Metal textures/Logs scenes/KhronosScenes textures/skybox)
 set(ASSET_URLS https://ambientcg.com/get?file=PavingStones142_1K-JPG.zip https://ambientcg.com/get?file=Metal062C_1K-JPG.zip https://ambientcg.com/get?file=Logs001_1K-JPG.zip https://github.com/KhronosGroup/glTF-Sample-Models/archive/refs/heads/main.zip https://drive.google.com/uc?id=1zg2hlXbV598pRHIVO8Qsu13OpGHLwuFc)
-list(LENGTH ASSETS ASSET_COUNT)
 
-set(INDEX 1)
-foreach (NAME URL IN ZIP_LISTS ASSETS ASSET_URLS)
-    set(ZIP_PATH "${CMAKE_SOURCE_DIR}/assets/${NAME}.zip")
-    set(FOLDER_PATH "${CMAKE_SOURCE_DIR}/assets/${NAME}")
+download_assets("${ASSETS}" "${ASSET_URLS}")
 
-    if (NOT EXISTS ${FOLDER_PATH})
-        message("Downloading asset: ${FOLDER_PATH} (${INDEX}/${ASSET_COUNT})")
-        file(DOWNLOAD ${URL} ${ZIP_PATH})
-        file(ARCHIVE_EXTRACT INPUT ${ZIP_PATH} DESTINATION ${FOLDER_PATH})
-    else()
-        message("Asset already exists: ${FOLDER_PATH} (${INDEX}/${ASSET_COUNT})")
-    endif()
-
-    math(EXPR INDEX "${INDEX} + 1")
-endforeach()
-
-create_directory_link(${CMAKE_SOURCE_DIR}/assets, ${CMAKE_BINARY_DIR}/assets)
+create_directory_link(${CMAKE_SOURCE_DIR}/assets ${CMAKE_BINARY_DIR}/assets)

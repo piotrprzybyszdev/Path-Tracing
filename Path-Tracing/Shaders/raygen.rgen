@@ -4,6 +4,8 @@
 
 #include "ShaderRendererTypes.incl"
 
+layout(constant_id = RaygenFlagsConstantId) const uint s_RaygenFlags = RaygenFlagsNone;
+
 layout(binding = 0, set = 0) uniform accelerationStructureEXT u_TopLevelAS;
 layout(binding = 1, set = 0, rgba8) uniform image2D u_Image;
 layout(binding = 2, set = 0) uniform MainBlock {
@@ -27,11 +29,11 @@ void main()
 	float tmin = 0.001;
 	float tmax = 10000.0;
 
-	// TODO: Read SBT config from uniform buffer
+	// TODO: Read SBT config from uniform buffer or specialization constants
 	uint flags = gl_RayFlagsNoneEXT;
-	if ((mainUniform.u_Flags & RaygenFlagsForceOpaque) != RaygenFlagsNone)
+	if ((s_RaygenFlags & RaygenFlagsForceOpaque) != RaygenFlagsNone)
 		flags |= gl_RayFlagsOpaqueEXT;
-	if ((mainUniform.u_Flags & RaygenFlagsCullBackFaces) != RaygenFlagsNone)
+	if ((s_RaygenFlags & RaygenFlagsCullBackFaces) != RaygenFlagsNone)
 		flags |= gl_RayFlagsCullBackFacingTrianglesEXT;
 
 	traceRayEXT(u_TopLevelAS, flags, 0xff, 0, 2, 0, origin.xyz, tmin, direction.xyz, tmax, 0);

@@ -8,56 +8,51 @@ namespace PathTracing::Shaders
 
 using namespace glm;
 
-using RenderModeFlags       = uint;
-using EnabledTextureFlags   = uint;
-using RaygenFlags           = uint;
-using MissFlags             = uint;
-using ClosestHitFlags       = uint;
+using SpecializationConstant = uint;
 
 #endif
 
-const uint MaxUniformBufferSize             = 64 * 1024u;
+const uint MaxUniformBufferSize                     = 64 * 1024u;
 
-const uint DefaultColorTextureIndex         = 0;
-const uint DefaultNormalTextureIndex        = 1;
-const uint DefaultRoughnessTextureIndex     = 2;
-const uint DefaultMetalicTextureIndex       = 3;
-const uint SceneTextureOffset               = 4;
+const uint DefaultColorTextureIndex                 = 0;
+const uint DefaultNormalTextureIndex                = 1;
+const uint DefaultRoughnessTextureIndex             = 2;
+const uint DefaultMetalicTextureIndex               = 3;
+const uint SceneTextureOffset                       = 4;
 
-const uint RenderModeColor                  = 1;
-const uint RenderModeWorldPosition          = 2;
-const uint RenderModeNormal	                = 3;
-const uint RenderModeTextureCoords          = 4;
-const uint RenderModeMips                   = 5;
-const uint RenderModeGeometry               = 6;
-const uint RenderModePrimitive              = 7;
-const uint RenderModeInstance               = 8;
+const uint RenderModeColor                          = 0;
+const uint RenderModeWorldPosition                  = 1;
+const uint RenderModeNormal	                        = 2;
+const uint RenderModeTextureCoords                  = 3;
+const uint RenderModeMips                           = 4;
+const uint RenderModeGeometry                       = 5;
+const uint RenderModePrimitive                      = 6;
+const uint RenderModeInstance                       = 7;
+const uint RenderModeMax                            = 7;
 
-const uint TexturesEnableNone               = 0x0u;
-const uint TexturesEnableColor              = 0x1u;
-const uint TexturesEnableNormal             = 0x2u;
-const uint TexturesEnableMetalic            = 0x4u;
-const uint TexturesEnableRoughness          = 0x8u;
-const uint TexturesEnableAll                = 0xfu;
+const uint RaygenFlagsNone                          = 0x0u;
+const uint RaygenFlagsForceOpaque                   = 0x1u;
+const uint RaygenFlagsCullBackFaces                 = 0x2u;
+const uint RaygenFlagsAll                           = 0x3u;
 
-const uint RaygenFlagsNone                  = 0x0u;
-const uint RaygenFlagsForceOpaque           = 0x1u;
-const uint RaygenFlagsCullBackFaces         = 0x2u;
-const uint RaygenFlagsAll                   = 0x3u;
+const uint MissFlagsNone                            = 0x0u;
+const uint MissFlagsSkybox2D                        = 0x1u;
+const uint MissFlagsSkyboxCube                      = 0x2u;
+const uint MissFlagsAll                             = 0x3u;
 
-const uint MissFlagsNone                    = 0x0u;
-const uint MissFlagsSkybox2D                = 0x1u;
-const uint MissFlagsSkyboxCube              = 0x2u;
-const uint MissFlagsAll                     = 0x3u;
+const uint HitGroupFlagsNone                        = 0x00u;
+const uint HitGroupFlagsDisableColorTexture         = 0x01u;
+const uint HitGroupFlagsDisableNormalTexture        = 0x02u;
+const uint HitGroupFlagsDisableRoughnessTexture     = 0x04u;
+const uint HitGroupFlagsDisableMetalicTexture       = 0x08u;
+const uint HitGroupFlagsDisableMipMaps              = 0x10u;
+const uint HitGroupFlagsDisableShadows              = 0x20u;
+const uint HitGroupFlagsAll                         = 0x3fu;
 
-const uint ClosestHitFlagsNone              = 0x0u;
-const uint ClosestHitFlagsDisableMipMaps    = 0x1u;
-const uint ClosestHitFlagsDisableShadows    = 0x2u;
-const uint ClosestHitFlagsAll               = 0x3u;
-
-const uint MaxLightCount                    = 64u;
-const uint MaxBonesPerVertex                = 4u;
-const uint MaxBones                         = MaxUniformBufferSize / (3 * 4 * 4);
+const uint MaxTextureCount                          = 128u;
+const uint MaxLightCount                            = 64u;
+const uint MaxBonesPerVertex                        = 4u;
+const uint MaxBones                                 = MaxUniformBufferSize / (3 * 4 * 4);
 
 struct Camera
 {
@@ -104,6 +99,8 @@ struct Light
     float AttenuationQuadratic;
     float pad2;
 };
+
+const uint LightStructAlignment = 16u;
 
 
 #ifndef GL_core_profile

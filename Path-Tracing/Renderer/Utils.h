@@ -18,7 +18,7 @@ concept uploadable = std::is_trivially_copyable_v<T> && std::is_standard_layout_
 namespace
 {
 
-inline uint32_t AlignTo(uint32_t size, uint32_t alignment)
+inline constexpr uint32_t AlignTo(uint32_t size, uint32_t alignment)
 {
     return (size + alignment - 1) & ~(alignment - 1);
 }

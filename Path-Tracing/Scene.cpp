@@ -37,7 +37,7 @@ Scene::Scene(
             nodes[info.SceneNodeIndex].CurrentTransform
         );
 
-    m_HasSkeletalAnimations = std::ranges::any_of(m_Geometries, [](const auto &g) { return g.IsAnimated; });
+    m_HasSkeletalAnimations = std::any_of(m_Geometries.begin(), m_Geometries.end(), [](const auto &g) { return g.IsAnimated; });
 }
 
 const std::string &Scene::GetName() const
@@ -106,6 +106,8 @@ uint32_t SceneBuilder::AddTexture(TextureInfo &&texture)
     if (m_TextureIndices.contains(name))
         return m_TextureIndices[name];
 
+    assert(m_Textures.size() < Shaders::MaxTextureCount);
+
     m_Textures.push_back(std::move(texture));
     const uint32_t textureIndex = Shaders::GetSceneTextureIndex(m_Textures.size() - 1);
 
@@ -164,9 +166,9 @@ void SceneBuilder::SetAbsoluteTransform(uint32_t sceneNodeIndex)
 
 void SceneBuilder::AddLight(Shaders::Light &&light, uint32_t sceneNodeIndex)
 {
+    assert(m_LightInfos.size() < Shaders::MaxLightCount);
     m_LightInfos.emplace_back(sceneNodeIndex, light.Position);
     m_Lights.push_back(std::move(light));
-    assert(m_LightInfos.size() <= Shaders::MaxLightCount);
 }
 
 void SceneBuilder::SetSkybox(Skybox2D &&skybox)

@@ -14,6 +14,7 @@
 #include "CommandBuffer.h"
 #include "DescriptorSet.h"
 #include "Image.h"
+#include "Pipeline.h"
 #include "Scene.h"
 #include "ShaderBindingTable.h"
 #include "ShaderLibrary.h"
@@ -36,12 +37,8 @@ public:
     static void Render(const Camera &camera);
 
     static void ReloadShaders();
+    static void UpdateSpecializations(Shaders::SpecializationData data);
 
-    static Shaders::RenderModeFlags s_RenderMode;
-    static Shaders::EnabledTextureFlags s_EnabledTextures;
-    static Shaders::RaygenFlags s_RaygenFlags;
-    static Shaders::MissFlags s_MissFlags;
-    static Shaders::ClosestHitFlags s_ClosestHitFlags;
     static float s_Exposure;
 
     static std::unique_ptr<CommandBuffer> s_MainCommandBuffer;
@@ -53,12 +50,28 @@ public:
 private:
     static const Swapchain *s_Swapchain;
 
-    static uint32_t s_RaygenGroupIndex;
-    static uint32_t s_PrimaryRayMissIndex;
-    static uint32_t s_OcclusionRayMissIndex;
-    static uint32_t s_PrimaryRayHitIndex;
-    static uint32_t s_OcclusionRayHitIndex;
-    static uint32_t s_HitGroupCount;
+    static struct ShaderIds
+    {
+        ShaderId Raygen = ShaderLibrary::g_UnusedShaderId;
+        ShaderId Miss = ShaderLibrary::g_UnusedShaderId;
+        ShaderId ClosestHit = ShaderLibrary::g_UnusedShaderId;
+        ShaderId AnyHit = ShaderLibrary::g_UnusedShaderId;
+        ShaderId OcclusionMiss = ShaderLibrary::g_UnusedShaderId;
+        ShaderId SkinningCompute = ShaderLibrary::g_UnusedShaderId;
+    } s_Shaders;
+
+    static struct RaytracingConfig
+    {
+        uint32_t RaygenGroupIndex = -1;
+        uint32_t PrimaryRayMissIndex = -1;
+        uint32_t OcclusionRayMissIndex = -1;
+        uint32_t PrimaryRayHitIndex = -1;
+        uint32_t OcclusionRayHitIndex = -1;
+        uint32_t HitGroupCount = 2;
+    } s_RaytracingConfig;
+
+
+    static Shaders::SpecializationData s_ShaderSpecialization;
 
     struct RenderingResources
     {
@@ -68,10 +81,10 @@ private:
         Image StorageImage;
 
         Buffer RaygenUniformBuffer;
-        Buffer MissUniformBuffer;
-        Buffer ClosestHitUniformBuffer;
 
-        uint32_t LightCount = 0;
+        static const vk::DeviceSize s_LightArrayOffset =
+            Utils::AlignTo(sizeof(Shaders::uint), Shaders::LightStructAlignment);
+        Shaders::uint LightCount = 0;
         Buffer LightUniformBuffer;
 
         Buffer BoneTransformUniformBuffer;
@@ -85,7 +98,7 @@ private:
 
     struct SceneData
     {
-        std::shared_ptr<Scene> Scene = nullptr;
+        std::shared_ptr<Scene> Handle = nullptr;
 
         Buffer VertexBuffer;
         Buffer IndexBuffer;
@@ -114,20 +127,11 @@ private:
     static std::vector<Image> s_Textures;
     static std::vector<uint32_t> s_TextureMap;
 
-    static ShaderId s_SkinningShaderId;
-
-    static std::unique_ptr<DescriptorSetBuilder> s_DescriptorSetBuilder;
-    static std::unique_ptr<DescriptorSetBuilder> s_SkinningDescriptorSetBuilder;
-    static std::unique_ptr<DescriptorSet> s_DescriptorSet;
-    static std::unique_ptr<DescriptorSet> s_SkinningDescriptorSet;
-
     static std::mutex s_DescriptorSetMutex;
     static std::unique_ptr<TextureUploader> s_TextureUploader;
 
-    static vk::PipelineLayout s_PipelineLayout;
-    static vk::PipelineLayout s_SkinningPipelineLayout;
-    static vk::Pipeline s_Pipeline;
-    static vk::Pipeline s_SkinningPipeline;
+    static std::unique_ptr<RaytracingPipeline> s_RaytracingPipeline;
+    static std::unique_ptr<ComputePipeline> s_SkinningPipeline;
 
     static std::unique_ptr<ShaderLibrary> s_ShaderLibrary;
 
@@ -136,7 +140,7 @@ private:
 
     static uint32_t AddDefaultTexture(glm::u8vec4 value, std::string &&name);
 
-    static bool SetupPipeline();
+    static void CreatePipelines();
 
     static void RecordCommandBuffer(const RenderingResources &resources);
     static void UpdateAnimatedVertices(const RenderingResources &resources);

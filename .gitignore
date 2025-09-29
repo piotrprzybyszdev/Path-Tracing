@@ -19,8 +19,8 @@ INSTALL.*
 *.vcxproj*
 *.sln
 
-# Shader binaries
-*.spv*
+# Cache
+ShaderCache
 
 # Assets
 assets

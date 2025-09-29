@@ -112,6 +112,14 @@ DescriptorSetBuilder::~DescriptorSetBuilder()
     DeviceContext::GetLogical().destroyDescriptorSetLayout(m_Layout);
 }
 
+DescriptorSetBuilder::DescriptorSetBuilder(DescriptorSetBuilder &&descriptorSetBuilder) noexcept
+    : m_Bindings(std::move(descriptorSetBuilder.m_Bindings)),
+      m_Types(std::move(descriptorSetBuilder.m_Types)), m_Flags(std::move(descriptorSetBuilder.m_Flags)),
+      m_Layout(std::move(descriptorSetBuilder.m_Layout))
+{
+    descriptorSetBuilder.m_Layout = nullptr;
+}
+
 DescriptorSetBuilder &DescriptorSetBuilder::SetDescriptor(
     vk::DescriptorSetLayoutBinding binding, bool partial
 )

@@ -30,21 +30,7 @@ layout(buffer_reference, buffer_reference_align=8) writeonly buffer VertexWriteB
 struct RaygenUniformData
 {
     Camera u_Camera;
-    uint u_Flags;               // enum
     float u_Exposure;
-};
-
-struct MissUniformData
-{
-    uint u_Flags;               // enum
-};
-
-struct ClosestHitUniformData
-{
-    uint u_RenderMode;          // enum
-    uint u_EnabledTextures;     // enum
-    uint u_Flags;               // enum
-    uint u_LightCount;
 };
 
 struct Geometry
@@ -68,7 +54,63 @@ struct SkinningPushConstants
     VertexWriteBuffer outVertices;
 };
 
+const uint RenderModeConstantId             = 0u;
+const uint RaygenFlagsConstantId            = 1u;
+const uint MissFlagsConstantId              = 2u;
+const uint HitGroupFlagsConstantId          = 3u;
+
+const uint MaxRecursionDepth                = 2u;
+const uint MaxPayloadSize                   = 12u;
+const uint MaxHitAttributeSize              = 12u;
+
+struct SpecializationData
+{
+    uint RenderMode;
+    uint RaygenFlags;
+    uint MissFlags;
+    uint HitGroupFlags;
 
 #ifndef GL_core_profile
+    bool operator==(const SpecializationData &) const = default;
+#endif
+};
+
+
+#ifndef GL_core_profile
+
+inline SpecializationConstant GetMaxSpecializationConstantValue(uint constantId)
+{
+    switch (constantId)
+    {
+    case RenderModeConstantId:
+        return RenderModeMax;
+    case RaygenFlagsConstantId:
+        return RaygenFlagsAll;
+    case MissFlagsConstantId:
+        return MissFlagsAll;
+    case HitGroupFlagsConstantId:
+        return HitGroupFlagsAll;
+    default:
+        return 0;
+    }
+}
+
+inline SpecializationConstant GetSpecializationConstant(const SpecializationData &data, uint constantId)
+{
+    switch (constantId)
+    {
+    case RenderModeConstantId:
+        return data.RenderMode;
+    case RaygenFlagsConstantId:
+        return data.RaygenFlags;
+    case MissFlagsConstantId:
+        return data.MissFlags;
+    case HitGroupFlagsConstantId:
+        return data.HitGroupFlags;
+    default:
+        return 0;
+    }
+}
+
 }
 #endif

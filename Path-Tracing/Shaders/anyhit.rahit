@@ -6,17 +6,15 @@
 #include "ShaderRendererTypes.incl"
 #include "common.glsl"
 
-layout(binding = 3, set = 0) uniform MainBlock {
-	ClosestHitUniformData mainUniform;
-};
+layout(constant_id = HitGroupFlagsConstantId) const uint s_HitGroupFlags = HitGroupFlagsNone;
 
-layout(binding = 4, set = 0) uniform sampler2D textures[];
+layout(binding = 3, set = 0) uniform sampler2D textures[];
 
-layout(binding = 6, set = 0) readonly buffer GeometryBuffer {
+layout(binding = 5, set = 0) readonly buffer GeometryBuffer {
 	Geometry[] geometries;
 };
 
-layout(binding = 7, set = 0) readonly buffer MaterialBuffer {
+layout(binding = 6, set = 0) readonly buffer MaterialBuffer {
 	Material[] materials;
 };
 
@@ -45,7 +43,7 @@ void main()
 	const Vertex vertex = getInterpolatedVertex(vertices, indices, gl_PrimitiveID * 3, barycentricCoords);
 
 	const Material material = materials[sbt.MaterialIndex];
-	const float alpha = texture(textures[GetColorTextureIndex(mainUniform.u_EnabledTextures, material)], vertex.TexCoords).a;
+	const float alpha = texture(textures[GetColorTextureIndex(s_HitGroupFlags, material)], vertex.TexCoords).a;
 
 	if (alpha < 0.9f)
 		ignoreIntersectionEXT;

@@ -26,10 +26,6 @@ public:
     static bool GetIsFocused();
 
     static vk::PresentModeKHR GetPresentMode();
-    static Shaders::EnabledTextureFlags GetEnabledTextures();
-    static Shaders::RenderModeFlags GetRenderMode();
-    static Shaders::RaygenFlags GetRaygenFlags();
-    static Shaders::ClosestHitFlags GetClosestHitFlags();
     static float GetExposure();
 
     static const char *SceneChange();

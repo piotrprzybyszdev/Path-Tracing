@@ -5,19 +5,17 @@
 #include "ShaderRendererTypes.incl"
 #include "common.glsl"
 
-layout(binding = 9, set = 0) uniform MainBlock {
-	MissUniformData mainUniform;
-};
+layout(constant_id = MissFlagsConstantId) const uint s_MissFlags = MissFlagsNone;
 
-layout(binding = 10, set = 0) uniform sampler2D skybox2D;
+layout(binding = 8, set = 0) uniform sampler2D skybox2D;
 
-layout(binding = 11, set = 0) uniform samplerCube skyboxCube;
+layout(binding = 9, set = 0) uniform samplerCube skyboxCube;
 
 layout(location = 0) rayPayloadInEXT vec3 hitValue;
 
 void main()
 {
-    if ((mainUniform.u_Flags & MissFlagsSkybox2D) != MissFlagsNone)
+    if ((s_MissFlags & MissFlagsSkybox2D) != MissFlagsNone)
     {
         const vec3 dir = gl_WorldRayDirectionEXT;
 
@@ -28,7 +26,7 @@ void main()
 
         hitValue = texture(skybox2D, texCoords).xyz;
     }
-    else if ((mainUniform.u_Flags & MissFlagsSkyboxCube) != MissFlagsNone)
+    else if ((s_MissFlags & MissFlagsSkyboxCube) != MissFlagsNone)
     {
         hitValue = texture(skyboxCube, gl_WorldRayDirectionEXT).xyz;
     }
