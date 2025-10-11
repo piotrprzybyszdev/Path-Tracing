@@ -2,6 +2,7 @@
 
 #include "Core/Core.h"
 
+#include "Application.h"
 #include "AssetImporter.h"
 
 #include "Renderer.h"
@@ -11,17 +12,27 @@
 namespace PathTracing
 {
 
-size_t TextureUploader::GetStagingMemoryRequirement(uint32_t numBuffers)
+namespace
 {
-    return numBuffers * StagingBufferSize;
+
+uint32_t GetLoaderThreadCount()
+{
+    const uint32_t desiredLoaderThreadCount = std::thread::hardware_concurrency() / 2;
+    return std::min(Application::GetConfig().MaxTextureLoaderThreads, desiredLoaderThreadCount);
 }
 
-TextureUploader::TextureUploader(
-    uint32_t loaderThreadCount, size_t stagingMemoryLimit, std::vector<Image> &textures,
-    std::mutex &descriptorSetMutex
-)
-    : m_Textures(textures), m_DescriptorSetMutex(descriptorSetMutex), m_LoaderThreadCount(loaderThreadCount),
-      m_StagingBufferCount(std::floor(stagingMemoryLimit / StagingBufferSize)),
+uint32_t GetStagingStagingBufferPerThreadCount()
+{
+    const uint32_t desiredStagingBufferCount = 2;
+    return std::min(Application::GetConfig().MaxBuffersPerLoaderThread, desiredStagingBufferCount);
+}
+
+}
+
+TextureUploader::TextureUploader(std::vector<Image> &textures, std::mutex &descriptorSetMutex)
+    : m_Textures(textures), m_DescriptorSetMutex(descriptorSetMutex),
+      m_LoaderThreadCount(GetLoaderThreadCount()),
+      m_StagingBufferCount(GetStagingStagingBufferPerThreadCount() * m_LoaderThreadCount),
       m_FreeBuffersSemaphore(m_StagingBufferCount), m_DataBuffersSemaphore(0),
       m_TransferCommandBuffer(DeviceContext::GetTransferQueue()),
       m_MipCommandBuffer(DeviceContext::GetMipQueue()), m_UseTransferQueue(DeviceContext::HasTransferQueue()),
@@ -349,7 +360,8 @@ void TextureUploader::StartSubmitThread(const std::shared_ptr<const Scene> &scen
         if (uploadedCount == textures.size() - rejectedCount)
             logger::info("Done uploading scene textures");
         else
-            logger::debug("Texture upload cancelled");
+            logger::trace("Texture upload submit thread cancelled");
+        m_FreeBuffersSemaphore.release(textures.size() - rejectedCount);
 
         if (rejectedCount > 0)
             logger::warn("{} texture(s) weren't uploaded", rejectedCount);

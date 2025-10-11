@@ -1,3 +1,5 @@
+#include "Core/Config.h"
+
 #include "SceneGraph.h"
 
 namespace PathTracing
@@ -33,7 +35,7 @@ void Animation::Update(float timeStep, std::span<SceneNode> nodes)
 
 void SceneGraph::UpdateTransforms()
 {
-#ifndef NDEBUG
+#ifdef CONFIG_ASSERTS
     std::vector<bool> isUpdated(m_SceneNodes.size());
     isUpdated[0] = true;
 #endif
@@ -51,7 +53,7 @@ void SceneGraph::UpdateTransforms()
             node.CurrentTransform = node.Transform * parent.CurrentTransform;
         else
             node.CurrentTransform = node.Transform;
-#ifndef NDEBUG
+#ifdef CONFIG_ASSERTS
         isUpdated[i] = true;
 #endif
     }

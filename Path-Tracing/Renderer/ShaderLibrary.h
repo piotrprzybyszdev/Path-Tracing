@@ -28,6 +28,8 @@ struct FileInfo
 class Includer : public shaderc::CompileOptions::IncluderInterface
 {
 public:
+    Includer();
+
     shaderc_include_result *GetInclude(
         const char *requested_source, shaderc_include_type type, const char *requesting_source,
         size_t include_depth
@@ -38,14 +40,12 @@ public:
     std::set<std::filesystem::path> IncludedFiles;
 
 private:
-    static constexpr size_t MaxFileCacheSize = 10;
-
-private:
     std::filesystem::path GetFilePath(
         const char *requested_source, shaderc_include_type type, const char *requesting_source
     );
 
-    LRUCache<std::filesystem::path, FileInfo, MaxFileCacheSize> m_Cache;
+    const uint32_t m_MaxIncludeDepth;
+    LRUCache<std::filesystem::path, FileInfo> m_Cache;
 };
 
 using ShaderId = uint32_t;
@@ -102,9 +102,6 @@ private:
 
 private:
     static std::filesystem::path ToOutputPath(const std::filesystem::path &path);
-    static std::filesystem::path ToBinaryPath(
-        const std::filesystem::path &path, const std::filesystem::path &extension
-    );
 };
 
 class ShaderLibrary
@@ -125,9 +122,6 @@ public:
 public:
     static inline constexpr ShaderId g_UnusedShaderId = vk::ShaderUnusedKHR;
     
-    // TODO: Get from Application settings
-    static inline const std::filesystem::path g_ShaderCachePath = "ShaderCache";
-
 private:
     shaderc::Compiler m_Compiler;
     shaderc::CompileOptions m_Options;

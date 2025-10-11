@@ -3,6 +3,7 @@
 #include <vulkan/vulkan.hpp>
 
 #include "Core/Cache.h"
+#include "Core/Threads.h"
 
 #include "Shaders/ShaderRendererTypes.incl"
 
@@ -131,10 +132,6 @@ public:
     [[nodiscard]] vk::Pipeline GetHandle() const;
 
 private:
-    static constexpr size_t CacheSize = 1000;
-    static constexpr uint8_t CompilationThreadCount = 3;
-
-private:
     ShaderLibrary &m_ShaderLibrary;
     DescriptorSetBuilder m_DescriptorSetBuilder;
     const vk::PipelineLayout m_Layout;
@@ -144,9 +141,9 @@ private:
     std::vector<vk::RayTracingShaderGroupCreateInfoKHR> m_Groups;
 
     vk::Pipeline m_Handle;
-    LRUCache<PipelineConfig, vk::Pipeline, CacheSize> m_Cache;
+    LRUCache<PipelineConfig, vk::Pipeline> m_Cache;
 
-    ThreadDispatch<uint32_t, CompilationThreadCount> m_CompilationDispatch;
+    ThreadDispatch<uint32_t> m_CompilationDispatch;
 
 private:
     vk::Pipeline CreateVariant(const PipelineConfig &config);

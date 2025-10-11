@@ -4,17 +4,11 @@
 
 using namespace PathTracing;
 
-int main()
+int main(int argc, char *argv[])
 {
-#ifndef NDEBUG
-    logger::set_level(logger::level::debug);
-#else
-    logger::set_level(logger::level::info);
-#endif
-
     try
     {
-        Application::Init();
+        Application::Init(argc, argv);
         Application::Run();
     }
     catch (const error &error)

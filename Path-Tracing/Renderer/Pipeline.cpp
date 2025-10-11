@@ -9,13 +9,25 @@
 namespace PathTracing
 {
 
+namespace
+{
+
+uint32_t GetCompilationThreadCount()
+{
+    const uint32_t desiredCompilationThreadCount = 3;
+    return std::min(Application::GetConfig().MaxShaderCompilationThreads, desiredCompilationThreadCount);
+}
+
+}
+
 RaytracingPipeline::RaytracingPipeline(
     ShaderLibrary &shaderLibrary, const std::vector<vk::RayTracingShaderGroupCreateInfoKHR> &groups,
     const std::vector<ShaderId> &shaders, DescriptorSetBuilder &&descriptorSetBuilder,
     vk::PipelineLayout layout
 )
     : m_ShaderLibrary(shaderLibrary), m_DescriptorSetBuilder(std::move(descriptorSetBuilder)),
-      m_Layout(layout), m_Groups(groups)
+      m_Layout(layout), m_Groups(groups), m_Cache(Application::GetConfig().MaxPipelineVariantCacheSize),
+      m_CompilationDispatch(GetCompilationThreadCount())
 {
     for (ShaderId id : shaders)
         m_Shaders.emplace_back(m_ShaderLibrary, id, m_Layout);
@@ -50,10 +62,13 @@ void RaytracingPipeline::Update(const PipelineConfig &config)
         shaderIds.push_back(info.GetId());
 
     std::vector<bool> isUpToDate = m_ShaderLibrary.RecompileChanged(shaderIds);
-    for (int i = 0; i < m_Shaders.size(); i++)
-        isUpToDate[i] = isUpToDate[i] && m_Shaders[i].HasVariants();
-
     bool allUpToDate = std::ranges::all_of(isUpToDate, [](bool value) { return value; });
+    
+    std::vector<bool> needsRecompilation(isUpToDate);
+    for (int i = 0; i < m_Shaders.size(); i++)
+        needsRecompilation[i] = !needsRecompilation[i] || !m_Shaders[i].HasVariants();
+
+    bool anyNeedsRecompilation = std::ranges::any_of(needsRecompilation, [](bool value) { return value; });
 
     if (allUpToDate && m_Cache.Contains(config))
     {
@@ -63,18 +78,21 @@ void RaytracingPipeline::Update(const PipelineConfig &config)
     }
 
     for (int i = 0; i < m_Shaders.size(); i++)
-        if (!isUpToDate[i])
+        if (needsRecompilation[i])
             m_Shaders[i].UpdateSpecializations();
 
     // Compile the immediately necessary version of the pipeline right away
-    if (!allUpToDate)
+    if (anyNeedsRecompilation)
         m_Handle = CreateVariantImmediate(config);
 
     // Now compile shader variants of those that have changed
-    m_CompilationDispatch.Dispatch(m_Shaders.size(), [isUpToDate, this](uint32_t threadId, uint32_t index) {
-        if (!isUpToDate[index])
-            m_Shaders[index].CompileVariants();
-    });
+    m_CompilationDispatch.Dispatch(
+        m_Shaders.size(),
+        [needsRecompilation, this](uint32_t threadId, uint32_t index) {
+            if (needsRecompilation[index])
+                m_Shaders[index].CompileVariants();
+        }
+    );
 
     if (!allUpToDate)
     {
@@ -83,7 +101,8 @@ void RaytracingPipeline::Update(const PipelineConfig &config)
             DeviceContext::GetLogical().destroyPipeline(pipeline);
         m_Cache.Clear();
     }
-    else
+
+    if (!anyNeedsRecompilation)
         m_Handle = CreateVariant(config);
 
     vk::Pipeline removed = m_Cache.Insert(config, m_Handle);
@@ -216,6 +235,9 @@ void ShaderInfo::UpdateSpecializations()
 
 void ShaderInfo::CompileVariants()
 {
+    if (Application::GetConfig().ShaderPrecompilation == false)
+        return;
+
     for (auto pipeline : m_Variants | std::views::values)
         DeviceContext::GetLogical().destroyPipeline(pipeline);
     m_Variants.clear();
@@ -235,6 +257,7 @@ void ShaderInfo::CompileVariants()
         for (Shaders::SpecializationConstant spec2Value = 0; spec2Value <= maxSpec2; spec2Value++)
             configs.push_back(MakeConfig(spec1Value, spec2Value));
 
+    // TODO: Split compilation into smaller batches so that cancellation is faster
     Compile(configs);
     logger::debug("Precompiled {} variants of shader `{}`", configs.size(), GetPath().string());
 }
@@ -375,13 +398,8 @@ ShaderInfo::Config ShaderInfo::MakeConfig(
 
 std::filesystem::path ShaderInfo::ToCachePath(std::filesystem::path path)
 {
-#ifndef NDEBUG
-    const std::filesystem::path extension = ".shadercached";
-#else
-    const std::filesystem::path extension = ".shadercache";
-#endif
-
-    return ShaderLibrary::g_ShaderCachePath / path.filename().replace_extension(extension);
+    const auto &config = Application::GetConfig();
+    return config.ShaderCachePath / path.filename().replace_extension(config.ShaderCacheExtension);
 }
 
 ComputeShaderInfo::ComputeShaderInfo(ComputeShaderInfo &&info) noexcept : ShaderInfo(std::move(info))

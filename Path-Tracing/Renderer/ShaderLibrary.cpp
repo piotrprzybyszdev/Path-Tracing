@@ -70,18 +70,10 @@ FileInfo ReadFile(const std::filesystem::path &path)
 
 std::filesystem::path Shader::ToOutputPath(const std::filesystem::path &path)
 {
-#ifndef NDEBUG
-    return ToBinaryPath(path, ".spvd");
-#else
-    return ToBinaryPath(path, ".spv");
-#endif
-}
-
-std::filesystem::path Shader::ToBinaryPath(
-    const std::filesystem::path &path, const std::filesystem::path &extension
-)
-{
-    return ShaderLibrary::g_ShaderCachePath / path.filename().replace_extension(extension);
+    const auto &config = Application::GetConfig();
+    std::filesystem::path outputPath = config.ShaderCachePath / path.filename();
+    outputPath.replace_extension(config.ShaderSpvExtension);
+    return outputPath;
 }
 
 Shader::Shader(std::filesystem::path path, vk::ShaderStageFlagBits stage)
@@ -313,22 +305,25 @@ ShaderLibrary::ShaderLibrary()
     assert(m_Compiler.IsValid() == true);
 
     m_Options.SetTargetEnvironment(shaderc_target_env_vulkan, Application::GetVulkanApiVersion());
-#ifndef NDEBUG
-    m_Options.SetGenerateDebugInfo();
-    m_Options.SetOptimizationLevel(shaderc_optimization_level_zero);
-#else
-    m_Options.SetOptimizationLevel(shaderc_optimization_level_performance);
-#endif
 
     auto includer = std::make_unique<Includer>();
     m_Includer = includer.get();
     m_Options.SetIncluder(std::move(includer));
 
-    if (!std::filesystem::is_directory(g_ShaderCachePath))
+    const std::filesystem::path &shaderCachePath = Application::GetConfig().ShaderCachePath;
+    if (!std::filesystem::is_directory(shaderCachePath))
     {
-        std::filesystem::remove(g_ShaderCachePath);
-        std::filesystem::create_directory(g_ShaderCachePath);
+        std::filesystem::remove(shaderCachePath);
+        std::filesystem::create_directory(shaderCachePath);
     }
+
+    if (Application::GetConfig().ShaderDebugInfo)
+        m_Options.SetGenerateDebugInfo();
+
+    if (Application::GetConfig().OptimizeShaders)
+        m_Options.SetOptimizationLevel(shaderc_optimization_level_performance);
+    else
+        m_Options.SetOptimizationLevel(shaderc_optimization_level_zero);
 }
 
 ShaderLibrary::~ShaderLibrary() = default;
@@ -361,11 +356,27 @@ std::vector<bool> ShaderLibrary::RecompileChanged(std::span<const ShaderId> shad
     return upToDate;
 }
 
+Includer::Includer()
+    : m_MaxIncludeDepth(Application::GetConfig().MaxShaderIncludeDepth),
+      m_Cache(Application::GetConfig().MaxShaderIncludeCacheSize)
+{
+}
+
 shaderc_include_result *Includer::GetInclude(
     const char *requested_source, shaderc_include_type type, const char *requesting_source,
-    size_t /* include_depth */
+    size_t include_depth
 )
 {
+    if (include_depth > m_MaxIncludeDepth)
+    {
+        FileInfo *fileInfo = new FileInfo();
+        fileInfo->Path = std::format("MaxIncludeDepth exceeded {}/{}", include_depth, m_MaxIncludeDepth);
+        logger::warn(fileInfo->Path);
+        return new shaderc_include_result {
+            "", 0, fileInfo->Path.c_str(), fileInfo->Path.size(), fileInfo,
+        };
+    }
+
     std::filesystem::path path;
 
     try

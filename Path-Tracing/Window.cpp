@@ -13,10 +13,8 @@ void Window::Create(int width, int height, const char *title)
 
     s_Handle = glfwCreateWindow(width, height, title, nullptr, nullptr);
 
-#ifndef NDEBUG
     if (s_Handle == nullptr)
         throw error("Window creation failed!");
-#endif
 }
 
 void Window::Destroy()

@@ -6,6 +6,7 @@
 
 #include <stack>
 
+#include "Core/Config.h"
 #include "Core/Core.h"
 
 #include "AssetImporter.h"
@@ -667,7 +668,7 @@ std::shared_ptr<Scene> AssetImporter::LoadScene(const std::string &name, const s
     {
         unsigned int flags = aiProcess_Triangulate | aiProcess_FlipUVs | aiProcess_CalcTangentSpace |
                              aiProcess_LimitBoneWeights | aiProcess_GenNormals | aiProcess_PopulateArmatureData;
-#ifdef NDEBUG
+#ifdef CONFIG_OPTIMIZE_SCENE
         flags |= aiProcess_JoinIdenticalVertices | aiProcess_ImproveCacheLocality | aiProcess_OptimizeMeshes;
 #endif
 

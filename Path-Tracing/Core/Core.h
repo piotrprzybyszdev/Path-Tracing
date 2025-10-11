@@ -43,7 +43,6 @@ private:
 template<typename... Args>
 void Stats::AddStat(const std::string &statName, const std::format_string<Args...> format, Args &&...args)
 {
-    logger::trace(std::vformat(format.get(), std::make_format_args(args...)));
     s_Stats[statName] = std::vformat(format.get(), std::make_format_args(args...));
 }
 
@@ -145,62 +144,6 @@ std::span<T2> SpanCast(std::span<T1> span)
     return std::span(reinterpret_cast<T2 *>(span.data()), span.size() * sizeof(T1) / sizeof(T2));
 }
 
-}
-
-#include <thread>
-#include <atomic>
-
-template<typename I, uint8_t ThreadCount>
-class ThreadDispatch
-{
-public:
-    template<typename F> void DispatchBlocking(size_t inputCount, F &&process);
-    template<typename F> void Dispatch(size_t inputCount, F &&process);
-
-    void Cancel();
-
-private:
-    std::array<std::jthread, ThreadCount> m_Threads;
-    std::atomic<I> m_InputIndex = 0;
-};
-
-template<typename I, uint8_t ThreadCount>
-template<typename F>
-inline void ThreadDispatch<I, ThreadCount>::DispatchBlocking(size_t inputCount, F &&process)
-{
-    Dispatch(inputCount, std::move(process));
-
-    for (auto &thread : m_Threads)
-        thread.join();
-}
-
-template<typename I, uint8_t ThreadCount>
-template<typename F>
-inline void ThreadDispatch<I, ThreadCount>::Dispatch(size_t inputCount, F &&process)
-{
-    m_InputIndex = 0;
-
-    for (uint32_t threadId = 0; threadId < m_Threads.size(); threadId++)
-    {
-        auto &thread = m_Threads[threadId];
-        thread = std::jthread([process, inputCount, threadId, this](std::stop_token stopToken) {
-            while (!stopToken.stop_requested() && m_InputIndex < inputCount)
-                process(threadId, m_InputIndex++);
-        });
-    }
-}
-
-template<typename I, uint8_t ThreadCount>
-inline void ThreadDispatch<I, ThreadCount>::Cancel()
-{
-    if (!m_Threads.front().joinable())
-        return;
-
-    for (auto &thread : m_Threads)
-        thread.request_stop();
-
-    for (auto &thread : m_Threads)
-        thread.join();
 }
 
 }

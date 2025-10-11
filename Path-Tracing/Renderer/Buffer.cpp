@@ -31,7 +31,6 @@ Buffer::Buffer(
     assert(result == VkResult::VK_SUCCESS);
     m_Handle = handle;
 
-#ifndef NDEBUG
     if (isDevice)
     {
         VmaAllocationInfo info;
@@ -47,7 +46,6 @@ Buffer::Buffer(
             m_IsDevice = false;
         }
     }
-#endif
 
     SetDebugName(name);
 }

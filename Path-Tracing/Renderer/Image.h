@@ -26,11 +26,11 @@ public:
 
     ~Image();
 
-    Image(Image &&image) noexcept;
     Image(const Image &image) = delete;
-
-    Image &operator=(Image &&image) noexcept;
     Image &operator=(const Image &image) = delete;
+
+    Image(Image &&image) noexcept;
+    Image &operator=(Image &&image) noexcept;
 
     [[nodiscard]] bool IsDevice() const;
     [[nodiscard]] vk::Extent2D GetExtent() const;

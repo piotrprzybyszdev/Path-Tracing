@@ -42,7 +42,6 @@ Image::Image(
     assert(result == VkResult::VK_SUCCESS);
     m_Handle = image;
 
-#ifndef NDEBUG
     VmaAllocationInfo info;
     vmaGetAllocationInfo(DeviceContext::GetAllocator(), m_Allocation, &info);
     assert(result == VkResult::VK_SUCCESS);
@@ -52,10 +51,9 @@ Image::Image(
 
     if (!(memoryProperties & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT))
     {
-        logger::warn("Buffer `{}` was allocated in RAM instead of VRAM", name);
+        logger::warn("Image `{}` was allocated in RAM instead of VRAM", name);
         m_IsDevice = false;
     }
-#endif
 
     vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, 0, mipLevels, 0, layers);
     vk::ImageViewType viewType = isCube ? vk::ImageViewType::eCube : vk::ImageViewType::e2D;

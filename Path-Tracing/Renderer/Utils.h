@@ -1,10 +1,12 @@
 #pragma once
 
+#include <glm/glm.hpp>
+#include <vulkan/vulkan.hpp>
+
 #include <array>
 #include <string>
 
-#include <glm/glm.hpp>
-#include <vulkan/vulkan.hpp>
+#include "Core/Config.h"
 
 #include "Application.h"
 #include "DeviceContext.h"
@@ -26,7 +28,7 @@ inline constexpr uint32_t AlignTo(uint32_t size, uint32_t alignment)
 template<typename T> requires vk::isVulkanHandleType<T>::value
 inline void SetDebugName(T handle, const std::string &name)
 {
-#ifndef NDEBUG
+#ifdef CONFIG_SHADER_DEBUG_INFO
     DeviceContext::GetLogical().setDebugUtilsObjectNameEXT(
         vk::DebugUtilsObjectNameInfoEXT(
             T::objectType, reinterpret_cast<uint64_t>(static_cast<T::CType>(handle)), name.c_str()
@@ -43,7 +45,7 @@ struct DebugLabel
     DebugLabel(vk::CommandBuffer commandBuffer, const std::string &name, std::array<float, 4> &&color)
         : CommandBuffer(commandBuffer)
     {
-#ifndef NDEBUG
+#ifdef CONFIG_SHADER_DEBUG_INFO
         commandBuffer.beginDebugUtilsLabelEXT(
             vk::DebugUtilsLabelEXT(name.c_str(), color), Application::GetDispatchLoader()
         );
@@ -52,7 +54,7 @@ struct DebugLabel
 
     ~DebugLabel()
     {
-#ifndef NDEBUG
+#ifdef CONFIG_SHADER_DEBUG_INFO
         CommandBuffer.endDebugUtilsLabelEXT(Application::GetDispatchLoader());
 #endif
     }

@@ -1,11 +1,14 @@
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
+#include <spdlog/sinks/basic_file_sink.h>
+#include <spdlog/sinks/stdout_color_sinks.h>
 #include <vulkan/vulkan.hpp>
 
 #include <ranges>
 #include <string_view>
 
 #include "Core/Camera.h"
+#include "Core/Config.h"
 #include "Core/Core.h"
 #include "Core/Input.h"
 
@@ -50,12 +53,31 @@ static void GlfwErrorCallback(int error, const char *description)
     throw PathTracing::error(std::format("GLFW error {} {}", error, description).c_str());
 }
 
+static logger::level::level_enum GetLoggerLevel(Config::LogLevel level)
+{
+    switch (level)
+    {
+    case Config::LogLevel::Trace:
+        return logger::level::trace;
+    case Config::LogLevel::Debug:
+        return logger::level::debug;
+    case Config::LogLevel::Info:
+        return logger::level::info;
+    case Config::LogLevel::Warning:
+        return logger::level::warn;
+    case Config::LogLevel::Error:
+        return logger::level::err;
+    default:
+        return logger::level::critical;
+    }
+}
+
 uint32_t Application::s_VulkanApiVersion = vk::ApiVersion;
 
 vk::Instance Application::s_Instance = nullptr;
 std::unique_ptr<vk::detail::DispatchLoaderDynamic> Application::s_DispatchLoader = nullptr;
 
-#ifndef NDEBUG
+#if defined(CONFIG_VALIDATION_LAYERS) || defined(CONFIG_SHADER_DEBUG_INFO)
 vk::DebugUtilsMessengerEXT Application::s_DebugMessenger = nullptr;
 #endif
 
@@ -64,8 +86,13 @@ std::unique_ptr<Swapchain> Application::s_Swapchain = nullptr;
 
 Application::State Application::s_State = Application::State::Shutdown;
 
-void Application::Init()
+Config Application::s_Config = {};
+
+void Application::Init(int argc, char *argv[])
 {
+    s_Config = Config::Create(argc, argv);
+    SetupLogger();
+
     uint32_t version = vk::enumerateInstanceVersion();
 
     uint32_t variant = vk::apiVersionVariant(version);
@@ -94,7 +121,7 @@ void Application::Init()
     if (glfwInit() == GLFW_FALSE)
         throw error("Glfw initialization failed!");
 
-#ifndef NDEBUG
+#ifdef CONFIG_ASSERTS
     glfwSetErrorCallback(GlfwErrorCallback);
 #endif
 
@@ -103,8 +130,11 @@ void Application::Init()
 
     std::vector<const char *> requestedExtensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
     std::vector<const char *> requestedLayers;
-#ifndef NDEBUG
+
+#if defined(CONFIG_VALIDATION_LAYERS) || defined(CONFIG_SHADER_DEBUG_INFO)
     requestedExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+#endif
+#ifdef CONFIG_VALIDATION_LAYERS
     requestedLayers.push_back("VK_LAYER_KHRONOS_validation");
 #endif
 
@@ -120,7 +150,7 @@ void Application::Init()
 
     s_DispatchLoader = std::make_unique<vk::detail::DispatchLoaderDynamic>(s_Instance, vkGetInstanceProcAddr);
 
-#ifndef NDEBUG
+#if defined(CONFIG_VALIDATION_LAYERS) || defined(CONFIG_SHADER_DEBUG_INFO)
     {
         vk::DebugUtilsMessengerCreateInfoEXT createInfo(
             vk::DebugUtilsMessengerCreateFlagsEXT(),
@@ -187,7 +217,7 @@ void Application::Shutdown()
         Window::Destroy();
         [[fallthrough]];
     case State::HasInstance:
-#ifndef NDEBUG
+#if defined(CONFIG_VALIDATION_LAYERS) || defined(CONFIG_SHADER_DEBUG_INFO)
         s_Instance.destroyDebugUtilsMessengerEXT(s_DebugMessenger, nullptr, *s_DispatchLoader);
 #endif
         s_DispatchLoader.reset();
@@ -249,6 +279,7 @@ void Application::Run()
                 Timer timer("Update");
 
                 Window::OnUpdate(timeStep);
+                UserInterface::OnUpdate(timeStep);
                 {
                     const char *newScene = UserInterface::SceneChange();
                     if (newScene)
@@ -293,6 +324,25 @@ uint32_t Application::GetVulkanApiVersion()
 const vk::detail::DispatchLoaderDynamic &Application::GetDispatchLoader()
 {
     return *s_DispatchLoader;
+}
+
+const Config &Application::GetConfig()
+{
+    return s_Config;
+}
+
+void Application::SetupLogger()
+{
+    if (s_Config.LogToFile)
+    {
+        auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+        auto basic_sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(s_Config.LogFilePath.string());
+        std::array<spdlog::sink_ptr, 2> sinks { console_sink, basic_sink };
+        auto logger = std::make_shared<spdlog::logger>("", sinks.begin(), sinks.end());
+        spdlog::set_default_logger(logger);
+    }
+
+    spdlog::set_level(GetLoggerLevel(s_Config.LoggerLevel));
 }
 
 bool Application::CheckInstanceSupport(

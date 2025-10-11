@@ -72,7 +72,7 @@ void UserInterface::Shutdown()
     ImGui::DestroyContext();
 }
 
-void UserInterface::Render(vk::CommandBuffer commandBuffer)
+void UserInterface::OnUpdate(float timeStep)
 {
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplGlfw_NewFrame();
@@ -80,7 +80,10 @@ void UserInterface::Render(vk::CommandBuffer commandBuffer)
 
     if (s_IsVisible)
         DefineUI();
+}
 
+void UserInterface::OnRender(vk::CommandBuffer commandBuffer)
+{
     ImGui::Render();
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
 }

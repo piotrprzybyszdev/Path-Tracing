@@ -19,7 +19,8 @@ public:
 
     static void Shutdown();
 
-    static void Render(vk::CommandBuffer commandBuffer);
+    static void OnUpdate(float timeStep);
+    static void OnRender(vk::CommandBuffer commandBuffer);
 
     static void OnKeyRelease(Key key);
 

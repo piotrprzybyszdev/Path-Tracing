@@ -7,7 +7,7 @@ set(SHADER_SPV_FILES)
 
 create_directory_link(${CMAKE_CURRENT_SOURCE_DIR}/Shaders ${CMAKE_CURRENT_BINARY_DIR}/Shaders)
 
-add_executable(Path-Tracing Core/Core.h Core/Core.cpp Core/Cache.h Core/Input.h Core/Input.cpp Core/Camera.h Core/Camera.cpp Renderer/Utils.h Renderer/DeviceContext.h Renderer/DeviceContext.cpp Renderer/Buffer.h Renderer/Buffer.cpp Renderer/Image.h Renderer/Image.cpp Renderer/DescriptorSet.h Renderer/DescriptorSet.cpp Renderer/AccelerationStructure.h Renderer/AccelerationStructure.cpp Renderer/ShaderBindingTable.h Renderer/ShaderBindingTable.cpp Renderer/ShaderLibrary.h Renderer/ShaderLibrary.cpp Renderer/Pipeline.h Renderer/Pipeline.cpp Renderer/CommandBuffer.h Renderer/CommandBuffer.cpp Renderer/TextureUploader.h Renderer/TextureUploader.cpp Renderer/Swapchain.h Renderer/Swapchain.cpp Renderer/Renderer.h Renderer/Renderer.cpp AssetImporter.h AssetImporter.cpp SceneGraph.h SceneGraph.cpp Scene.h Scene.cpp SceneManager.h SceneManager.cpp ExampleScenes.h ExampleScenes.cpp UserInterface.h UserInterface.cpp Window.h Window.cpp Application.h Application.cpp main.cpp)
+add_executable(Path-Tracing Core/Config.h Core/Config.cpp Core/Core.h Core/Core.cpp Core/Cache.h Core/Threads.h Core/Input.h Core/Input.cpp Core/Camera.h Core/Camera.cpp Renderer/Utils.h Renderer/DeviceContext.h Renderer/DeviceContext.cpp Renderer/Buffer.h Renderer/Buffer.cpp Renderer/Image.h Renderer/Image.cpp Renderer/DescriptorSet.h Renderer/DescriptorSet.cpp Renderer/AccelerationStructure.h Renderer/AccelerationStructure.cpp Renderer/ShaderBindingTable.h Renderer/ShaderBindingTable.cpp Renderer/ShaderLibrary.h Renderer/ShaderLibrary.cpp Renderer/Pipeline.h Renderer/Pipeline.cpp Renderer/CommandBuffer.h Renderer/CommandBuffer.cpp Renderer/TextureUploader.h Renderer/TextureUploader.cpp Renderer/Swapchain.h Renderer/Swapchain.cpp Renderer/Renderer.h Renderer/Renderer.cpp AssetImporter.h AssetImporter.cpp SceneGraph.h SceneGraph.cpp Scene.h Scene.cpp SceneManager.h SceneManager.cpp ExampleScenes.h ExampleScenes.cpp UserInterface.h UserInterface.cpp Window.h Window.cpp Application.h Application.cpp main.cpp)
 
 target_sources(Path-Tracing PRIVATE ${SHADER_SOURCE_FILES} ${SHADER_HEADER_FILES})
 source_group("Shaders" FILES ${SHADER_SOURCE_FILES} ${SHADER_HEADER_FILES})
@@ -22,3 +22,10 @@ endif()
 if(MSVC)
     target_compile_options(Path-Tracing PRIVATE "/MP")
 endif()
+
+target_compile_definitions(Path-Tracing PRIVATE
+    $<$<CONFIG:Release>:CONFIG_RELEASE>
+    $<$<CONFIG:Profile>:CONFIG_PROFILE>
+    $<$<CONFIG:Debug>:CONFIG_DEBUG>
+    $<$<CONFIG:Trace>:CONFIG_TRACE>
+)

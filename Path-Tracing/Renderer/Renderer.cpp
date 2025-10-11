@@ -80,21 +80,7 @@ void Renderer::Init(const Swapchain *swapchain)
 
     CreatePipelines();
 
-    {
-#ifndef NDEBUG
-        const uint32_t loaderThreadCount = 2;
-        const uint32_t bufferPerLoaderThread = 1;
-#else
-        const uint32_t loaderThreadCount = std::thread::hardware_concurrency() / 2;
-        const uint32_t bufferPerLoaderThread = 2;
-#endif
-        const size_t stagingMemoryLimit =
-            TextureUploader::GetStagingMemoryRequirement(loaderThreadCount * bufferPerLoaderThread);
-
-        s_TextureUploader = std::make_unique<TextureUploader>(
-            loaderThreadCount, stagingMemoryLimit, s_Textures, s_DescriptorSetMutex
-        );
-    }
+    s_TextureUploader = std::make_unique<TextureUploader>(s_Textures, s_DescriptorSetMutex);
 
     {
         uint32_t colorIndex = AddDefaultTexture(glm::u8vec4(255), "Default Color Texture");
@@ -459,7 +445,7 @@ void Renderer::RecordCommandBuffer(const RenderingResources &resources)
         commandBuffer.beginRendering(
             vk::RenderingInfo(vk::RenderingFlags(), vk::Rect2D({}, extent), 1, 0, colorAttachments)
         );
-        UserInterface::Render(commandBuffer);
+        UserInterface::OnRender(commandBuffer);
         commandBuffer.endRendering();
 
         Image::Transition(

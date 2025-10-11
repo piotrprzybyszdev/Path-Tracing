@@ -29,9 +29,11 @@ template<typename T> inline constexpr size_t FNVHash<T>::operator()(const T &con
     return hash;
 }
 
-template<typename K, typename V, size_t MaxSize> class LRUCache
+template<typename K, typename V> class LRUCache
 {
 public:
+    LRUCache(size_t maxSize);
+
     [[nodiscard]] V Insert(const K &key, const V &value);
     [[nodiscard]] V Insert(const K &key, const V &&value);
     [[nodiscard]] bool Contains(const K &key);
@@ -43,6 +45,7 @@ public:
     void Clear();
 
 private:
+    const size_t m_MaxSize;
     std::unordered_map<K, V> m_Cache;
     std::queue<K> m_LRUQueue;
 
@@ -50,8 +53,12 @@ private:
     V MakeSpace();
 };
 
-template<typename K, typename V, size_t MaxSize>
-inline V LRUCache<K, V, MaxSize>::Insert(const K &key, const V &value)
+template<typename K, typename V> inline LRUCache<K, V>::LRUCache(size_t maxSize) : m_MaxSize(maxSize)
+{
+}
+
+template<typename K, typename V>
+inline V LRUCache<K, V>::Insert(const K &key, const V &value)
 {
     V removed = MakeSpace();
 
@@ -61,8 +68,8 @@ inline V LRUCache<K, V, MaxSize>::Insert(const K &key, const V &value)
     return removed;
 }
 
-template<typename K, typename V, size_t MaxSize>
-inline V LRUCache<K, V, MaxSize>::Insert(const K &key, const V &&value)
+template<typename K, typename V>
+inline V LRUCache<K, V>::Insert(const K &key, const V &&value)
 {
     V removed = MakeSpace();
 
@@ -72,37 +79,37 @@ inline V LRUCache<K, V, MaxSize>::Insert(const K &key, const V &&value)
     return removed;
 }
 
-template<typename K, typename V, size_t MaxSize> inline bool LRUCache<K, V, MaxSize>::Contains(const K &key)
+template<typename K, typename V> inline bool LRUCache<K, V>::Contains(const K &key)
 {
     return m_Cache.contains(key);
 }
 
-template<typename K, typename V, size_t MaxSize> inline const V &LRUCache<K, V, MaxSize>::Get(const K &key)
+template<typename K, typename V> inline const V &LRUCache<K, V>::Get(const K &key)
 {
     assert(m_Cache.contains(key));
     return m_Cache[key];
 }
 
-template<typename K, typename V, size_t MaxSize> inline auto LRUCache<K, V, MaxSize>::GetKeys()
+template<typename K, typename V> inline auto LRUCache<K, V>::GetKeys()
 {
     return m_Cache | std::views::keys;
 }
 
-template<typename K, typename V, size_t MaxSize> inline auto LRUCache<K, V, MaxSize>::GetValues()
+template<typename K, typename V> inline auto LRUCache<K, V>::GetValues()
 {
     return m_Cache | std::views::values;
 }
 
-template<typename K, typename V, size_t MaxSize> inline void LRUCache<K, V, MaxSize>::Clear()
+template<typename K, typename V> inline void LRUCache<K, V>::Clear()
 {
     std::queue<K> q;
     m_LRUQueue.swap(q);
     m_Cache.clear();
 }
 
-template<typename K, typename V, size_t MaxSize> inline V LRUCache<K, V, MaxSize>::MakeSpace()
+template<typename K, typename V> inline V LRUCache<K, V>::MakeSpace()
 {
-    if (m_LRUQueue.size() < MaxSize)
+    if (m_LRUQueue.size() < m_MaxSize)
         return {};
 
     K key = m_LRUQueue.front();

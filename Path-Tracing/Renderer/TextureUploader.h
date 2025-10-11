@@ -19,10 +19,7 @@ namespace PathTracing
 class TextureUploader
 {
 public:
-    TextureUploader(
-        uint32_t loaderThreadCount, size_t stagingMemoryLimit, std::vector<Image> &textures,
-        std::mutex &descriptorSetMutex
-    );
+    TextureUploader(std::vector<Image> &textures, std::mutex &descriptorSetMutex);
     ~TextureUploader();
 
     TextureUploader(const TextureUploader &) = delete;
@@ -36,14 +33,12 @@ public:
     Image UploadSkyboxBlocking(const Skybox2D &skybox);
     Image UploadSkyboxBlocking(const SkyboxCube &skybox);
 
-public:
-    [[nodiscard]] static size_t GetStagingMemoryRequirement(uint32_t numBuffers);
-
 private:
     std::vector<Image> &m_Textures;
     std::mutex &m_DescriptorSetMutex;
 
-    const uint32_t m_LoaderThreadCount, m_StagingBufferCount;
+    const uint32_t m_LoaderThreadCount;
+    const uint32_t m_StagingBufferCount;
 
     CommandBuffer m_TransferCommandBuffer;
     CommandBuffer m_MipCommandBuffer;
