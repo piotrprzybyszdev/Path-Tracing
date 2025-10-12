@@ -78,7 +78,7 @@ void CommandBuffer::Submit(vk::Fence waitFence)
 
     vk::SubmitInfo2 info;
     vk::CommandBufferSubmitInfo cmdInfo(Buffer);
-    vk::SemaphoreSubmitInfo signalInfo(m_SignalSemaphore);
+    vk::SemaphoreSubmitInfo signalInfo(m_SignalSemaphore, 0, vk::PipelineStageFlagBits2::eAllCommands);
     vk::SemaphoreSubmitInfo waitInfo(m_WaitSemaphore, 0, m_WaitStageMask);
 
     info.setCommandBufferInfos(cmdInfo);

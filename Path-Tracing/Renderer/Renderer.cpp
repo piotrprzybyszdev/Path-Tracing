@@ -44,6 +44,8 @@ std::vector<uint32_t> Renderer::s_TextureMap = {};
 
 std::mutex Renderer::s_DescriptorSetMutex = {};
 std::unique_ptr<TextureUploader> Renderer::s_TextureUploader = nullptr;
+std::unique_ptr<CommandBuffer> Renderer::s_TextureOwnershipCommandBuffer = nullptr;
+bool Renderer::s_TextureOwnershipBufferHasCommands = false;
 
 std::unique_ptr<RaytracingPipeline> Renderer::s_RaytracingPipeline = nullptr;
 std::unique_ptr<ComputePipeline> Renderer::s_SkinningPipeline = nullptr;
@@ -81,6 +83,7 @@ void Renderer::Init(const Swapchain *swapchain)
     CreatePipelines();
 
     s_TextureUploader = std::make_unique<TextureUploader>(s_Textures, s_DescriptorSetMutex);
+    s_TextureOwnershipCommandBuffer = std::make_unique<CommandBuffer>(DeviceContext::GetGraphicsQueue());
 
     {
         uint32_t colorIndex = AddDefaultTexture(glm::u8vec4(255), "Default Color Texture");
@@ -100,6 +103,7 @@ void Renderer::Shutdown()
 {
     DeviceContext::GetGraphicsQueue().WaitIdle();
 
+    s_TextureOwnershipCommandBuffer.reset();
     s_TextureUploader.reset();
 
     for (RenderingResources &res : s_RenderingResources)
@@ -163,11 +167,9 @@ void Renderer::UpdateSceneData()
         s_SceneData->AnimatedVertexBuffer = CreateDeviceBuffer(animVertices, "Animated Vertex Buffer");
 
         const auto &geometries = s_SceneData->Handle->GetGeometries();
-        uint32_t totalAnimatedVertexCount = 0;
-        uint32_t animatedGeometryCount = 0;
 
+        uint32_t animatedGeometryCount = 0;
         std::vector<uint32_t> animatedVertexMap;
-        animatedVertexMap.reserve(totalAnimatedVertexCount);
 
         const auto &instances = s_SceneData->Handle->GetModelInstances();
         const auto &models = s_SceneData->Handle->GetModels();
@@ -177,11 +179,17 @@ void Renderer::UpdateSceneData()
                 const auto &geometry = geometries[mesh.GeometryIndex];
                 if (geometry.IsAnimated)
                 {
-                    totalAnimatedVertexCount += geometry.VertexLength;
-                    animatedGeometryCount++;
-
                     for (int i = 0; i < geometry.VertexLength; i++)
+                    {
+                        const auto &animVertex = animVertices[geometry.VertexOffset + i];
+                        s_SceneData->OutBindPoseAnimatedVertices.emplace_back(
+                            animVertex.Position, animVertex.TexCoords, animVertex.Normal, animVertex.Tangent,
+                            animVertex.Bitangent
+                        );
                         animatedVertexMap.push_back(geometry.VertexOffset + i);
+                    }
+
+                    animatedGeometryCount++;
                 }
             }
 
@@ -206,7 +214,6 @@ void Renderer::UpdateSceneData()
                     s_SceneData->IndexBuffer.GetDeviceAddress() + geometry.IndexOffset * sizeof(uint32_t)
                 );
 
-        s_SceneData->OutAnimatedVertexCount = totalAnimatedVertexCount;
         s_SceneData->AnimatedGeometriesOffset = s_SceneData->Geometries.size();
         uint32_t animatedVertexOffset = 0;
         for (const auto &instance : instances)
@@ -271,6 +278,8 @@ void Renderer::UpdateSceneData()
         s_TextureMap[mapIndex] = Scene::GetDefaultTextureIndex(textures[i].Type);
     }
 
+    UpdateSpecializations(s_ShaderSpecialization);
+
     RecreateDescriptorSet();
 
     s_TextureUploader->UploadTextures(s_SceneData->Handle);
@@ -284,6 +293,20 @@ void Renderer::UpdateTexture(uint32_t index)
 
     if (s_RaytracingPipeline->GetDescriptorSet() == nullptr)
         return;
+
+    if (s_TextureOwnershipBufferHasCommands == false)
+    {
+        s_TextureOwnershipCommandBuffer->Begin();
+        s_TextureOwnershipBufferHasCommands = true;
+    }
+
+    // Acquire barrier
+    s_Textures[index].TransitionWithQueueChange(
+        nullptr, s_TextureOwnershipCommandBuffer->Buffer, vk::ImageLayout::eShaderReadOnlyOptimal,
+        vk::ImageLayout::eShaderReadOnlyOptimal, vk::PipelineStageFlagBits2::eAllCommands,
+        vk::PipelineStageFlagBits2::eAllCommands, vk::AccessFlagBits2::eNone, vk::AccessFlagBits2::eNone,
+        DeviceContext::GetMipQueue().FamilyIndex, DeviceContext::GetGraphicsQueue().FamilyIndex
+    );
 
     for (uint32_t frameIndex = 0; frameIndex < s_RenderingResources.size(); frameIndex++)
         s_RaytracingPipeline->GetDescriptorSet()->UpdateImage(
@@ -408,7 +431,9 @@ void Renderer::RecordCommandBuffer(const RenderingResources &resources)
         );
 
         Image::Transition(
-            commandBuffer, image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal
+            commandBuffer, image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
+            vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::PipelineStageFlagBits2::eTransfer,
+            vk::AccessFlagBits2::eNone, vk::AccessFlagBits2::eTransferWrite
         );
 
         resources.StorageImage.Transition(
@@ -482,7 +507,8 @@ void Renderer::UpdateAnimatedVertices(const RenderingResources &resources)
         );
 
         const uint32_t groupCount = std::ceil(
-            s_SceneData->OutAnimatedVertexCount / static_cast<float>(Shaders::SkinningShaderGroupSizeX)
+            s_SceneData->OutBindPoseAnimatedVertices.size() /
+            static_cast<float>(Shaders::SkinningShaderGroupSizeX)
         );
         commandBuffer.dispatch(groupCount, 1, 1);
 
@@ -513,8 +539,8 @@ void Renderer::CreateSceneRenderingResources(RenderingResources &res, uint32_t f
             vk::BufferUsageFlagBits::eShaderDeviceAddress | vk::BufferUsageFlagBits::eTransferDst
         );
 
-        res.OutAnimatedVertexBuffer = s_BufferBuilder->CreateDeviceBuffer(
-            s_SceneData->OutAnimatedVertexCount * sizeof(Shaders::Vertex),
+        res.OutAnimatedVertexBuffer = CreateDeviceBuffer(
+            std::span(s_SceneData->OutBindPoseAnimatedVertices),
             std::format("Out Animated Vertex Buffer {}", frameIndex)
         );
     }
@@ -690,6 +716,11 @@ void Renderer::Render(const Camera &camera)
 
     {
         std::lock_guard lock(s_DescriptorSetMutex);
+        if (s_TextureOwnershipBufferHasCommands)
+        {
+            s_TextureOwnershipCommandBuffer->SubmitBlocking();
+            s_TextureOwnershipBufferHasCommands = false;
+        }
         s_RaytracingPipeline->GetDescriptorSet()->FlushUpdate(s_Swapchain->GetCurrentFrameInFlightIndex());
     }
 
@@ -718,7 +749,9 @@ void Renderer::Render(const Camera &camera)
     vk::SemaphoreSubmitInfo waitInfo(
         sync.ImageAcquiredSemaphore, 0, vk::PipelineStageFlagBits2::eColorAttachmentOutput
     );
-    vk::SemaphoreSubmitInfo signalInfo(sync.RenderCompleteSemaphore);
+    vk::SemaphoreSubmitInfo signalInfo(
+        sync.RenderCompleteSemaphore, 0, vk::PipelineStageFlagBits2::eColorAttachmentOutput
+    );
     vk::SubmitInfo2 submitInfo(vk::SubmitFlags(), waitInfo, cmdInfo, signalInfo);
 
     {

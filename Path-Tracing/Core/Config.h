@@ -62,7 +62,7 @@ namespace PathTracing
 
 struct Config
 {
-    static [[nodiscard]] Config Create(int argc, char *argv[]);
+    [[nodiscard]] static Config Create(int argc, char *argv[]);
 
     enum class LogLevel : uint8_t
     {

@@ -150,6 +150,14 @@ void Image::Scale(
     const uint32_t baseMip = GetMip(extent);
 
     UploadFromBuffer(transferBuffer, buffer, extent, baseMip);
+
+    TransitionWithQueueChange(
+        transferBuffer, mipBuffer, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferDstOptimal,
+        vk::PipelineStageFlagBits2::eTransfer, vk::PipelineStageFlagBits2::eAllCommands,
+        vk::AccessFlagBits2::eTransferWrite, vk::AccessFlagBits2::eNone,
+        DeviceContext::GetTransferQueue().FamilyIndex, DeviceContext::GetMipQueue().FamilyIndex
+    );
+
     GenerateMips(mipBuffer, vk::ImageLayout::eTransferSrcOptimal, baseMip, destMip);
 }
 
@@ -167,11 +175,24 @@ void Image::UploadStaging(
 ) const
 {
     assert(buffer.GetSize() >= GetByteSize(m_Extent, m_Format, layerCount));
-    auto createBlitInfo = [this, &temporary](vk::ImageBlit2 &imageBlit) {
-        return vk::BlitImageInfo2(
+    auto blitFromTemporary = [this, mipBuffer, &temporary](
+                                 vk::Extent2D extent, uint32_t mip, uint32_t layer, uint32_t layerCount
+                             ) {
+        TransitionMip(
+            mipBuffer, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, 0, layer, layerCount
+        );
+
+        vk::ImageBlit2 imageBlit(
+            temporary.GetMipLayer(mip, layer, layerCount), temporary.GetMipLevelArea(extent),
+            GetMipLayer(0, layer, layerCount), GetMipLevelArea()
+        );
+
+        vk::BlitImageInfo2 blitInfo(
             temporary.GetHandle(), vk::ImageLayout::eTransferSrcOptimal, m_Handle,
             vk::ImageLayout::eTransferDstOptimal, imageBlit, vk::Filter::eLinear
         );
+
+        mipBuffer.blitImage2(blitInfo);
     };
 
     if (extent != m_Extent)
@@ -183,36 +204,23 @@ void Image::UploadStaging(
         const vk::Extent2D destExtent(m_Extent.width * 2, m_Extent.height * 2);
         temporary.Scale(mipBuffer, transferBuffer, buffer, extent, destMip);
 
-        TransitionMip(
-            mipBuffer, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, 0, layer, layerCount
-        );
-
-        vk::ImageBlit2 imageBlit(
-            temporary.GetMipLayer(destMip), temporary.GetMipLevelArea(destExtent), GetMipLayer(0, layer),
-            GetMipLevelArea()
-        );
-
-        mipBuffer.blitImage2(createBlitInfo(imageBlit));
+        blitFromTemporary(destExtent, destMip, layer, layerCount);
     }
     else if (temporary.m_Format != m_Format)
     {
         assert(temporary.m_Layers >= layer + layerCount);
 
         temporary.UploadFromBuffer(transferBuffer, buffer, extent, 0, layer, layerCount);
-        temporary.TransitionMip(
-            mipBuffer, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferSrcOptimal, 0, layer,
-            layerCount
-        );
-        TransitionMip(
-            mipBuffer, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, 0, layer, layerCount
+
+        TransitionWithQueueChange(
+            transferBuffer, mipBuffer, vk::ImageLayout::eTransferDstOptimal,
+            vk::ImageLayout::eTransferSrcOptimal, vk::PipelineStageFlagBits2::eTransfer,
+            vk::PipelineStageFlagBits2::eAllCommands, vk::AccessFlagBits2::eTransferWrite,
+            vk::AccessFlagBits2::eNone, DeviceContext::GetTransferQueue().FamilyIndex,
+            DeviceContext::GetMipQueue().FamilyIndex
         );
 
-        vk::ImageBlit2 imageBlit(
-            temporary.GetMipLayer(0, layer, layerCount), temporary.GetMipLevelArea(m_Extent),
-            GetMipLayer(0, layer, layerCount), GetMipLevelArea()
-        );
-
-        mipBuffer.blitImage2(createBlitInfo(imageBlit));
+        blitFromTemporary(m_Extent, 0, layer, layerCount);
     }
     else
         UploadFromBuffer(transferBuffer, buffer, extent, 0, layer, layerCount);
@@ -349,15 +357,55 @@ void Image::TransitionMip(
     Transition(buffer, m_Handle, layoutFrom, layoutTo, mipLevel, 1, layer, layerCount);
 }
 
+void Image::TransitionWithQueueChange(
+    vk::CommandBuffer bufferFrom, vk::CommandBuffer bufferTo, vk::ImageLayout layoutFrom,
+    vk::ImageLayout layoutTo, vk::PipelineStageFlagBits2 stageFrom, vk::PipelineStageFlagBits2 stageTo,
+    vk::AccessFlagBits2 accessFrom, vk::AccessFlagBits2 accessTo, uint32_t queueFamilyIndexFrom,
+    uint32_t queueFamilyIndexTo
+) const
+{
+    if (bufferFrom == bufferTo)
+    {
+        Transition(bufferFrom, m_Handle, layoutFrom, layoutTo, stageFrom, stageTo, accessFrom, accessTo);
+        return;
+    }
+
+    vk::ImageMemoryBarrier2 barrier(
+        stageFrom, accessFrom, stageTo, accessTo, layoutFrom, layoutTo, queueFamilyIndexFrom,
+        queueFamilyIndexTo, m_Handle,
+        vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, m_MipLevels, 0, m_Layers)
+    );
+
+    vk::DependencyInfo dependency;
+    dependency.setImageMemoryBarriers(barrier);
+
+    if (bufferFrom != nullptr)
+        bufferFrom.pipelineBarrier2(dependency);
+    if (bufferTo != nullptr)
+        bufferTo.pipelineBarrier2(dependency);
+}
+
 void Image::Transition(
     vk::CommandBuffer buffer, vk::Image image, vk::ImageLayout layoutFrom, vk::ImageLayout layoutTo,
     uint32_t baseMipLevel, uint32_t mipLevels, uint32_t layer, uint32_t layerCount
 )
 {
+    Transition(
+        buffer, image, layoutFrom, layoutTo, Image::GetPipelineStageFlags(layoutFrom),
+        Image::GetPipelineStageFlags(layoutTo), Image::GetAccessFlags(layoutFrom),
+        Image::GetAccessFlags(layoutTo), baseMipLevel, mipLevels, layer, layerCount
+    );
+}
+
+void Image::Transition(
+    vk::CommandBuffer buffer, vk::Image image, vk::ImageLayout layoutFrom, vk::ImageLayout layoutTo,
+    vk::PipelineStageFlags2 stageFrom, vk::PipelineStageFlags2 stageTo, vk::AccessFlags2 accessFrom,
+    vk::AccessFlags2 accessTo, uint32_t baseMipLevel, uint32_t mipLevels, uint32_t layer, uint32_t layerCount
+)
+{
     vk::ImageMemoryBarrier2 barrier(
-        Image::GetPipelineStageFlags(layoutFrom), Image::GetAccessFlags(layoutFrom),
-        Image::GetPipelineStageFlags(layoutTo), Image::GetAccessFlags(layoutTo), layoutFrom, layoutTo,
-        vk::QueueFamilyIgnored, vk::QueueFamilyIgnored, image,
+        stageFrom, accessFrom, stageTo, accessTo, layoutFrom, layoutTo, vk::QueueFamilyIgnored,
+        vk::QueueFamilyIgnored, image,
         vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, baseMipLevel, mipLevels, layer, layerCount)
     );
 

@@ -60,10 +60,23 @@ public:
         vk::CommandBuffer buffer, vk::ImageLayout layoutFrom, vk::ImageLayout layoutTo, uint32_t mipLevel,
         uint32_t layer = 0, uint32_t layerCount = 1
     ) const;
+    void TransitionWithQueueChange(
+        vk::CommandBuffer bufferFrom, vk::CommandBuffer bufferTo, vk::ImageLayout layoutFrom,
+        vk::ImageLayout layoutTo, vk::PipelineStageFlagBits2 stageFrom, vk::PipelineStageFlagBits2 stageTo,
+        vk::AccessFlagBits2 accessFrom, vk::AccessFlagBits2 accessTo, uint32_t queueFamilyIndexFrom,
+        uint32_t queueFamilyIndexTo
+    ) const;
 
 public:
     [[nodiscard]] static vk::DeviceSize GetByteSize(
         vk::Extent2D extent, vk::Format format, uint32_t layers = 1
+    );
+
+    static void Transition(
+        vk::CommandBuffer buffer, vk::Image image, vk::ImageLayout layoutFrom, vk::ImageLayout layoutTo,
+        vk::PipelineStageFlags2 stageFrom, vk::PipelineStageFlags2 stageTo, vk::AccessFlags2 accessFrom,
+        vk::AccessFlags2 accessTo, uint32_t baseMipLevel = 0, uint32_t mipLevels = 1, uint32_t layer = 0,
+        uint32_t layerCount = 1
     );
 
     static void Transition(

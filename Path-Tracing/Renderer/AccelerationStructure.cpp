@@ -94,8 +94,7 @@ void AccelerationStructure::CreateBlases()
 
             blasInfo.Geometries.emplace_back(
                 vk::GeometryTypeKHR::eTriangles, geometryData,
-                geometry.IsOpaque ? vk::GeometryFlagBitsKHR::eOpaque
-                                  : vk::GeometryFlagBitsKHR::eNoDuplicateAnyHitInvocation
+                geometry.IsOpaque ? vk::GeometryFlagBitsKHR::eOpaque : vk::GeometryFlagsKHR()
             );
 
             blasInfo.IsAnimated |= geometry.IsAnimated;
@@ -182,9 +181,7 @@ void AccelerationStructure::CreateTlas()
         vk::False, m_InstanceBuffer.GetDeviceAddress()
     );
 
-    vk::AccelerationStructureGeometryKHR geometry(
-        vk::GeometryTypeKHR::eInstances, instancesData, vk::GeometryFlagBitsKHR::eNoDuplicateAnyHitInvocation
-    );
+    vk::AccelerationStructureGeometryKHR geometry(vk::GeometryTypeKHR::eInstances, instancesData);
 
     vk::AccelerationStructureBuildGeometryInfoKHR buildInfo(
         vk::AccelerationStructureTypeKHR::eTopLevel, GetFlags(m_Scene->HasAnimations())
@@ -245,7 +242,7 @@ void AccelerationStructure::BuildBlases(
         outRanges.push_back(info.Ranges.data());
         outBuild.push_back(info.BuildInfo);
     }
-
+    
     {
         Utils::DebugLabel label(commandBuffer, "BLAS Build", { 0.96f, 0.95f, 0.48f, 1.0f });
         commandBuffer.buildAccelerationStructuresKHR(outBuild, outRanges, Application::GetDispatchLoader());
@@ -286,7 +283,7 @@ void AccelerationStructure::BuildTlas(
 
     vk::AccelerationStructureGeometryKHR geometry(
         vk::GeometryTypeKHR::eInstances, instancesData,
-        m_IsOpaque ? vk::GeometryFlagBitsKHR::eOpaque : vk::GeometryFlagBitsKHR::eNoDuplicateAnyHitInvocation
+        m_IsOpaque ? vk::GeometryFlagBitsKHR::eOpaque : vk::GeometryFlagsKHR()
     );
 
     vk::AccelerationStructureBuildGeometryInfoKHR geometryInfo(

@@ -361,7 +361,7 @@ void TextureUploader::StartSubmitThread(const std::shared_ptr<const Scene> &scen
             logger::info("Done uploading scene textures");
         else
             logger::trace("Texture upload submit thread cancelled");
-        m_FreeBuffersSemaphore.release(textures.size() - rejectedCount);
+        m_FreeBuffersSemaphore.release(rejectedCount);
 
         if (rejectedCount > 0)
             logger::warn("{} texture(s) weren't uploaded", rejectedCount);
@@ -404,6 +404,14 @@ void TextureUploader::UploadTexture(
     image.UploadStaging(
         mipBuffer, transferBuffer, buffer, GetTemporaryImage(texture.Type),
         vk::Extent2D(texture.Width, texture.Height), vk::ImageLayout::eShaderReadOnlyOptimal
+    );
+
+    // Release barrier
+    image.TransitionWithQueueChange(
+        mipBuffer, nullptr, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
+        vk::PipelineStageFlagBits2::eAllCommands, vk::PipelineStageFlagBits2::eAllCommands,
+        vk::AccessFlagBits2::eNone, vk::AccessFlagBits2::eNone, DeviceContext::GetMipQueue().FamilyIndex,
+        DeviceContext::GetGraphicsQueue().FamilyIndex
     );
 
     m_Textures[Shaders::GetSceneTextureIndex(textureIndex)] = std::move(image);

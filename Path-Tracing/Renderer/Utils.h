@@ -38,6 +38,25 @@ inline void SetDebugName(T handle, const std::string &name)
 #endif
 }
 
+/* Should only be used for debugging purposes */
+#ifdef CONFIG_ASSERTS
+inline void FullBarrier(vk::CommandBuffer commandBuffer)
+{
+    vk::MemoryBarrier2 memoryBarrier(
+        vk::PipelineStageFlagBits2::eAllCommands,
+        vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite,
+        vk::PipelineStageFlagBits2::eAllCommands,
+        vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite
+    );
+
+    vk::DependencyInfo dependencyInfo(vk::DependencyFlags(), memoryBarrier);
+
+    commandBuffer.pipelineBarrier2(dependencyInfo);
+}
+#else
+inline void FullBarrier(vk::CommandBuffer commandBuffer) = delete;
+#endif
+
 }
 
 struct DebugLabel

@@ -61,9 +61,25 @@ void DeviceContext::Init(vk::Instance instance, vk::SurfaceKHR surface)
     s_PhysicalDevice.Handle = *std::ranges::max_element(
         suitableDevices,
         [](vk::PhysicalDevice device1, vk::PhysicalDevice device2) {
-            auto properties1 = device1.getMemoryProperties();
-            auto properties2 = device2.getMemoryProperties();
-            return properties1.memoryHeapCount < properties2.memoryHeapCount;
+            auto properties1 = device1.getProperties();
+            auto properties2 = device2.getProperties();
+
+            if (properties1.deviceType == properties2.deviceType)
+            {
+                auto memoryProperties1 = device1.getMemoryProperties();
+                auto memoryProperties2 = device2.getMemoryProperties();
+                return memoryProperties1.memoryHeapCount < memoryProperties2.memoryHeapCount;
+            }
+
+            if (properties1.deviceType == vk::PhysicalDeviceType::eDiscreteGpu)
+                return false;
+            if (properties2.deviceType == vk::PhysicalDeviceType::eDiscreteGpu)
+                return true;
+            if (properties1.deviceType == vk::PhysicalDeviceType::eIntegratedGpu)
+                return false;
+            if (properties2.deviceType == vk::PhysicalDeviceType::eIntegratedGpu)
+                return true;
+            return properties1.deviceType < properties2.deviceType;
         }
     );
 

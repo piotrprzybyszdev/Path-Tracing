@@ -85,6 +85,8 @@ void UserInterface::OnUpdate(float timeStep)
 void UserInterface::OnRender(vk::CommandBuffer commandBuffer)
 {
     ImGui::Render();
+    // Current ImGui implementation might vkQueueSubmit here so we have to lock
+    auto lock = DeviceContext::GetGraphicsQueue().GetLock();
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
 }
 

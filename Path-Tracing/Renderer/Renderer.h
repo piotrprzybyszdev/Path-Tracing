@@ -112,7 +112,7 @@ private:
 
         Image Skybox;
 
-        uint32_t OutAnimatedVertexCount = 0;
+        std::vector<Shaders::Vertex> OutBindPoseAnimatedVertices;
         uint32_t AnimatedGeometriesOffset = 0;
         std::vector<Shaders::Geometry> Geometries;
 
@@ -129,6 +129,8 @@ private:
 
     static std::mutex s_DescriptorSetMutex;
     static std::unique_ptr<TextureUploader> s_TextureUploader;
+    static std::unique_ptr<CommandBuffer> s_TextureOwnershipCommandBuffer;
+    static bool s_TextureOwnershipBufferHasCommands;
 
     static std::unique_ptr<RaytracingPipeline> s_RaytracingPipeline;
     static std::unique_ptr<ComputePipeline> s_SkinningPipeline;
