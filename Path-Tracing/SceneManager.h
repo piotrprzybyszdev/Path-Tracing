@@ -10,6 +10,14 @@
 namespace PathTracing
 {
 
+class SceneLoader
+{
+public:
+    virtual ~SceneLoader() = default;
+
+    virtual void Load(SceneBuilder &sceneBuilder) = 0;
+};
+
 class SceneManager
 {
 public:
@@ -22,7 +30,7 @@ public:
 
 private:
     static std::set<std::string> s_SceneNames;
-    static std::map<std::string, std::function<std::shared_ptr<Scene>()>> s_Scenes;
+    static std::map<std::string, std::unique_ptr<SceneLoader>> s_Scenes;
     static std::shared_ptr<Scene> s_ActiveScene;
 };
 

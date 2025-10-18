@@ -71,11 +71,9 @@ private:
     static inline constexpr vk::Extent2D MaxTextureDataSize = { 4096u, 4096u };
     static inline constexpr size_t StagingBufferSize =
         4ull * MaxTextureDataSize.width * MaxTextureDataSize.height;
-    static inline constexpr vk::Format IntermediateColorTextureFormat = vk::Format::eR8G8B8A8Srgb;
-    static inline constexpr vk::Format IntermediateOtherTextureFormat = vk::Format::eR8G8B8A8Unorm;
 
 private:
-    void SubmitBlocking(const Image &image, const Buffer &buffer, vk::Extent2D extent, TextureType type);
+    void SubmitBlocking(const Image &image, const Buffer &buffer, vk::Extent2D extent);
 
     void StartLoaderThreads(const std::shared_ptr<const Scene> &scene);
     void StartSubmitThread(const std::shared_ptr<const Scene> &scene);
@@ -101,6 +99,7 @@ private:
     const Image &GetTemporaryImage(TextureType type) const;
 
     static vk::Format SelectTextureFormat(TextureType type);
+    static vk::Format GetTextureDataFormat(TextureType type);
     static bool CheckBlitSupported(vk::Format format);
 };
 

@@ -25,7 +25,8 @@ enum class TextureType : uint8_t
     Normal,
     Roughness,
     Metalic,
-    Skybox
+    Skybox,
+    SkyboxHDR,
 };
 
 struct TextureInfo
@@ -122,17 +123,14 @@ class Scene
 {
 public:
     Scene(
-        std::string name, std::vector<Shaders::Vertex> &&vertices,
-        std::vector<Shaders::AnimatedVertex> &&animatedVertices, std::vector<uint32_t> &&indices,
-        std::vector<uint32_t> &&animatedIndices, std::vector<glm::mat3x4> &&transforms,
-        std::vector<Geometry> &&geometries, std::vector<Shaders::Material> &&materials,
-        std::vector<TextureInfo> &&textures, std::vector<Model> &&models,
-        std::vector<ModelInstance> &&modelInstances, std::vector<Bone> &&bones, SceneGraph &&sceneGraph,
-        std::vector<LightInfo> &&lightInfos, std::vector<Shaders::Light> &&lights, SkyboxVariant &&skybox,
-        const std::vector<CameraInfo> &cameraInfos
+        std::vector<Shaders::Vertex> &&vertices, std::vector<Shaders::AnimatedVertex> &&animatedVertices,
+        std::vector<uint32_t> &&indices, std::vector<uint32_t> &&animatedIndices,
+        std::vector<glm::mat3x4> &&transforms, std::vector<Geometry> &&geometries,
+        std::vector<Shaders::Material> &&materials, std::vector<TextureInfo> &&textures,
+        std::vector<Model> &&models, std::vector<ModelInstance> &&modelInstances, std::vector<Bone> &&bones,
+        SceneGraph &&sceneGraph, std::vector<LightInfo> &&lightInfos, std::vector<Shaders::Light> &&lights,
+        SkyboxVariant &&skybox, const std::vector<CameraInfo> &cameraInfos
     );
-
-    [[nodiscard]] const std::string &GetName() const;
 
     void Update(float timeStep);
 
@@ -168,8 +166,6 @@ public:
     [[nodiscard]] static uint32_t GetDefaultTextureIndex(TextureType type);
 
 private:
-    std::string m_Name;
-
     std::vector<Shaders::Vertex> m_Vertices;
     std::vector<uint32_t> m_Indices;
     std::vector<glm::mat3x4> m_Transforms;
@@ -191,7 +187,7 @@ private:
 
     SceneGraph m_Graph;
     bool m_HasSkeletalAnimations = false;
-    
+
     std::vector<LightInfo> m_LightInfos;
     std::vector<Shaders::Light> m_Lights;
 
@@ -217,11 +213,11 @@ public:
     uint32_t AddTexture(TextureInfo &&texture);
     uint32_t AddMaterial(std::string name, Shaders::Material material);
 
-    void SetVertices(std::vector<Shaders::Vertex> &&vertices);
-    void SetIndices(std::vector<uint32_t> &&indices);
+    std::vector<Shaders::Vertex> &GetVertices();
+    std::vector<uint32_t> &GetIndices();
 
-    void SetAnimatedVertices(std::vector<Shaders::AnimatedVertex> &&vertices);
-    void SetAnimatedIndices(std::vector<uint32_t> &&indices);
+    std::vector<Shaders::AnimatedVertex> &GetAnimatedVertices();
+    std::vector<uint32_t> &GetAnimatedIndices();
 
     uint32_t AddBone(Bone &&bone);
     void SetAbsoluteTransform(uint32_t sceneNodeIndex);
@@ -233,10 +229,11 @@ public:
 
     void AddCamera(CameraInfo &&camera);
 
-    [[nodiscard]] std::shared_ptr<Scene> CreateSceneShared(std::string name);
+    [[nodiscard]] std::shared_ptr<Scene> CreateSceneShared();
 
 public:
     static inline constexpr uint32_t IdentityTransformIndex = 0;
+    static inline constexpr uint32_t RootNodeIndex = 0;
 
 private:
     std::vector<Shaders::Vertex> m_Vertices;
@@ -257,8 +254,8 @@ private:
     std::vector<Model> m_Models;
     std::vector<std::pair<uint32_t, uint32_t>> m_ModelInstanceInfos;
 
-    std::vector<SceneNode> m_SceneNodes;
-    std::vector<bool> m_IsRelativeTransform;
+    std::vector<SceneNode> m_SceneNodes = { SceneNode { RootNodeIndex, glm::mat4(1.0f), glm::mat4(1.0f) } };
+    std::vector<bool> m_IsRelativeTransform = { true };
     std::vector<Animation> m_Animations;
 
     std::vector<Bone> m_Bones;

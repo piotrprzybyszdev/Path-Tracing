@@ -4,18 +4,148 @@
 #include <algorithm>
 #include <array>
 #include <string>
+#include <vector>
 
+#include "Application.h"
 #include "AssetImporter.h"
 #include "ExampleScenes.h"
 
 namespace PathTracing::ExampleScenes
 {
 
-std::shared_ptr<Scene> CreateTexturedCubesScene()
+template<void(load)(SceneBuilder &)> class CustomSceneLoader : public SceneLoader
 {
-    SceneBuilder sceneBuilder;
+public:
+    ~CustomSceneLoader() override = default;
 
-    const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets" / "textures";
+    void Load(SceneBuilder &sceneBuilder) override;
+};
+
+class FileSceneLoader : public SceneLoader
+{
+public:
+    FileSceneLoader(const std::filesystem::path &path);
+    ~FileSceneLoader() override = default;
+
+    void Load(SceneBuilder &sceneBuilder) override;
+
+private:
+    std::filesystem::path m_Path;
+};
+
+FileSceneLoader::FileSceneLoader(const std::filesystem::path &path) : m_Path(path)
+{
+}
+
+void FileSceneLoader::Load(SceneBuilder &sceneBuilder)
+{
+    AssetImporter::AddFile(sceneBuilder, Application::GetConfig().AssetFolderPath / "scenes" / m_Path);
+}
+
+class KhronosSceneLoader : public FileSceneLoader
+{
+public:
+    KhronosSceneLoader(const std::string &name);
+    ~KhronosSceneLoader() override = default;
+};
+
+KhronosSceneLoader::KhronosSceneLoader(const std::string &name)
+    : FileSceneLoader(
+          std::filesystem::path("KhronosScenes") / "glTF-Sample-Models-main" / "2.0" / name / "glTF" /
+          (name + ".gltf")
+      )
+{
+}
+
+class Skybox2DLoader : public SceneLoader
+{
+public:
+    Skybox2DLoader(const std::filesystem::path &path, bool isHDR);
+    ~Skybox2DLoader() override = default;
+
+    void Load(SceneBuilder &sceneBuilder) override;
+
+private:
+    std::filesystem::path m_Path;
+    bool m_IsHDR;
+};
+
+Skybox2DLoader::Skybox2DLoader(const std::filesystem::path &path, bool isHDR) : m_Path(path), m_IsHDR(isHDR)
+{
+}
+
+void Skybox2DLoader::Load(SceneBuilder &sceneBuilder)
+{
+    TextureType type = m_IsHDR ? TextureType::SkyboxHDR : TextureType::Skybox;
+    sceneBuilder.SetSkybox(Skybox2D(
+        AssetImporter::GetTextureInfo(Application::GetConfig().AssetFolderPath / "scenes" / m_Path, type)
+    ));
+}
+
+class CombinedSceneLoader : public SceneLoader
+{
+public:
+    void AddLoader(std::unique_ptr<SceneLoader> loader);
+
+    void Load(SceneBuilder &sceneBuilder) override;
+
+private:
+    std::vector<std::unique_ptr<SceneLoader>> m_Loaders;
+};
+
+void CombinedSceneLoader::AddLoader(std::unique_ptr<SceneLoader> loader)
+{
+    m_Loaders.push_back(std::move(loader));
+}
+
+void CombinedSceneLoader::Load(SceneBuilder &sceneBuilder)
+{
+    for (const auto &loader : m_Loaders)
+        loader->Load(sceneBuilder);
+}
+
+void CreateTexturedCubesScene(SceneBuilder &sceneBuilder);
+void CreateReuseMeshCubesScene(SceneBuilder &sceneBuilder);
+
+void AddScenes(std::map<std::string, std::unique_ptr<SceneLoader>> &scenes)
+{
+    // TODO: Find example scenes by searching the assets folder
+    scenes.emplace("Textured Cubes", std::make_unique<CustomSceneLoader<CreateTexturedCubesScene>>());
+    scenes.emplace("Reuse Mesh", std::make_unique<CustomSceneLoader<CreateTexturedCubesScene>>());
+    scenes.emplace("Sponza", std::make_unique<KhronosSceneLoader>("Sponza"));
+    scenes.emplace("Chess Game", std::make_unique<KhronosSceneLoader>("ABeautifulGame"));
+    scenes.emplace("Virtual City", std::make_unique<KhronosSceneLoader>("VC"));
+    scenes.emplace("Cesium Man", std::make_unique<KhronosSceneLoader>("CesiumMan"));
+    scenes.emplace("Cesium Milk Truck", std::make_unique<KhronosSceneLoader>("CesiumMilkTruck"));
+    scenes.emplace("Brain Stem", std::make_unique<KhronosSceneLoader>("BrainStem"));
+    scenes.emplace("Box Animated", std::make_unique<KhronosSceneLoader>("BoxAnimated"));
+    scenes.emplace("Lamp", std::make_unique<KhronosSceneLoader>("LightsPunctualLamp"));
+    scenes.emplace("Rigged Simple", std::make_unique<KhronosSceneLoader>("RiggedSimple"));
+
+    // TODO: Check if the packages are installed
+    auto intelSponzaLoader = std::make_unique<CombinedSceneLoader>();
+    intelSponzaLoader->AddLoader(std::make_unique<FileSceneLoader>(
+        std::filesystem::path("main_sponza") / "NewSponza_Main_glTF_003.gltf"
+    ));
+    intelSponzaLoader->AddLoader(std::make_unique<FileSceneLoader>(
+        std::filesystem::path("pkg_a_curtains") / "NewSponza_Curtains_glTF.gltf"
+    ));
+    intelSponzaLoader->AddLoader(std::make_unique<Skybox2DLoader>(
+        std::filesystem::path("main_sponza") / "textures" / "kloppenheim_05_4k.hdr", true
+    ));
+
+    scenes.emplace("Intel Sponza", std::move(intelSponzaLoader));
+}
+
+template<void(load)(SceneBuilder &sceneBuilder)>
+void CustomSceneLoader<load>::Load(SceneBuilder &sceneBuilder)
+{
+    return load(sceneBuilder);
+}
+
+void CreateTexturedCubesScene(SceneBuilder &sceneBuilder)
+{
+    const std::filesystem::path base = Application::GetConfig().AssetFolderPath / "textures";
     const std::array<std::string, 3> assetNames = { "Metal", "PavingStones", "Logs" };
     const std::array<std::string, 3> materials = {
         "Metal062C_1K-JPG",
@@ -30,9 +160,9 @@ std::shared_ptr<Scene> CreateTexturedCubesScene()
         sceneBuilder.AddMaterial(
             assetNames[i],
             Shaders::Material {
-                sceneBuilder.AddTexture(
-                    AssetImporter::GetTextureInfo(materialPath / (material + "_Color.jpg"), TextureType::Color)
-                ),
+                sceneBuilder.AddTexture(AssetImporter::GetTextureInfo(
+                    materialPath / (material + "_Color.jpg"), TextureType::Color
+                )),
                 sceneBuilder.AddTexture(AssetImporter::GetTextureInfo(
                     materialPath / (material + "_NormalGL.jpg"), TextureType::Normal
                 )),
@@ -46,7 +176,8 @@ std::shared_ptr<Scene> CreateTexturedCubesScene()
         );
     }
 
-    std::vector<Shaders::Vertex> vertices = {
+    auto &vertices = sceneBuilder.GetVertices();
+    vertices = {
         { { -1, -1, 1 }, { 0, 1 }, { 0, 0, 1 }, { 1, 0, 0 }, { 0, 1, 0 } },
         { { 1, -1, 1 }, { 1, 1 }, { 0, 0, 1 }, { 1, 0, 0 }, { 0, 1, 0 } },
         { { 1, 1, 1 }, { 1, 0 }, { 0, 0, 1 }, { 1, 0, 0 }, { 0, 1, 0 } },
@@ -78,12 +209,9 @@ std::shared_ptr<Scene> CreateTexturedCubesScene()
         { { -1, -1, 1 }, { 0, 0 }, { 0, -1, 0 }, { 1, 0, 0 }, { 0, 0, 1 } },
     };
 
-    std::vector<uint32_t> indices = {};
+    auto &indices = sceneBuilder.GetIndices();
     for (int i = 0; i < 6; i++)
         std::ranges::copy(std::vector<uint32_t> { 0, 1, 2, 2, 3, 0 }, std::back_inserter(indices));
-
-    sceneBuilder.SetVertices(std::move(vertices));
-    sceneBuilder.SetIndices(std::move(indices));
 
     uint32_t vertexOffset = 0, indexOffset = 0;
     for (uint32_t i = 0; i < 6; i++)
@@ -121,8 +249,10 @@ std::shared_ptr<Scene> CreateTexturedCubesScene()
     ));
 
     const uint32_t rootNode = sceneBuilder.AddSceneNode({ 0u, glm::mat4(1.0f), glm::mat4(1.0f) });
-    const uint32_t cube1inst1node = sceneBuilder.AddSceneNode({ rootNode, cube1inst1transform, glm::mat4(1.0f) });
-    const uint32_t cube1inst2node = sceneBuilder.AddSceneNode({ rootNode, cube1inst2transform, glm::mat4(1.0f) });
+    const uint32_t cube1inst1node =
+        sceneBuilder.AddSceneNode({ rootNode, cube1inst1transform, glm::mat4(1.0f) });
+    const uint32_t cube1inst2node =
+        sceneBuilder.AddSceneNode({ rootNode, cube1inst2transform, glm::mat4(1.0f) });
     const uint32_t cube2node = sceneBuilder.AddSceneNode({ rootNode, cube2transform, glm::mat4(1.0f) });
 
     const uint32_t cube1inst1 = sceneBuilder.AddModelInstance(cube1, cube1inst1node);
@@ -159,15 +289,11 @@ std::shared_ptr<Scene> CreateTexturedCubesScene()
     sceneBuilder.SetSkybox(
         Skybox2D(AssetImporter::GetTextureInfo(base / "skybox" / "sky_42_2k.png", TextureType::Skybox))
     );
-
-    return sceneBuilder.CreateSceneShared("Textured Cubes");
 }
 
-std::shared_ptr<Scene> CreateReuseMeshCubesScene()
+void CreateReuseMeshCubesScene(SceneBuilder &sceneBuilder)
 {
-    SceneBuilder sceneBuilder;
-
-    const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets" / "textures";
+    const std::filesystem::path base = Application::GetConfig().AssetFolderPath / "textures";
     const std::array<std::string, 3> assetNames = { "Metal", "PavingStones", "Logs" };
     const std::array<std::string, 3> materials = {
         "Metal062C_1K-JPG",
@@ -182,9 +308,9 @@ std::shared_ptr<Scene> CreateReuseMeshCubesScene()
         sceneBuilder.AddMaterial(
             assetNames[i],
             Shaders::Material {
-                sceneBuilder.AddTexture(
-                    AssetImporter::GetTextureInfo(materialPath / (material + "_Color.jpg"), TextureType::Color)
-                ),
+                sceneBuilder.AddTexture(AssetImporter::GetTextureInfo(
+                    materialPath / (material + "_Color.jpg"), TextureType::Color
+                )),
                 sceneBuilder.AddTexture(AssetImporter::GetTextureInfo(
                     materialPath / (material + "_NormalGL.jpg"), TextureType::Normal
                 )),
@@ -198,7 +324,8 @@ std::shared_ptr<Scene> CreateReuseMeshCubesScene()
         );
     }
 
-    std::vector<Shaders::Vertex> vertices = {
+    auto &vertices = sceneBuilder.GetVertices();
+    vertices = {
         { { -1, -1, 1 }, { 0, 1 }, { 0, 0, 1 }, { 1, 0, 0 }, { 0, 1, 0 } },
         { { 1, -1, 1 }, { 1, 1 }, { 0, 0, 1 }, { 1, 0, 0 }, { 0, 1, 0 } },
         { { 1, 1, 1 }, { 1, 0 }, { 0, 0, 1 }, { 1, 0, 0 }, { 0, 1, 0 } },
@@ -215,12 +342,9 @@ std::shared_ptr<Scene> CreateReuseMeshCubesScene()
         { { -1, 1, -1 }, { 0, 0 }, { 0, 1, 0 }, { 1, 0, 0 }, { 0, 0, -1 } },
     };
 
-    std::vector<uint32_t> indices = {};
+    auto &indices = sceneBuilder.GetIndices();
     for (int i = 0; i < 3; i++)
         std::ranges::copy(std::vector<uint32_t> { 0, 1, 2, 2, 3, 0 }, std::back_inserter(indices));
-
-    sceneBuilder.SetVertices(std::move(vertices));
-    sceneBuilder.SetIndices(std::move(indices));
 
     uint32_t vertexOffset = 0, indexOffset = 0;
     for (uint32_t i = 0; i < 3; i++)
@@ -257,87 +381,6 @@ std::shared_ptr<Scene> CreateReuseMeshCubesScene()
         AssetImporter::GetTextureInfo(skyboxPath / "pz.png", TextureType::Skybox),
         AssetImporter::GetTextureInfo(skyboxPath / "nz.png", TextureType::Skybox)
     ));
-
-    return sceneBuilder.CreateSceneShared("Reuse Mesh");
-}
-
-std::shared_ptr<Scene> CreateSponzaScene()
-{
-    const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets" / "scenes";
-    const std::filesystem::path path =
-        base / "KhronosScenes" / "glTF-Sample-Models-main" / "2.0" / "Sponza" / "glTF" / "Sponza.gltf";
-    return AssetImporter::LoadScene("Sponza", path);
-}
-
-std::shared_ptr<Scene> CreateChessGameScene()
-{
-    const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets" / "scenes";
-    const std::filesystem::path path = base / "KhronosScenes" / "glTF-Sample-Models-main" / "2.0" /
-                                       "ABeautifulGame" / "glTF" / "ABeautifulGame.gltf";
-    return AssetImporter::LoadScene("Chess Game", path);
-}
-
-std::shared_ptr<Scene> CreateVirtualCityScene()
-{
-    const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets" / "scenes";
-    const std::filesystem::path path =
-        base / "KhronosScenes" / "glTF-Sample-Models-main" / "2.0" / "VC" / "glTF" / "VC.gltf";
-    return AssetImporter::LoadScene("Virtual City", path);
-}
-
-std::shared_ptr<Scene> CreateCesiumManScene()
-{
-    const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets" / "scenes";
-    const std::filesystem::path path =
-        base / "KhronosScenes" / "glTF-Sample-Models-main" / "2.0" / "CesiumMan" / "glTF" / "CesiumMan.gltf";
-    return AssetImporter::LoadScene("Cesium Man", path);
-}
-
-std::shared_ptr<Scene> CreateCesiumMilkTruckScene()
-{
-    const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets" / "scenes";
-    const std::filesystem::path path =
-        base / "KhronosScenes" / "glTF-Sample-Models-main" / "2.0" / "CesiumMilkTruck" / "glTF" / "CesiumMilkTruck.gltf";
-    return AssetImporter::LoadScene("Cesium Milk Truck", path);
-}
-
-std::shared_ptr<Scene> CreateBrainStemScene()
-{
-    const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets" / "scenes";
-    const std::filesystem::path path = base / "KhronosScenes" / "glTF-Sample-Models-main" / "2.0" /
-                                       "BrainStem" / "glTF" / "BrainStem.gltf";
-    return AssetImporter::LoadScene("Brain Stem", path);
-}
-
-std::shared_ptr<Scene> CreateBoxAnimatedScene()
-{
-    const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets" / "scenes";
-    const std::filesystem::path path = base / "KhronosScenes" / "glTF-Sample-Models-main" / "2.0" /
-                                       "BoxAnimated" / "glTF" / "BoxAnimated.gltf";
-    return AssetImporter::LoadScene("Box Animated", path);
-}
-
-std::shared_ptr<Scene> CreateLampLightScene()
-{
-    const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets" / "scenes";
-    const std::filesystem::path path = base / "KhronosScenes" / "glTF-Sample-Models-main" / "2.0" /
-                                       "LightsPunctualLamp" / "glTF" / "LightsPunctualLamp.gltf";
-    return AssetImporter::LoadScene("Lamp", path);
-}
-
-std::shared_ptr<Scene> CreateBigSponzaScene()
-{
-    const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets" / "scenes";
-    const std::filesystem::path path = base / "main_sponza" / "NewSponza_Main_glTF_003.gltf";
-    return AssetImporter::LoadScene("Big Sponza", path);
-}
-
-std::shared_ptr<Scene> CreateRiggedSimpleScene()
-{
-    const std::filesystem::path base = std::filesystem::current_path().parent_path() / "assets" / "scenes";
-    const std::filesystem::path path = base / "KhronosScenes" / "glTF-Sample-Models-main" / "2.0" /
-                                       "RiggedSimple" / "glTF" / "RiggedSimple.gltf";
-    return AssetImporter::LoadScene("Rigged Simple", path);
 }
 
 }

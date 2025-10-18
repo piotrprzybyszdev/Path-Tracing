@@ -42,6 +42,7 @@ public:
     static float s_Exposure;
 
     static std::unique_ptr<CommandBuffer> s_MainCommandBuffer;
+    static std::unique_ptr<Buffer> s_StagingBuffer;
 
 public:
     // Lock s_DescriptorSetMutex before calling (if not on main thread)
@@ -158,8 +159,6 @@ private:
 private:
     static std::unique_ptr<BufferBuilder> s_BufferBuilder;
     static std::unique_ptr<ImageBuilder> s_ImageBuilder;
-
-    static std::unique_ptr<Buffer> s_StagingBuffer;
 
     static vk::Sampler s_TextureSampler;
 };

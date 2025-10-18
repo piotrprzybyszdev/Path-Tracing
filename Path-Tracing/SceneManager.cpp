@@ -7,15 +7,13 @@ namespace PathTracing
 {
 
 std::set<std::string> SceneManager::s_SceneNames = {};
-std::map<std::string, std::function<std::shared_ptr<Scene>()>> SceneManager::s_Scenes = {};
+std::map<std::string, std::unique_ptr<SceneLoader>> SceneManager::s_Scenes = {};
 std::shared_ptr<Scene> SceneManager::s_ActiveScene = nullptr;  // TODO: Always have an active scene (maybe some menu)
 
 void SceneManager::Init()
 {
-    // TODO: Find example scenes by searching the assets folder
+    ExampleScenes::AddScenes(s_Scenes);
 
-    s_Scenes.insert(ExampleScenes::Scenes.begin(), ExampleScenes::Scenes.end());
-    
     auto keys = s_Scenes | std::views::keys;
     s_SceneNames.insert(keys.begin(), keys.end());
 }
@@ -23,6 +21,8 @@ void SceneManager::Init()
 void SceneManager::Shutdown()
 {
     s_ActiveScene.reset();
+    s_Scenes.clear();
+    s_SceneNames.clear();
 }
 
 const std::set<std::string> &SceneManager::GetSceneNames()
@@ -32,10 +32,9 @@ const std::set<std::string> &SceneManager::GetSceneNames()
 
 void SceneManager::SetActiveScene(std::string sceneName)
 {
-    if (s_ActiveScene != nullptr && s_ActiveScene->GetName() == sceneName)
-        return;
-
-    s_ActiveScene = std::move(s_Scenes.at(sceneName)());
+    SceneBuilder sceneBuilder;
+    s_Scenes.at(sceneName)->Load(sceneBuilder);
+    s_ActiveScene = std::move(sceneBuilder.CreateSceneShared());
 }
 
 std::shared_ptr<Scene> SceneManager::GetActiveScene()

@@ -67,7 +67,7 @@ void Renderer::Init(const Swapchain *swapchain)
 
     s_StagingBuffer = BufferBuilder()
                           .SetUsageFlags(vk::BufferUsageFlagBits::eTransferSrc)
-                          .CreateHostBufferUnique(128ull * 1024 * 1024, "Main Staging Buffer");
+                          .CreateHostBufferUnique(256ull * 1024 * 1024, "Main Staging Buffer");
 
     s_BufferBuilder = std::make_unique<BufferBuilder>();
     s_ImageBuilder = std::make_unique<ImageBuilder>();
@@ -203,21 +203,32 @@ void Renderer::UpdateSceneData()
         const auto &materials = s_SceneData->Handle->GetMaterials();
         s_SceneData->MaterialBuffer = CreateDeviceBuffer(materials, "Material Buffer");
 
+        std::vector<uint32_t> geometryIndexMap;
         s_SceneData->Geometries.clear();
         s_SceneData->Geometries.reserve(geometries.size() + animatedGeometryCount);
+        geometryIndexMap.resize(geometries.size() + animatedGeometryCount);
 
-        for (const auto &geometry : geometries)
+        for (int i = 0; i < geometries.size(); i++)
+        {
+            const auto &geometry = geometries[i];
             if (!geometry.IsAnimated)
+            {
                 s_SceneData->Geometries.emplace_back(
                     s_SceneData->VertexBuffer.GetDeviceAddress() +
                         geometry.VertexOffset * sizeof(Shaders::Vertex),
                     s_SceneData->IndexBuffer.GetDeviceAddress() + geometry.IndexOffset * sizeof(uint32_t)
                 );
+                geometryIndexMap[i] = s_SceneData->Geometries.size() - 1;
+            }
+        }
 
+        // TODO: Support instancing animated meshes: map out animated meshes to source animated meshes
         s_SceneData->AnimatedGeometriesOffset = s_SceneData->Geometries.size();
-        uint32_t animatedVertexOffset = 0;
+        uint32_t animatedVertexOffset = 0, animatedGeometryIndex = 0;
         for (const auto &instance : instances)
+        {
             for (const auto &mesh : models[instance.ModelIndex].Meshes)
+            {
                 if (geometries[mesh.GeometryIndex].IsAnimated)
                 {
                     const auto &geometry = geometries[mesh.GeometryIndex];
@@ -228,27 +239,33 @@ void Renderer::UpdateSceneData()
                     );
 
                     animatedVertexOffset += geometry.VertexLength;
+                    geometryIndexMap[mesh.GeometryIndex] = s_SceneData->Geometries.size() - 1;
+                    animatedGeometryIndex++;
                 }
+            }
+        }
 
         for (int i = 0; i < s_RenderingResources.size(); i++)
             CreateSceneRenderingResources(s_RenderingResources[i], i);
-    }
 
-    auto models = s_SceneData->Handle->GetModels();
-    s_SceneData->SceneShaderBindingTable = std::make_unique<ShaderBindingTable>(
-        s_RaytracingConfig.RaygenGroupIndex,
-        std::vector<uint32_t> { s_RaytracingConfig.PrimaryRayMissIndex,
-                                s_RaytracingConfig.OcclusionRayMissIndex },
-        std::vector<uint32_t> { s_RaytracingConfig.PrimaryRayHitIndex,
-                                s_RaytracingConfig.OcclusionRayHitIndex }
-    );
-    for (const auto &model : models)
-        for (const auto &mesh : model.Meshes)
-        {
-            const Shaders::SBTBuffer data(mesh.GeometryIndex, mesh.MaterialIndex, mesh.TransformBufferOffset);
-            std::array<Shaders::SBTBuffer, 2> buffers = { { data, data } };
-            s_SceneData->SceneShaderBindingTable->AddRecord(buffers);
-        }
+        s_SceneData->SceneShaderBindingTable = std::make_unique<ShaderBindingTable>(
+            s_RaytracingConfig.RaygenGroupIndex,
+            std::vector<uint32_t> { s_RaytracingConfig.PrimaryRayMissIndex,
+                                    s_RaytracingConfig.OcclusionRayMissIndex },
+            std::vector<uint32_t> { s_RaytracingConfig.PrimaryRayHitIndex,
+                                    s_RaytracingConfig.OcclusionRayHitIndex }
+        );
+
+        for (const auto &model : models)
+            for (const auto &mesh : model.Meshes)
+            {
+                const Shaders::SBTBuffer data(
+                    geometryIndexMap[mesh.GeometryIndex], mesh.MaterialIndex, mesh.TransformBufferOffset
+                );
+                std::array<Shaders::SBTBuffer, 2> buffers = { { data, data } };
+                s_SceneData->SceneShaderBindingTable->AddRecord(buffers);
+            }
+    }
 
     const auto &skybox = s_SceneData->Handle->GetSkybox();
     s_ShaderSpecialization.MissFlags &= ~(Shaders::MissFlagsSkybox2D | Shaders::MissFlagsSkyboxCube);
@@ -281,6 +298,9 @@ void Renderer::UpdateSceneData()
     UpdateSpecializations(s_ShaderSpecialization);
 
     RecreateDescriptorSet();
+
+    s_TextureOwnershipCommandBuffer->Reset();
+    s_TextureOwnershipBufferHasCommands = false;
 
     s_TextureUploader->UploadTextures(s_SceneData->Handle);
 
@@ -566,19 +586,9 @@ Image Renderer::CreateStorageImage(vk::Extent2D extent)
 
 void Renderer::CreateGeometryBuffer(RenderingResources &resources)
 {
-    const auto &instances = s_SceneData->Handle->GetModelInstances();
-    const auto &models = s_SceneData->Handle->GetModels();
-    const auto &geometries = s_SceneData->Handle->GetGeometries();
-
-    auto modifyGeometries = [&instances, &models, &geometries](vk::DeviceAddress address, int sign) {
-        uint32_t geometryIndex = s_SceneData->AnimatedGeometriesOffset;
-        for (const auto &instance : instances)
-            for (const auto &mesh : models[instance.ModelIndex].Meshes)
-                if (geometries[mesh.GeometryIndex].IsAnimated)
-                {
-                    s_SceneData->Geometries[geometryIndex].Vertices += sign * address;
-                    geometryIndex++;
-                }
+    auto modifyGeometries = [](vk::DeviceAddress address, int sign) {
+        for (int i = s_SceneData->AnimatedGeometriesOffset; i < s_SceneData->Geometries.size(); i++)
+            s_SceneData->Geometries[i].Vertices += sign * address;
     };
 
     if (s_SceneData->Handle->HasSkeletalAnimations())

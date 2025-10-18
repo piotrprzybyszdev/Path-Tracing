@@ -198,6 +198,7 @@ void Image::UploadStaging(
     if (extent != m_Extent)
     {
         assert(layerCount == 1);
+        assert(temporary.GetHandle() != nullptr);
         assert(temporary.GetExtent() >= extent);
 
         const uint32_t destMip = temporary.GetMip(m_Extent) - 1;
@@ -206,7 +207,7 @@ void Image::UploadStaging(
 
         blitFromTemporary(destExtent, destMip, layer, layerCount);
     }
-    else if (temporary.m_Format != m_Format)
+    else if (temporary.GetHandle() != nullptr && temporary.m_Format != m_Format)
     {
         assert(temporary.m_Layers >= layer + layerCount);
 

@@ -26,6 +26,8 @@ public:
 
     void End();
 
+    void Reset();
+
     void Submit();
     void SubmitBlocking();
 

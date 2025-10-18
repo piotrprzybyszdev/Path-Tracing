@@ -11,20 +11,19 @@ namespace PathTracing
 {
 
 Scene::Scene(
-    std::string name, std::vector<Shaders::Vertex> &&vertices,
-    std::vector<Shaders::AnimatedVertex> &&animatedVertices, std::vector<uint32_t> &&indices,
-    std::vector<uint32_t> &&animatedIndices, std::vector<glm::mat3x4> &&transforms,
-    std::vector<Geometry> &&geometries, std::vector<Shaders::Material> &&materials,
-    std::vector<TextureInfo> &&textures, std::vector<Model> &&models,
-    std::vector<ModelInstance> &&modelInstances, std::vector<Bone> &&bones, SceneGraph &&sceneGraph,
-    std::vector<LightInfo> &&lightInfos, std::vector<Shaders::Light> &&lights, SkyboxVariant &&skybox,
-    const std::vector<CameraInfo> &cameraInfos
+    std::vector<Shaders::Vertex> &&vertices, std::vector<Shaders::AnimatedVertex> &&animatedVertices,
+    std::vector<uint32_t> &&indices, std::vector<uint32_t> &&animatedIndices,
+    std::vector<glm::mat3x4> &&transforms, std::vector<Geometry> &&geometries,
+    std::vector<Shaders::Material> &&materials, std::vector<TextureInfo> &&textures,
+    std::vector<Model> &&models, std::vector<ModelInstance> &&modelInstances, std::vector<Bone> &&bones,
+    SceneGraph &&sceneGraph, std::vector<LightInfo> &&lightInfos, std::vector<Shaders::Light> &&lights,
+    SkyboxVariant &&skybox, const std::vector<CameraInfo> &cameraInfos
 )
-    : m_Name(std::move(name)), m_Vertices(std::move(vertices)),
-      m_AnimatedVertices(std::move(animatedVertices)), m_Indices(std::move(indices)),
-      m_AnimatedIndices(std::move(animatedIndices)), m_Transforms(std::move(transforms)),
-      m_Geometries(std::move(geometries)), m_Materials(std::move(materials)), m_Textures(std::move(textures)),
-      m_Models(std::move(models)), m_ModelInstances(std::move(modelInstances)), m_Bones(std::move(bones)),
+    : m_Vertices(std::move(vertices)), m_AnimatedVertices(std::move(animatedVertices)),
+      m_Indices(std::move(indices)), m_AnimatedIndices(std::move(animatedIndices)),
+      m_Transforms(std::move(transforms)), m_Geometries(std::move(geometries)),
+      m_Materials(std::move(materials)), m_Textures(std::move(textures)), m_Models(std::move(models)),
+      m_ModelInstances(std::move(modelInstances)), m_Bones(std::move(bones)),
       m_BoneTransforms(m_Bones.size()), m_Graph(std::move(sceneGraph)), m_LightInfos(std::move(lightInfos)),
       m_Lights(std::move(lights)), m_Skybox(std::move(skybox)), m_ActiveCameraId(g_InputCameraId)
 {
@@ -37,12 +36,8 @@ Scene::Scene(
             nodes[info.SceneNodeIndex].CurrentTransform
         );
 
-    m_HasSkeletalAnimations = std::any_of(m_Geometries.begin(), m_Geometries.end(), [](const auto &g) { return g.IsAnimated; });
-}
-
-const std::string &Scene::GetName() const
-{
-    return m_Name;
+    m_HasSkeletalAnimations =
+        std::any_of(m_Geometries.begin(), m_Geometries.end(), [](const auto &g) { return g.IsAnimated; });
 }
 
 void Scene::Update(float timeStep)
@@ -131,24 +126,24 @@ uint32_t SceneBuilder::AddMaterial(std::string name, Shaders::Material material)
     return m_Materials.size() - 1;
 }
 
-void SceneBuilder::SetVertices(std::vector<Shaders::Vertex> &&vertices)
+std::vector<Shaders::Vertex> &SceneBuilder::GetVertices()
 {
-    m_Vertices = std::move(vertices);
+    return m_Vertices;
 }
 
-void SceneBuilder::SetIndices(std::vector<uint32_t> &&indices)
+std::vector<uint32_t> &SceneBuilder::GetIndices()
 {
-    m_Indices = std::move(indices);
+    return m_Indices;
 }
 
-void SceneBuilder::SetAnimatedVertices(std::vector<Shaders::AnimatedVertex> &&vertices)
+std::vector<Shaders::AnimatedVertex> &SceneBuilder::GetAnimatedVertices()
 {
-    m_AnimatedVertices = vertices;
+    return m_AnimatedVertices;
 }
 
-void SceneBuilder::SetAnimatedIndices(std::vector<uint32_t> &&indices)
+std::vector<uint32_t> &SceneBuilder::GetAnimatedIndices()
 {
-    m_AnimatedIndices = indices;
+    return m_AnimatedIndices;
 }
 
 uint32_t SceneBuilder::AddBone(Bone &&bone)
@@ -186,7 +181,7 @@ void SceneBuilder::AddCamera(CameraInfo &&camera)
     m_CameraInfos.push_back(camera);
 }
 
-std::shared_ptr<Scene> SceneBuilder::CreateSceneShared(std::string name)
+std::shared_ptr<Scene> SceneBuilder::CreateSceneShared()
 {
     std::vector<ModelInstance> modelInstances;
     modelInstances.reserve(m_ModelInstanceInfos.size());
@@ -197,7 +192,7 @@ std::shared_ptr<Scene> SceneBuilder::CreateSceneShared(std::string name)
         m_Lights.push_back(g_DefaultLight);
 
     auto scene = std::make_shared<Scene>(
-        std::move(name), std::move(m_Vertices), std::move(m_AnimatedVertices), std::move(m_Indices),
+        std::move(m_Vertices), std::move(m_AnimatedVertices), std::move(m_Indices),
         std::move(m_AnimatedIndices), std::move(m_Transforms), std::move(m_Geometries),
         std::move(m_Materials), std::move(m_Textures), std::move(m_Models), std::move(modelInstances),
         std::move(m_Bones),
@@ -220,6 +215,9 @@ std::shared_ptr<Scene> SceneBuilder::CreateSceneShared(std::string name)
     m_ModelInstanceInfos.clear();
     m_Bones.clear();
     m_SceneNodes.clear();
+    m_SceneNodes.push_back(SceneNode { RootNodeIndex, glm::mat4(1.0f), glm::mat4(1.0f) });
+    m_IsRelativeTransform.clear();
+    m_IsRelativeTransform.push_back(true);
     m_Animations.clear();
     m_Lights.clear();
     m_LightInfos.clear();

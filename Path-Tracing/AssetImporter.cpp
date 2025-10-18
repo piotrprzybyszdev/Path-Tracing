@@ -1,7 +1,7 @@
-#include <glm/ext/matrix_relational.hpp>
 #include <assimp/Importer.hpp>
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
+#include <glm/ext/matrix_relational.hpp>
 #include <stb_image.h>
 
 #include <stack>
@@ -14,19 +14,52 @@
 namespace PathTracing
 {
 
+static void PremultiplyTextureData(const std::string &path, std::span<std::byte> data)
+{
+    // TODO: Remove when mip map generation is moved into a compute shader
+    // Color channels should be premultiplied by the alpha channel between generation of every mip level
+    // Doing full premultiplication only here would give wrong results
+    // Therefore here we only premultiply pixels that have alpha channel of 0
+    // This improves the mip maps around transparency edges and doesn't produce incorrect result
+
+    auto pixels = SpanCast<std::byte, glm::u8vec4>(data);
+    bool warned = false;
+
+    for (auto &pixel : pixels)
+    {
+        if (pixel.a == 0)
+        {
+            pixel.r = 0;
+            pixel.g = 0;
+            pixel.b = 0;
+        }
+        else if (pixel.a != 255 && !warned)
+        {
+            logger::debug("Texture {} has semi-transparent pixels. Generated mips may contain artifacts", path);
+            warned = true;
+        }
+    }
+}
+
 std::byte *AssetImporter::LoadTextureData(const TextureInfo &info)
 {
     const std::string pathString = info.Path.string();
 
     int x, y, channels;
-    stbi_uc *data = stbi_load(pathString.c_str(), &x, &y, &channels, STBI_rgb_alpha);
+    std::byte *data =
+        info.Type == TextureType::SkyboxHDR
+            ? reinterpret_cast<std::byte *>(stbi_loadf(pathString.c_str(), &x, &y, &channels, STBI_rgb_alpha))
+            : reinterpret_cast<std::byte *>(stbi_load(pathString.c_str(), &x, &y, &channels, STBI_rgb_alpha));
 
     assert(x == info.Width && y == info.Height && channels == info.Channels);
 
     if (data == nullptr)
         throw error(std::format("Could not load texture {}: {}", pathString, stbi_failure_reason()));
 
-    return reinterpret_cast<std::byte *>(data);
+    if (info.Type == TextureType::Color && channels == 4)
+        PremultiplyTextureData(pathString, std::span(data, 4 * x * y));
+
+    return data;
 }
 
 void AssetImporter::ReleaseTextureData(std::byte *data)
@@ -91,7 +124,7 @@ uint32_t AddTexture(
 
     logger::trace("Adding texture {} at {}", aiTextureTypeToString(type), path.C_Str());
 
-    std::filesystem::path texturePath = base.string() / std::filesystem::path(path.C_Str());
+    std::filesystem::path texturePath = base / std::filesystem::path(path.C_Str());
 
     return sceneBuilder.AddTexture(AssetImporter::GetTextureInfo(texturePath, textureType));
 }
@@ -152,7 +185,7 @@ uint32_t FindSameGeometry(std::span<aiMesh *const> haystack, const aiMesh *needl
     return haystack.size();
 }
 
-bool CheckAnimated(const aiMesh* mesh)
+bool CheckAnimated(const aiMesh *mesh)
 {
     return mesh->HasBones();
 }
@@ -196,10 +229,14 @@ std::vector<uint32_t> LoadMeshes(
     std::unordered_set<const aiNode *> &armatures
 )
 {
-    std::vector<Shaders::Vertex> vertices;
-    std::vector<Shaders::AnimatedVertex> animatedVertices;
-    std::vector<uint32_t> indices;
-    std::vector<uint32_t> animatedIndices;
+    auto &vertices = sceneBuilder.GetVertices();
+    auto &animatedVertices = sceneBuilder.GetAnimatedVertices();
+    auto &indices = sceneBuilder.GetIndices();
+    auto &animatedIndices = sceneBuilder.GetAnimatedIndices();
+
+    std::vector<uint32_t> meshToGeometry(scene->mNumMeshes);
+    uint32_t vertexOffset = vertices.size(), indexOffset = indices.size();
+    uint32_t animatedVertexOffset = animatedVertices.size(), animatedIndexOffset = animatedIndices.size();
 
     {
         uint32_t vertexCount = 0, indexCount = 0;
@@ -215,15 +252,12 @@ std::vector<uint32_t> LoadMeshes(
             ic += mesh->mNumFaces * 3;
         }
 
-        vertices.resize(vertexCount);
-        animatedVertices.resize(animatedVertexCount);
-        indices.resize(indexCount);
-        animatedIndices.resize(animatedIndexCount);
+        vertices.resize(vertices.size() + vertexCount);
+        animatedVertices.resize(animatedVertices.size() + animatedVertexCount);
+        indices.resize(indices.size() + indexCount);
+        animatedIndices.resize(animatedIndices.size() + animatedIndexCount);
     }
 
-    std::vector<uint32_t> meshToGeometry(scene->mNumMeshes);
-    uint32_t vertexOffset = 0, indexOffset = 0;
-    uint32_t animatedVertexOffset = 0, animatedIndexOffset = 0;
     for (uint32_t i = 0; i < scene->mNumMeshes; i++)
     {
         const aiMesh *mesh = scene->mMeshes[i];
@@ -255,12 +289,14 @@ std::vector<uint32_t> LoadMeshes(
             {
                 animatedVertices[idx].Position = TrivialCopy<aiVector3D, glm::vec3>(mesh->mVertices[j]);
                 if (mesh->HasTextureCoords(0))
-                    animatedVertices[idx].TexCoords = TrivialCopy<aiVector3D, glm::vec2>(mesh->mTextureCoords[0][j]);
+                    animatedVertices[idx].TexCoords =
+                        TrivialCopy<aiVector3D, glm::vec2>(mesh->mTextureCoords[0][j]);
                 animatedVertices[idx].Normal = TrivialCopy<aiVector3D, glm::vec3>(mesh->mNormals[j]);
                 if (mesh->HasTangentsAndBitangents())
                 {
                     animatedVertices[idx].Tangent = TrivialCopy<aiVector3D, glm::vec3>(mesh->mTangents[j]);
-                    animatedVertices[idx].Bitangent = TrivialCopy<aiVector3D, glm::vec3>(mesh->mBitangents[j]);
+                    animatedVertices[idx].Bitangent =
+                        TrivialCopy<aiVector3D, glm::vec3>(mesh->mBitangents[j]);
                 }
             }
             else
@@ -296,7 +332,7 @@ std::vector<uint32_t> LoadMeshes(
                 sceneBuilder.AddGeometry({ vo, vertexCount, io, indexCount, isOpaque, false });
         else
             meshToGeometry[i] = sceneBuilder.AddGeometry({ vo, vertexCount, io, indexCount, isOpaque, true });
-        
+
         vo += vertexCount;
         io += indexCount;
 
@@ -305,11 +341,6 @@ std::vector<uint32_t> LoadMeshes(
             isOpaque ? "Opaque" : "Not opaque", vertexCount, indexCount
         );
     }
-
-    sceneBuilder.SetVertices(std::move(vertices));
-    sceneBuilder.SetAnimatedVertices(std::move(animatedVertices));
-    sceneBuilder.SetIndices(std::move(indices));
-    sceneBuilder.SetAnimatedIndices(std::move(animatedIndices));
 
     return meshToGeometry;
 }
@@ -366,7 +397,7 @@ std::unordered_map<const aiNode *, uint32_t> LoadSceneNodes(
     std::unordered_map<const aiNode *, uint32_t> sceneNodeToIndex;
 
     std::stack<std::tuple<const aiNode *, uint32_t, uint32_t>> stack;
-    stack.emplace(scene->mRootNode, -1u, 0u);
+    stack.emplace(scene->mRootNode, SceneBuilder::RootNodeIndex, 0u);
 
     while (!stack.empty())
     {
@@ -416,9 +447,13 @@ void LoadModels(
     std::vector<uint32_t> sceneNodeToModelIndex(nodes.size());
     std::vector<glm::mat4> sceneNodeToMeshTransform(nodes.size());
 
+    auto getNodeIndex = [&sceneNodeIndices, scene](const aiNode *node) {
+        return sceneNodeIndices[node] - sceneNodeIndices[scene->mRootNode];
+    };
+
     for (const aiNode *node : nodes)
     {
-        const uint32_t sceneNodeIndex = sceneNodeIndices[node];
+        const uint32_t sceneNodeIndex = getNodeIndex(node);
 
         uint32_t &modelIndex = sceneNodeToModelIndex[sceneNodeIndex];
         glm::mat4 &totalTransform = sceneNodeToMeshTransform[sceneNodeIndex];
@@ -426,12 +461,12 @@ void LoadModels(
         if (isInstanceRoot(node))
         {
             modelIndex = nextModelIndex++;
-            modelToSceneNodeIndex[modelIndex] = sceneNodeIndex;
+            modelToSceneNodeIndex[modelIndex] = sceneNodeIndices[node];
             totalTransform = glm::mat4(1.0f);
         }
         else
         {
-            const uint32_t parentNodeIndex = sceneNodeIndices[node->mParent];
+            const uint32_t parentNodeIndex = getNodeIndex(node->mParent);
             modelIndex = sceneNodeToModelIndex[parentNodeIndex];
             totalTransform = TrivialCopy<aiMatrix4x4, glm::mat4>(node->mTransformation) *
                              sceneNodeToMeshTransform[parentNodeIndex];
@@ -579,7 +614,8 @@ void LoadAnimations(
                 animNode->mPreState == aiAnimBehaviour_REPEAT
             );
             assert(
-                animNode->mPostState == aiAnimBehaviour_DEFAULT || animNode->mPostState == aiAnimBehaviour_REPEAT
+                animNode->mPostState == aiAnimBehaviour_DEFAULT ||
+                animNode->mPostState == aiAnimBehaviour_REPEAT
             );
 
             outAnimation.Nodes.push_back(std::move(outAnimNode));
@@ -659,15 +695,16 @@ void LoadCameras(
 
 }
 
-std::shared_ptr<Scene> AssetImporter::LoadScene(const std::string &name, const std::filesystem::path &path)
+SceneBuilder &AssetImporter::AddFile(SceneBuilder &sceneBuilder, const std::filesystem::path &path)
 {
-    logger::info("Loading Scene {}", name);
+    logger::info("Loading Scene {}", path.string());
     Timer timer("Scene Load");
 
     const aiScene *scene = nullptr;
     {
         unsigned int flags = aiProcess_Triangulate | aiProcess_FlipUVs | aiProcess_CalcTangentSpace |
-                             aiProcess_LimitBoneWeights | aiProcess_GenNormals | aiProcess_PopulateArmatureData;
+                             aiProcess_LimitBoneWeights | aiProcess_GenNormals |
+                             aiProcess_PopulateArmatureData;
 #ifdef CONFIG_OPTIMIZE_SCENE
         flags |= aiProcess_JoinIdenticalVertices | aiProcess_ImproveCacheLocality | aiProcess_OptimizeMeshes;
 #endif
@@ -690,8 +727,6 @@ std::shared_ptr<Scene> AssetImporter::LoadScene(const std::string &name, const s
     // TODO: Support embedded textures
     assert(scene->HasTextures() == false);
 
-    SceneBuilder sceneBuilder;
-
     std::vector<const aiNode *> nodes;
     std::unordered_map<const aiNode *, uint32_t> sceneNodeIndices =
         LoadSceneNodes(sceneBuilder, scene, nodes);
@@ -707,11 +742,11 @@ std::shared_ptr<Scene> AssetImporter::LoadScene(const std::string &name, const s
     );
 
     LoadAnimations(sceneBuilder, scene, sceneNodeIndices);
-    
+
     LoadLights(sceneBuilder, scene, sceneNodeIndices);
     LoadCameras(sceneBuilder, scene, sceneNodeIndices);
 
-    return sceneBuilder.CreateSceneShared(name);
+    return sceneBuilder;
 }
 
 }

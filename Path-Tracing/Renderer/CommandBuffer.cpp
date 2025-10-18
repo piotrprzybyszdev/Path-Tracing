@@ -57,6 +57,12 @@ void CommandBuffer::End()
     m_IsOpen = false;
 }
 
+void CommandBuffer::Reset()
+{
+    m_IsOpen = false;
+    Buffer.reset();
+}
+
 void CommandBuffer::Submit()
 {
     if (m_IsOpen)
