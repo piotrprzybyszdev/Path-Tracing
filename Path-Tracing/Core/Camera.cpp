@@ -67,7 +67,7 @@ InputCamera::InputCamera(
     float verticalFOV, float nearClip, float farClip, glm::vec3 position, glm::vec3 direction
 )
     : Camera(verticalFOV, nearClip, farClip, position, direction, glm::vec3(0.0f, -1.0f, 0.0f)),
-      m_Yaw(glm::degrees(std::atan2(m_Direction.x, m_Direction.z) + glm::pi<float>() / 2)),
+      m_Yaw(glm::degrees(std::atan2(m_Direction.x, m_Direction.z) - glm::pi<float>() / 2)),
       m_Pitch(glm::degrees(glm::asin(m_Direction.y)))
 {
 }

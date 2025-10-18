@@ -83,8 +83,11 @@ private:
 
         Buffer RaygenUniformBuffer;
 
-        static const vk::DeviceSize s_LightArrayOffset =
-            Utils::AlignTo(sizeof(Shaders::uint), Shaders::LightStructAlignment);
+        static inline constexpr vk::DeviceSize s_DirectionalLightOffset =
+            Utils::AlignTo(sizeof(Shaders::uint), Shaders::DirectionalLightStructAlignment);
+        static inline constexpr vk::DeviceSize s_LightArrayOffset = Utils::AlignTo(
+            s_DirectionalLightOffset + sizeof(Shaders::DirectionalLight), Shaders::PointLightStructAlignment
+        );
         Shaders::uint LightCount = 0;
         Buffer LightUniformBuffer;
 

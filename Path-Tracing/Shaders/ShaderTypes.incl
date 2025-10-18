@@ -88,7 +88,15 @@ struct Material
     uint MetalicIdx;
 };
 
-struct Light
+struct DirectionalLight
+{
+    vec3 Color;
+    float pad0;
+    vec3 Direction;
+    float pad1;
+};
+
+struct PointLight
 {
     vec3 Color;
     float pad0;
@@ -100,7 +108,8 @@ struct Light
     float pad2;
 };
 
-const uint LightStructAlignment = 16u;
+const uint DirectionalLightStructAlignment  = 16u;
+const uint PointLightStructAlignment        = 16u;
 
 
 #ifndef GL_core_profile

@@ -542,9 +542,9 @@ void Renderer::UpdateAnimatedVertices(const RenderingResources &resources)
 void Renderer::CreateSceneRenderingResources(RenderingResources &res, uint32_t frameIndex)
 {
     s_BufferBuilder->ResetFlags().SetUsageFlags(vk::BufferUsageFlagBits::eUniformBuffer);
-    res.LightCount = s_SceneData->Handle->GetLights().size();
+    res.LightCount = s_SceneData->Handle->GetPointLights().size();
     res.LightUniformBuffer = s_BufferBuilder->CreateHostBuffer(
-        RenderingResources::s_LightArrayOffset + s_SceneData->Handle->GetLights().size_bytes(),
+        RenderingResources::s_LightArrayOffset + s_SceneData->Handle->GetPointLights().size_bytes(),
         std::format("Light Uniform Buffer {}", frameIndex)
     );
 
@@ -742,7 +742,13 @@ void Renderer::Render(const Camera &camera)
 
     res.RaygenUniformBuffer.Upload(&rgenData);
     res.LightUniformBuffer.Upload(ToByteSpan(res.LightCount));
-    res.LightUniformBuffer.Upload(s_SceneData->Handle->GetLights(), RenderingResources::s_LightArrayOffset);
+    res.LightUniformBuffer.Upload(
+        ToByteSpan(s_SceneData->Handle->GetDirectionalLight()), RenderingResources::s_DirectionalLightOffset
+    );
+    if (res.LightCount > 0)
+        res.LightUniformBuffer.Upload(
+            s_SceneData->Handle->GetPointLights(), RenderingResources::s_LightArrayOffset
+        );
 
     res.CommandBuffer.reset();
     res.CommandBuffer.begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));

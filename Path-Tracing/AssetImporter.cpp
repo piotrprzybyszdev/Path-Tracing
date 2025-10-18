@@ -633,34 +633,60 @@ void LoadLights(
     for (int i = 0; i < scene->mNumLights; i++)
     {
         const aiLight *light = scene->mLights[i];
+        bool hasDirectionalLight = false;
 
-        // TODO: assert(light->mType == aiLightSource_POINT);
+        assert(
+            light->mType == aiLightSourceType::aiLightSource_POINT ||
+            light->mType == aiLightSourceType::aiLightSource_DIRECTIONAL
+        );
         assert(light->mColorAmbient == light->mColorDiffuse && light->mColorDiffuse == light->mColorSpecular);
 
-        logger::info("Light {} ({})", light->mName.C_Str(), static_cast<uint32_t>(light->mType));
-        logger::info(
+        logger::debug("Light {} ({})", light->mName.C_Str(), static_cast<uint32_t>(light->mType));
+        logger::debug(
             "Light Color ({}, {}, {})", light->mColorDiffuse.r, light->mColorDiffuse.g, light->mColorDiffuse.b
-        );
-        logger::info(
-            "Light Attenuation ({}, {}, {})", light->mAttenuationConstant, light->mAttenuationLinear,
-            light->mAttenuationQuadratic
         );
 
         const aiNode *node = scene->mRootNode->FindNode(light->mName);
         const uint32_t nodeIndex = sceneNodeIndices.at(node);
 
-        sceneBuilder.AddLight(
+        switch (light->mType)
+        {
+        case aiLightSourceType::aiLightSource_POINT:
+            sceneBuilder.AddLight(
+                {
+                    .Color = light->mColorDiffuse.IsBlack()
+                                 ? glm::vec3(1.0f)
+                                 : TrivialCopyUnsafe<aiColor3D, glm::vec3>(light->mColorDiffuse),
+                    .Position = TrivialCopy<aiVector3D, glm::vec3>(light->mPosition),
+                    .AttenuationConstant = light->mAttenuationConstant,
+                    .AttenuationLinear = light->mAttenuationLinear,
+                    .AttenuationQuadratic = light->mAttenuationQuadratic,
+                },
+                nodeIndex
+            );
+            break;
+        case aiLightSourceType::aiLightSource_DIRECTIONAL:
+            if (hasDirectionalLight)
             {
-                .Color = light->mColorDiffuse.IsBlack()
-                             ? glm::vec3(1.0f)
-                             : TrivialCopyUnsafe<aiColor3D, glm::vec3>(light->mColorDiffuse),
-                .Position = TrivialCopy<aiVector3D, glm::vec3>(light->mPosition),
-                .AttenuationConstant = light->mAttenuationConstant,
-                .AttenuationLinear = light->mAttenuationLinear,
-                .AttenuationQuadratic = light->mAttenuationQuadratic,
-            },
-            nodeIndex
-        );
+                logger::warn(
+                    "Only one directional light per scene is supported, ignoring light {}",
+                    light->mName.C_Str()
+                );
+                break;
+            }
+
+            sceneBuilder.SetDirectionalLight(
+                { .Color = light->mColorDiffuse.IsBlack()
+                               ? glm::vec3(1.0f)
+                               : TrivialCopyUnsafe<aiColor3D, glm::vec3>(light->mColorDiffuse),
+                  .Direction = TrivialCopy<aiVector3D, glm::vec3>(light->mDirection) },
+                nodeIndex
+            );
+            hasDirectionalLight = true;
+            break;
+        default:
+            throw error(std::format("Unuspported light type: {}", static_cast<uint32_t>(light->mType)));
+        }
     }
 }
 

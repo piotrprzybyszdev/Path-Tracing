@@ -27,7 +27,8 @@ layout(binding = 6, set = 0) readonly buffer MaterialBuffer {
 
 layout(binding = 7, set = 0) uniform LightsBuffer {
     uint u_lightCount;
-	Light[MaxLightCount] u_lights;
+	DirectionalLight u_directionalLight;
+	PointLight[MaxLightCount] u_lights;
 };
 
 layout(shaderRecordEXT, std430) buffer SBT {
@@ -90,15 +91,15 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0)
     return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 
-bool checkOccluded(Light light, vec3 position)
+bool checkOccluded(vec3 lightDir, vec3 position, float dist)
 {
 	if ((s_HitGroupFlags & HitGroupFlagsDisableShadows) != HitGroupFlagsNone)
 		return false;
 
-	vec3 direction = normalize(light.Position - position);
+	vec3 direction = -normalize(lightDir);
 
 	float tmin = 0.001;
-	float tmax = length(direction);
+	float tmax = dist;
 
 	isOccluded = true;
 
@@ -107,12 +108,10 @@ bool checkOccluded(Light light, vec3 position)
 	return isOccluded;
 }
 
-vec3 computeLightContribution(Light light, vec3 position, vec3 V, vec3 N, mat3 TBN, vec3 color, float roughness, float metalness)
+vec3 computeLightContribution(vec3 lightDir, float dist, vec3 lightColor, float attenuation, vec3 position, vec3 V, vec3 N, mat3 TBN, vec3 color, float roughness, float metalness)
 {
-	if (checkOccluded(light, position))
+	if (checkOccluded(lightDir, position, dist))
 		return vec3(0.0f);
-
-	const vec3 lightDir = position - light.Position;
 
 	const vec3 L = -normalize(lightDir);
 
@@ -120,10 +119,7 @@ vec3 computeLightContribution(Light light, vec3 position, vec3 V, vec3 N, mat3 T
 
 	const vec3 R = 2.0f * dot(L, N) * N - L;
 
-	const float dist = length(lightDir);
-	const float attenuation = 1.0f / (light.AttenuationConstant + dist * light.AttenuationLinear + dist * dist * light.AttenuationQuadratic);
-
-	const vec3 radiance = light.Color * attenuation;
+	const vec3 radiance = lightColor * attenuation;
 
 	vec3 F0 = vec3(0.04);	
     F0 = mix(F0, color, metalness);
@@ -173,9 +169,17 @@ void main()
 
 	const float ambient = 0.05f;
 	vec3 totalLight = color * ambient;
+
+	const float directionalLightDistance = 100000.0f;
+	totalLight += computeLightContribution(u_directionalLight.Direction, directionalLightDistance, u_directionalLight.Color, 1.0f, vertex.Position, V, N, TBN, color, roughness, metalness);
+	
 	for (uint lightIndex = 0; lightIndex < u_lightCount; lightIndex++)
 	{
-		const vec3 lightContribution = computeLightContribution(u_lights[lightIndex], vertex.Position, V, N, TBN, color, roughness, metalness);
+		const PointLight light = u_lights[lightIndex];
+		const vec3 lightDirection = vertex.Position - light.Position;
+		const float dist = length(lightDirection);
+		const float attenuation = 1.0f / (light.AttenuationConstant + dist * light.AttenuationLinear + dist * dist * light.AttenuationQuadratic);
+		const vec3 lightContribution = computeLightContribution(lightDirection, dist, light.Color, attenuation, vertex.Position, V, N, TBN, color, roughness, metalness);
 		totalLight += lightContribution;
 	}
 
@@ -185,7 +189,7 @@ void main()
 		hitValue = totalLight;
 		break;
 	case RenderModeWorldPosition:
-		hitValue = vertex.Position.xyz;
+		hitValue = vertex.Position;
 		break;
 	case RenderModeNormal:
 		hitValue = N;

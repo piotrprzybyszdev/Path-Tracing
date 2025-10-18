@@ -16,7 +16,8 @@ Scene::Scene(
     std::vector<glm::mat3x4> &&transforms, std::vector<Geometry> &&geometries,
     std::vector<Shaders::Material> &&materials, std::vector<TextureInfo> &&textures,
     std::vector<Model> &&models, std::vector<ModelInstance> &&modelInstances, std::vector<Bone> &&bones,
-    SceneGraph &&sceneGraph, std::vector<LightInfo> &&lightInfos, std::vector<Shaders::Light> &&lights,
+    SceneGraph &&sceneGraph, std::vector<LightInfo> &&lightInfos,
+    std::vector<Shaders::PointLight> &&pointLights, Shaders::DirectionalLight &&directionalLight,
     SkyboxVariant &&skybox, const std::vector<CameraInfo> &cameraInfos
 )
     : m_Vertices(std::move(vertices)), m_AnimatedVertices(std::move(animatedVertices)),
@@ -25,7 +26,8 @@ Scene::Scene(
       m_Materials(std::move(materials)), m_Textures(std::move(textures)), m_Models(std::move(models)),
       m_ModelInstances(std::move(modelInstances)), m_Bones(std::move(bones)),
       m_BoneTransforms(m_Bones.size()), m_Graph(std::move(sceneGraph)), m_LightInfos(std::move(lightInfos)),
-      m_Lights(std::move(lights)), m_Skybox(std::move(skybox)), m_ActiveCameraId(g_InputCameraId)
+      m_PointLights(std::move(pointLights)), m_DirectionalLight(std::move(directionalLight)),
+      m_Skybox(std::move(skybox)), m_ActiveCameraId(g_InputCameraId)
 {
     auto nodes = m_Graph.GetSceneNodes();
 
@@ -53,8 +55,8 @@ void Scene::Update(float timeStep)
         m_BoneTransforms[i] = m_Bones[i].Offset * nodes[m_Bones[i].SceneNodeIndex].CurrentTransform;
 
     for (int i = 0; i < m_LightInfos.size(); i++)
-        m_Lights[i].Position = glm::vec4(m_LightInfos[i].Position, 1.0f) *
-                               nodes[m_LightInfos[i].SceneNodeIndex].CurrentTransform;
+        m_PointLights[i].Position = glm::vec4(m_LightInfos[i].Position, 1.0f) *
+                                    nodes[m_LightInfos[i].SceneNodeIndex].CurrentTransform;
 
     GetActiveCamera().OnUpdate(timeStep);
 }
@@ -159,11 +161,17 @@ void SceneBuilder::SetAbsoluteTransform(uint32_t sceneNodeIndex)
     m_IsRelativeTransform[sceneNodeIndex] = false;
 }
 
-void SceneBuilder::AddLight(Shaders::Light &&light, uint32_t sceneNodeIndex)
+void SceneBuilder::AddLight(Shaders::PointLight &&light, uint32_t sceneNodeIndex)
 {
     assert(m_LightInfos.size() < Shaders::MaxLightCount);
     m_LightInfos.emplace_back(sceneNodeIndex, light.Position);
-    m_Lights.push_back(std::move(light));
+    m_PointLights.push_back(std::move(light));
+}
+
+void SceneBuilder::SetDirectionalLight(Shaders::DirectionalLight &&light, uint32_t sceneNodeIndex)
+{
+    light.Direction = glm::vec4(light.Direction, 0.0f) * m_SceneNodes[sceneNodeIndex].Transform;
+    m_DirectionalLight = std::move(light);
 }
 
 void SceneBuilder::SetSkybox(Skybox2D &&skybox)
@@ -188,16 +196,14 @@ std::shared_ptr<Scene> SceneBuilder::CreateSceneShared()
     for (const auto &info : m_ModelInstanceInfos)
         modelInstances.emplace_back(info.first, info.second, m_SceneNodes[info.second].Transform);
 
-    if (m_Lights.empty())
-        m_Lights.push_back(g_DefaultLight);
-
     auto scene = std::make_shared<Scene>(
         std::move(m_Vertices), std::move(m_AnimatedVertices), std::move(m_Indices),
         std::move(m_AnimatedIndices), std::move(m_Transforms), std::move(m_Geometries),
         std::move(m_Materials), std::move(m_Textures), std::move(m_Models), std::move(modelInstances),
         std::move(m_Bones),
         SceneGraph(std::move(m_SceneNodes), std::move(m_IsRelativeTransform), std::move(m_Animations)),
-        std::move(m_LightInfos), std::move(m_Lights), std::move(m_Skybox), m_CameraInfos
+        std::move(m_LightInfos), std::move(m_PointLights), std::move(m_DirectionalLight), std::move(m_Skybox),
+        std::move(m_CameraInfos)
     );
 
     m_MeshOffset = 0;
@@ -219,8 +225,9 @@ std::shared_ptr<Scene> SceneBuilder::CreateSceneShared()
     m_IsRelativeTransform.clear();
     m_IsRelativeTransform.push_back(true);
     m_Animations.clear();
-    m_Lights.clear();
     m_LightInfos.clear();
+    m_PointLights.clear();
+    m_DirectionalLight = g_DefaultLight;
     m_Skybox = SkyboxClearColor {};
     m_CameraInfos.clear();
 
@@ -312,9 +319,14 @@ bool Scene::HasSkeletalAnimations() const
     return m_HasSkeletalAnimations;
 }
 
-std::span<const Shaders::Light> Scene::GetLights() const
+std::span<const Shaders::PointLight> Scene::GetPointLights() const
 {
-    return m_Lights;
+    return m_PointLights;
+}
+
+const Shaders::DirectionalLight &Scene::GetDirectionalLight() const
+{
+    return m_DirectionalLight;
 }
 
 const SkyboxVariant &Scene::GetSkybox() const

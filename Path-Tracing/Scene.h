@@ -128,7 +128,8 @@ public:
         std::vector<glm::mat3x4> &&transforms, std::vector<Geometry> &&geometries,
         std::vector<Shaders::Material> &&materials, std::vector<TextureInfo> &&textures,
         std::vector<Model> &&models, std::vector<ModelInstance> &&modelInstances, std::vector<Bone> &&bones,
-        SceneGraph &&sceneGraph, std::vector<LightInfo> &&lightInfos, std::vector<Shaders::Light> &&lights,
+        SceneGraph &&sceneGraph, std::vector<LightInfo> &&lightInfos,
+        std::vector<Shaders::PointLight> &&pointLights, Shaders::DirectionalLight &&directionalLight,
         SkyboxVariant &&skybox, const std::vector<CameraInfo> &cameraInfos
     );
 
@@ -151,7 +152,8 @@ public:
     [[nodiscard]] bool HasAnimations() const;
     [[nodiscard]] bool HasSkeletalAnimations() const;
 
-    [[nodiscard]] std::span<const Shaders::Light> GetLights() const;
+    [[nodiscard]] std::span<const Shaders::PointLight> GetPointLights() const;
+    [[nodiscard]] const Shaders::DirectionalLight &GetDirectionalLight() const;
 
     [[nodiscard]] const SkyboxVariant &GetSkybox() const;
 
@@ -189,12 +191,13 @@ private:
     bool m_HasSkeletalAnimations = false;
 
     std::vector<LightInfo> m_LightInfos;
-    std::vector<Shaders::Light> m_Lights;
+    std::vector<Shaders::PointLight> m_PointLights;
+    Shaders::DirectionalLight m_DirectionalLight;
 
     SkyboxVariant m_Skybox = SkyboxClearColor {};
 
     InputCamera m_InputCamera =
-        InputCamera(45.0f, 100.0f, 0.1f, glm::vec3(0.0f, 0.0f, 3.0f), glm::vec3(0.0f, 0.0f, -1.0f));
+        InputCamera(45.0f, 100.0f, 0.1f, glm::vec3(3.0f, 0.0f, 0.0f), glm::vec3(-1.0f, 0.0f, 0.0f));
     std::vector<AnimatedCamera> m_SceneCameras;
     CameraId m_ActiveCameraId = g_InputCameraId;
 };
@@ -222,7 +225,8 @@ public:
     uint32_t AddBone(Bone &&bone);
     void SetAbsoluteTransform(uint32_t sceneNodeIndex);
 
-    void AddLight(Shaders::Light &&light, uint32_t sceneNodeIndex);
+    void AddLight(Shaders::PointLight &&light, uint32_t sceneNodeIndex);
+    void SetDirectionalLight(Shaders::DirectionalLight &&light, uint32_t sceneNodeIndex);
 
     void SetSkybox(Skybox2D &&skybox);
     void SetSkybox(SkyboxCube &&skybox);
@@ -260,18 +264,18 @@ private:
 
     std::vector<Bone> m_Bones;
 
-    std::vector<Shaders::Light> m_Lights;
     std::vector<LightInfo> m_LightInfos;
+    std::vector<Shaders::PointLight> m_PointLights;
+    Shaders::DirectionalLight m_DirectionalLight = g_DefaultLight;
 
     SkyboxVariant m_Skybox = SkyboxClearColor {};
 
     std::vector<CameraInfo> m_CameraInfos;
 
 private:
-    static inline const Shaders::Light g_DefaultLight = {
+    static inline const Shaders::DirectionalLight g_DefaultLight = {
         .Color = glm::vec3(1.0f),
-        .Position = glm::vec3(3.0f, 15.0f, 7.0f),
-        .AttenuationConstant = 1.0f,
+        .Direction = glm::vec3(0.0f, -1.0f, 0.0f),
     };
 
 private:
