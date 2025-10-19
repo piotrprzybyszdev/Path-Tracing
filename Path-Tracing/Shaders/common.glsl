@@ -2,6 +2,8 @@
 
 const float PI = 3.14159265359f;
 
+const float MISS_HIT_DISTANCE = -1.0f;
+
 vec3 computeBarycentricCoords(vec3 attribs)
 {
     return vec3(1.0f - attribs.x - attribs.y, attribs.x, attribs.y);
@@ -123,6 +125,20 @@ Vertex getInterpolatedVertex(VertexBuffer vertices, IndexBuffer indices, uint in
     );
 }
 
+const uint MaterialTypeTextured     = 0u;
+const uint MaterialTypeSolidColor   = 1u;
+
+uint packMaterialId(uint materialIndex, uint materialType)
+{
+    return (materialIndex << 8) | materialType;
+}
+
+uint unpackMaterialId(uint materialId, out uint materialType)
+{
+    materialType = materialId & 0x000000ffu;
+    return materialId >> 8;
+}
+
 uint hash(uint x)
 {
     x *= 0x1eca7d79u;
@@ -142,4 +158,38 @@ vec3 getRandomColor(uint x)
     float b = ((rand & 0x0000ff00) >> 8) / 255.0f;
 
     return vec3(r, g, b);
+}
+
+uint jenkinsHash(uint x)
+{
+    x += x << 10;
+    x ^= x >> 6;
+    x += x << 3;
+    x ^= x >> 11;
+    x += x << 15;
+    return x;
+}
+
+uint initRng(uvec2 pixel, uvec2 resolution, uint frame)
+{
+    uint rngState = uint(dot(pixel, uvec2(1, resolution.x))) ^ jenkinsHash(frame);
+    return jenkinsHash(rngState);
+}
+
+float uintToFloat(uint x)
+{
+    return uintBitsToFloat(0x3f800000 | (x >> 9)) - 1.0f;
+}
+
+uint xorshift(inout uint rngState)
+{
+    rngState ^= rngState << 13;
+    rngState ^= rngState >> 17;
+    rngState ^= rngState << 5;
+    return rngState;
+}
+
+float rand(inout uint rngState)
+{
+    return uintToFloat(xorshift(rngState));
 }

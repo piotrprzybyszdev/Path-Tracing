@@ -167,7 +167,7 @@ Shaders::SolidColorMaterial LoadSolidColorMaterial(const aiMaterial *material)
     material->Get(AI_MATKEY_BASE_COLOR, color);
 
     return Shaders::SolidColorMaterial { 
-        .Color = TrivialCopyUnsafe<aiColor3D, glm::vec3>(color)
+        .Color = TrivialCopyUnsafe<aiColor3D, glm::vec3>(color),
     };
 }
 

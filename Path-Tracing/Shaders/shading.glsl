@@ -44,7 +44,7 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0)
     return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 
-vec3 computeLightContribution(vec3 lightDir, vec3 lightColor, float attenuation, vec3 position, vec3 V, vec3 N, mat3 TBN, vec3 color, float roughness, float metalness)
+vec3 computeLightContribution(vec3 lightDir, vec3 lightColor, float attenuation, vec3 position, vec3 V, vec3 N, vec3 color, float roughness, float metalness)
 {
     const vec3 L = -normalize(lightDir);
 
@@ -75,4 +75,30 @@ vec3 computeLightContribution(vec3 lightDir, vec3 lightColor, float attenuation,
     float NdotL = max(dot(N, L), 0.0);
 
     return (kD * color / PI + specular) * radiance * NdotL;
+}
+
+void sampleMaterial(uint materialId, float lod, out vec3 color, out float roughness, out float metalness)
+{
+    uint materialType;
+    uint materialIndex = unpackMaterialId(payload.MaterialId, materialType);
+
+    if (materialType == MaterialTypeTextured)
+    {
+        const TexturedMaterial material = texturedMaterials[materialIndex];
+        color = textureLod(textures[GetColorTextureIndex(0, material)], payload.TexCoords, lod).xyz;
+        roughness = textureLod(textures[GetRoughnessTextureIndex(0, material)], payload.TexCoords, lod).y;
+        metalness = textureLod(textures[GetMetalicTextureIndex(0, material)], payload.TexCoords, lod).z;
+    }
+    else
+    {
+        const SolidColorMaterial material = solidColorMaterials[materialIndex];
+        color = material.Color;
+        roughness = DefaultRoughness;
+        metalness = DefaultMetalness;
+    }
+}
+
+vec3 getRandomUnitSphere(inout uint rngState)
+{
+    return normalize(vec3(rand(rngState), rand(rngState), rand(rngState)));
 }

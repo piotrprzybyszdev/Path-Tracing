@@ -58,8 +58,18 @@ const uint RaygenFlagsConstantId            = 1u;
 const uint MissFlagsConstantId              = 2u;
 const uint HitGroupFlagsConstantId          = 3u;
 
-const uint MaxRecursionDepth                = 2u;
-const uint MaxPayloadSize                   = 12u;
+struct Payload
+{
+	vec3 Position;
+    float HitDistance;
+    vec3 Normal;
+    float Lod;
+    vec2 TexCoords;
+    uint MaterialId;
+};
+
+const uint MaxRecursionDepth                = 1u;
+const uint MaxPayloadSize                   = 44u;
 const uint MaxHitAttributeSize              = 12u;
 
 const uint PrimaryRayHitGroupIndex          = 0u;

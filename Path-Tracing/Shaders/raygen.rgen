@@ -1,41 +1,113 @@
 #version 460
 #extension GL_EXT_ray_tracing : require
 #extension GL_EXT_buffer_reference : require
+#extension GL_EXT_nonuniform_qualifier : require
 
 #include "ShaderRendererTypes.incl"
 
 layout(constant_id = RaygenFlagsConstantId) const uint s_RaygenFlags = RaygenFlagsNone;
+layout(constant_id = HitGroupFlagsConstantId) const uint s_HitGroupFlags = HitGroupFlagsNone;
 
 layout(binding = 0, set = 0) uniform accelerationStructureEXT u_TopLevelAS;
 layout(binding = 1, set = 0, rgba8) uniform image2D u_Image;
 layout(binding = 2, set = 0) uniform MainBlock {
-	RaygenUniformData mainUniform;
+    RaygenUniformData mainUniform;
 };
 
-layout(location = 0) rayPayloadEXT vec3 hitValue;
+layout(binding = 3, set = 0) uniform sampler2D textures[];
+
+layout(binding = 6, set = 0) readonly buffer TexturedMaterialBuffer {
+    TexturedMaterial[] texturedMaterials;
+};
+
+layout(binding = 7, set = 0) readonly buffer SolidColorMaterialBuffer {
+    SolidColorMaterial[] solidColorMaterials;
+};
+
+layout(binding = 8, set = 0) uniform LightsBuffer {
+    uint u_lightCount;
+    DirectionalLight u_directionalLight;
+    PointLight[MaxLightCount] u_lights;
+};
+
+layout(location = 0) rayPayloadEXT Payload payload;
+layout(location = 1) rayPayloadEXT bool isOccluded;
+
+#include "shading.glsl"
+#include "tracing.glsl"
 
 void main()
 {
-	const Camera camera = mainUniform.u_Camera;
+    // TODO: Pass frame number
+    uint rng = initRng(gl_LaunchIDEXT.xy, gl_LaunchSizeEXT.xy, 0);
 
-	const vec2 pixelCenter = vec2(gl_LaunchIDEXT.xy) + vec2(0.5);
-	const vec2 inUV = pixelCenter / vec2(gl_LaunchSizeEXT.xy);
-	vec2 d = inUV * 2.0 - 1.0;
+    const Camera camera = mainUniform.u_Camera;
 
-	vec4 origin = camera.ViewInverse * vec4(0, 0, 0, 1);
-	vec4 target = camera.ProjInverse * vec4(d.x, d.y, 1, 1);
-	vec4 direction = camera.ViewInverse * vec4(normalize(target.xyz), 0);
+    const vec2 pixelCenter = vec2(gl_LaunchIDEXT.xy) + vec2(0.5);
+    const vec2 inUV = pixelCenter / vec2(gl_LaunchSizeEXT.xy);
+    vec2 d = inUV * 2.0 - 1.0;
 
-	float tmin = 0.001;
-	float tmax = 10000.0;
+    vec3 origin = (camera.ViewInverse * vec4(0, 0, 0, 1)).xyz;
+    vec3 target = (camera.ProjInverse * vec4(d.x, d.y, 1, 1)).xyz;
+    vec3 direction = (camera.ViewInverse * vec4(normalize(target), 0)).xyz;
 
-	uint flags = gl_RayFlagsNoneEXT;
-	if ((s_RaygenFlags & RaygenFlagsForceOpaque) != RaygenFlagsNone)
-		flags |= gl_RayFlagsOpaqueEXT;
-	if ((s_RaygenFlags & RaygenFlagsCullBackFaces) != RaygenFlagsNone)
-		flags |= gl_RayFlagsCullBackFacingTrianglesEXT;
+    float tmin = 0.00001;
+    float tmax = 10000.0;
 
-	traceRayEXT(u_TopLevelAS, flags, 0xff, PrimaryRayHitGroupIndex, 2, PrimaryRayMissGroupIndex, origin.xyz, tmin, direction.xyz, tmax, 0);
-	
-	imageStore(u_Image, ivec2(gl_LaunchIDEXT.xy), vec4(hitValue * mainUniform.u_Exposure, 0.0f));
+    uint flags = gl_RayFlagsNoneEXT;
+    if ((s_RaygenFlags & RaygenFlagsForceOpaque) != RaygenFlagsNone)
+        flags |= gl_RayFlagsOpaqueEXT;
+    if ((s_RaygenFlags & RaygenFlagsCullBackFaces) != RaygenFlagsNone)
+        flags |= gl_RayFlagsCullBackFacingTrianglesEXT;
+
+    const float ambient = 0.05f;
+    vec3 totalLight = vec3(0.0f);
+    vec3 throughput = vec3(1.0f);
+
+    const uint totalBounces = 1;
+    for (int bounce = 0; bounce < totalBounces; bounce++)
+    {
+        traceRayEXT(u_TopLevelAS, flags, 0xff, PrimaryRayHitGroupIndex, 2, PrimaryRayMissGroupIndex, origin, tmin, direction, tmax, 0);
+
+        if (payload.HitDistance == MISS_HIT_DISTANCE)
+        {
+            totalLight += throughput * payload.Position;
+            break;
+        }
+            
+        payload.Position = offsetRayOrigin(payload.Position, payload.Normal);
+
+        const float lod = payload.Lod;
+
+        vec3 color;
+        float roughness, metalness;
+        sampleMaterial(payload.MaterialId, lod, color, roughness, metalness);
+
+        const vec3 viewDir = direction;
+        const vec3 V = -normalize(viewDir);
+        const vec3 N = payload.Normal;
+            
+        if (!checkOccluded(u_directionalLight.Direction, payload.Position, directionalLightDistance))
+            totalLight += throughput * computeLightContribution(u_directionalLight.Direction, u_directionalLight.Color, 1.0f, payload.Position, V, N, color, roughness, metalness);
+
+        // TODO: Handle RenderModes
+        if (totalBounces == 1)
+            totalLight += ambient * color;
+
+        throughput *= color;
+        
+        // TODO: Handle point lights
+
+        origin = payload.Position;
+        direction = reflect(direction, N);
+
+        // naive diffuse reflection test
+        vec3 offset = getRandomUnitSphere(rng);
+        if (dot(N, offset) < 0)
+            offset *= -1;
+        direction += offset;
+        // (comment out to get perfect specular reflection)        
+    }
+
+    imageStore(u_Image, ivec2(gl_LaunchIDEXT.xy), vec4(totalLight * mainUniform.u_Exposure, 1.0f));
 }

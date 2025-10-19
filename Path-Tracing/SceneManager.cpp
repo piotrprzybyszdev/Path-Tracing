@@ -16,7 +16,7 @@ std::jthread SceneManager::s_LoadingThread = {};
 void SceneManager::Init()
 {
     ExampleScenes::AddScenes(s_SceneGroups);
-    SceneManager::SetActiveScene("Khronos Scenes", "Sponza");
+    SceneManager::SetActiveScene("Test Scenes", "Default");
     WaitLoadFinish();
 }
 

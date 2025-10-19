@@ -11,7 +11,7 @@ layout(binding = 9, set = 0) uniform sampler2D skybox2D;
 
 layout(binding = 10, set = 0) uniform samplerCube skyboxCube;
 
-layout(location = 0) rayPayloadInEXT vec3 hitValue;
+layout(location = 0) rayPayloadInEXT Payload payload;
 
 void main()
 {
@@ -24,12 +24,14 @@ void main()
 
         const vec2 texCoords = vec2(longitude / 2.0f, latitude) / PI + 0.5f;
 
-        hitValue = texture(skybox2D, texCoords).xyz;
+        payload.Position = texture(skybox2D, texCoords).xyz;
     }
     else if ((s_MissFlags & MissFlagsSkyboxCube) != MissFlagsNone)
     {
-        hitValue = texture(skyboxCube, gl_WorldRayDirectionEXT).xyz;
+        payload.Position = texture(skyboxCube, gl_WorldRayDirectionEXT).xyz;
     }
     else
-        hitValue = vec3(0.3f, 0.3f, 0.3f);
+        payload.Position = vec3(0.0f, 0.0f, 0.0f);
+
+    payload.HitDistance = MISS_HIT_DISTANCE;
 }

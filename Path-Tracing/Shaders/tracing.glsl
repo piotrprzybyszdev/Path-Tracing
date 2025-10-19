@@ -1,5 +1,11 @@
 #include "ShaderRendererTypes.incl"
 
+// TODO: Fix the `shadow terminator problem` properly
+vec3 offsetRayOrigin(vec3 origin, vec3 normal)
+{
+    return origin + normal * 0.01f;
+}
+
 bool checkOccluded(vec3 lightDir, vec3 position, float dist)
 {
     if ((s_HitGroupFlags & HitGroupFlagsDisableShadows) != HitGroupFlagsNone)
@@ -7,7 +13,7 @@ bool checkOccluded(vec3 lightDir, vec3 position, float dist)
     
     vec3 direction = -normalize(lightDir);
 
-    float tmin = 0.001;
+    float tmin = 0.00001;
     float tmax = dist;
 
     isOccluded = true;

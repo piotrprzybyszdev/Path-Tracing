@@ -121,6 +121,7 @@ uint32_t SceneBuilder::AddMaterial(std::string name, Shaders::TexturedMaterial m
     if (m_TexturedMaterialIndices.contains(name))
         return m_TexturedMaterialIndices[name];
 
+    assert(m_TexturedMaterials.size() < Shaders::MaxMaterialCount);
     m_TexturedMaterials.push_back(material);
 
     m_TexturedMaterialIndices[std::move(name)] = m_TexturedMaterials.size() - 1;
@@ -135,6 +136,7 @@ uint32_t SceneBuilder::AddMaterial(std::string name, Shaders::SolidColorMaterial
     if (m_SolidColorMaterialIndices.contains(name))
         return m_SolidColorMaterialIndices[name];
 
+    assert(m_SolidColorMaterials.size() < Shaders::MaxMaterialCount);
     m_SolidColorMaterials.push_back(material);
 
     m_SolidColorMaterialIndices[std::move(name)] = m_SolidColorMaterials.size() - 1;
