@@ -10,12 +10,8 @@
 namespace PathTracing
 {
 
-ShaderBindingTable::ShaderBindingTable(
-    uint32_t raygenGroupIndex, std::vector<uint32_t> &&missGroupIndices,
-    std::vector<uint32_t> &&hitGroupIndices
-)
-    : m_RaygenGroupIndex(raygenGroupIndex), m_MissGroupIndices(std::move(missGroupIndices)),
-      m_HitGroupIndices(std::move(hitGroupIndices)),
+ShaderBindingTable::ShaderBindingTable(uint32_t hitGroupCount)
+    : m_HitGroupCount(hitGroupCount),
       m_HandleSize(DeviceContext::GetRayTracingPipelineProperties().shaderGroupHandleSize),
       m_HitGroupSize(m_HandleSize + sizeof(Shaders::SBTBuffer)),
       m_AlignedHandleSize(Utils::AlignTo(
@@ -25,10 +21,10 @@ ShaderBindingTable::ShaderBindingTable(
           m_HitGroupSize, DeviceContext::GetRayTracingPipelineProperties().shaderGroupHandleAlignment
       )),
       m_GroupBaseAlignment(DeviceContext::GetRayTracingPipelineProperties().shaderGroupBaseAlignment),
-      m_HitRecordSize(m_AlignedHitGroupSize * m_HitGroupIndices.size()), m_RaygenRecordSize(m_HandleSize),
+      m_HitRecordSize(m_AlignedHitGroupSize * m_HitGroupCount), m_RaygenRecordSize(m_HandleSize),
       m_RaygenTableSize(Utils::AlignTo(m_RaygenRecordSize, m_GroupBaseAlignment)),
       m_MissRecordSize(m_AlignedHandleSize),
-      m_MissTableSize(Utils::AlignTo(m_MissRecordSize * m_MissGroupIndices.size(), m_GroupBaseAlignment))
+      m_MissTableSize(Utils::AlignTo(m_MissRecordSize * m_HitGroupCount, m_GroupBaseAlignment))
 {
     assert(
         sizeof(Shaders::SBTBuffer) <= DeviceContext::GetRayTracingPipelineProperties().maxRayHitAttributeSize
@@ -54,39 +50,51 @@ ShaderBindingTable::~ShaderBindingTable() = default;
  *  ------------------------------------------------------------|
  *       (eg. primary ray)       |      (eg. occulsion ray)
  */
-void ShaderBindingTable::AddRecord(std::span<const Shaders::SBTBuffer> buffers)
+void ShaderBindingTable::AddRecord(std::span<const SBTEntryInfo> entries)
 {
-    assert(buffers.size() == m_HitGroupIndices.size());
+    assert(entries.size() == m_HitGroupCount);
 
     if (m_ClosestHitRecordCount == m_ClosestHitRecordCapacity)
     {
         m_ClosestHitRecordCapacity = m_ClosestHitRecordCapacity == 0 ? 1 : m_ClosestHitRecordCapacity * 2;
         m_HitGroupRecords.reserve(m_ClosestHitRecordCapacity * m_HitRecordSize);
+        m_HitGroupIndices.reserve(m_ClosestHitRecordCapacity * entries.size());
     }
 
     static_assert(Utils::uploadable<Shaders::SBTBuffer>);
 
-    for (const Shaders::SBTBuffer &data : buffers)
+    for (const SBTEntryInfo &entry : entries)
     {
         // Leave space for handle
         m_HitGroupRecords.resize(m_HitGroupRecords.size() + m_HandleSize);
 
         // Copy buffer
-        const auto *ptr = reinterpret_cast<const std::byte *>(&data);
-        std::copy(ptr, ptr + sizeof(Shaders::SBTBuffer), std::back_inserter(m_HitGroupRecords));
+        const auto data = ToByteSpan(entry.Buffer);
+        std::ranges::copy(data, std::back_inserter(m_HitGroupRecords));
 
         // Skip padding
         const uint32_t padding = m_AlignedHitGroupSize - m_HandleSize - sizeof(Shaders::SBTBuffer);
         m_HitGroupRecords.resize(m_HitGroupRecords.size() + padding);
+
+        // Store the group indices
+        m_HitGroupIndices.push_back(entry.HitGroupIndex);
+        m_MaxShaderGroupIndex = std::max(m_MaxShaderGroupIndex, *std::ranges::max_element(m_HitGroupIndices));
     }
 
     m_ClosestHitRecordCount++;
     assert(m_ClosestHitRecordCount * m_HitRecordSize == m_HitGroupRecords.size());
 }
 
-void ShaderBindingTable::Upload(vk::Pipeline pipeline)
+void ShaderBindingTable::Upload(
+    vk::Pipeline pipeline, uint32_t raygenIndex, std::span<const uint32_t> missGroupIndices
+)
 {
-    const uint32_t shaderGroupCount = 1 + m_MissGroupIndices.size() + m_HitGroupIndices.size();
+     m_MaxShaderGroupIndex = std::max(
+        std::max(raygenIndex, *std::ranges::max_element(missGroupIndices)),
+        *std::ranges::max_element(m_HitGroupIndices)
+    );
+
+    const uint32_t shaderGroupCount = m_MaxShaderGroupIndex + 1;
     m_ShaderHandles = DeviceContext::GetLogical().getRayTracingShaderGroupHandlesKHR<std::byte>(
         pipeline, 0, shaderGroupCount, m_AlignedHandleSize * shaderGroupCount,
         Application::GetDispatchLoader()
@@ -99,32 +107,33 @@ void ShaderBindingTable::Upload(vk::Pipeline pipeline)
     Buffer shaderBindingTable =
         builder.CreateHostBuffer(shaderBindingTableSize, "Shader Binding Table Staging Buffer");
 
-    auto raygenHandle = std::span(m_ShaderHandles.begin() + m_RaygenGroupIndex * m_HandleSize, m_HandleSize);
+    auto raygenHandle = std::span(m_ShaderHandles.begin() + raygenIndex * m_HandleSize, m_HandleSize);
     shaderBindingTable.Upload(raygenHandle, offset);
     offset += m_RaygenTableSize;
 
-    for (int i = 0; i < m_MissGroupIndices.size(); i++)
+    for (int i = 0; i < missGroupIndices.size(); i++)
     {
-        const uint32_t handleIndex = m_MissGroupIndices[i];
+        const uint32_t handleIndex = missGroupIndices[i];
         auto handle = std::span(m_ShaderHandles.begin() + handleIndex * m_HandleSize, m_HandleSize);
         shaderBindingTable.Upload(handle, offset);
         offset += m_MissRecordSize;
     }
 
-    assert(offset == m_RaygenTableSize + m_MissRecordSize * m_MissGroupIndices.size());
+    assert(offset == m_RaygenTableSize + m_MissRecordSize * missGroupIndices.size());
 
     offset = m_RaygenTableSize + m_MissTableSize;
 
-    for (int i = 0; i < m_HitGroupIndices.size(); i++)
+    for (int i = 0; i < m_ClosestHitRecordCount; i++)
     {
-        const uint32_t handleIndex = m_HitGroupIndices[i];
-        auto handle = std::span(m_ShaderHandles.begin() + handleIndex * m_HandleSize, m_HandleSize);
+        for (int j = 0; j < m_HitGroupCount; j++)
+        {
+            const uint32_t handleIndex = m_HitGroupIndices[i * m_HitGroupCount + j];
+            auto handle = std::span(m_ShaderHandles.begin() + handleIndex * m_HandleSize, m_HandleSize);
 
-        const uint32_t hitRecordSize = m_HitGroupIndices.size() * m_AlignedHitGroupSize;
-        for (int j = 0; j < m_ClosestHitRecordCount; j++)
             std::ranges::copy(
-                handle, m_HitGroupRecords.begin() + j * hitRecordSize + i * m_AlignedHitGroupSize
+                handle, m_HitGroupRecords.begin() + i * m_HitRecordSize + j * m_AlignedHitGroupSize
             );
+        }
     }
     
     shaderBindingTable.Upload(std::span(m_HitGroupRecords), offset);

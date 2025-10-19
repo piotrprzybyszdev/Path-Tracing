@@ -7,9 +7,9 @@
 
 layout(constant_id = MissFlagsConstantId) const uint s_MissFlags = MissFlagsNone;
 
-layout(binding = 8, set = 0) uniform sampler2D skybox2D;
+layout(binding = 9, set = 0) uniform sampler2D skybox2D;
 
-layout(binding = 9, set = 0) uniform samplerCube skyboxCube;
+layout(binding = 10, set = 0) uniform samplerCube skyboxCube;
 
 layout(location = 0) rayPayloadInEXT vec3 hitValue;
 

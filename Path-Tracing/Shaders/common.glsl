@@ -95,22 +95,22 @@ Vertex interpolate(Vertex v1, Vertex v2, Vertex v3, vec3 barycentricCoords)
     return v;
 }
 
-uint GetColorTextureIndex(uint HitGroupFlags, Material material)
+uint GetColorTextureIndex(uint HitGroupFlags, TexturedMaterial material)
 {
     return (HitGroupFlags & HitGroupFlagsDisableColorTexture) == 0 ? material.ColorIdx : DefaultColorTextureIndex;
 }
 
-uint GetNormalTextureIndex(uint HitGroupFlags, Material material)
+uint GetNormalTextureIndex(uint HitGroupFlags, TexturedMaterial material)
 {
     return (HitGroupFlags & HitGroupFlagsDisableNormalTexture) == 0 ? material.NormalIdx : DefaultNormalTextureIndex;
 }
 
-uint GetRoughnessTextureIndex(uint HitGroupFlags, Material material)
+uint GetRoughnessTextureIndex(uint HitGroupFlags, TexturedMaterial material)
 {
     return (HitGroupFlags & HitGroupFlagsDisableRoughnessTexture) == 0 ? material.RoughnessIdx : DefaultRoughnessTextureIndex;
 }
 
-uint GetMetalicTextureIndex(uint HitGroupFlags, Material material)
+uint GetMetalicTextureIndex(uint HitGroupFlags, TexturedMaterial material)
 {
     return (HitGroupFlags & HitGroupFlagsDisableMetalicTexture) == 0 ? material.MetalicIdx : DefaultMetalicTextureIndex;
 }

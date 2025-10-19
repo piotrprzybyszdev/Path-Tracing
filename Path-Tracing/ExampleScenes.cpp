@@ -159,7 +159,7 @@ void CreateTexturedCubesScene(SceneBuilder &sceneBuilder)
         const std::string &material = materials[i];
         sceneBuilder.AddMaterial(
             assetNames[i],
-            Shaders::Material {
+            Shaders::TexturedMaterial {
                 sceneBuilder.AddTexture(AssetImporter::GetTextureInfo(
                     materialPath / (material + "_Color.jpg"), TextureType::Color
                 )),
@@ -222,21 +222,21 @@ void CreateTexturedCubesScene(SceneBuilder &sceneBuilder)
     }
 
     std::array<MeshInfo, 6> m1 = { {
-        { 0, 0, glm::mat4(1.0f) },
-        { 1, 0, glm::mat4(1.0f) },
-        { 2, 1, glm::mat4(1.0f) },
-        { 3, 1, glm::mat4(1.0f) },
-        { 4, 2, glm::mat4(1.0f) },
-        { 5, 2, glm::mat4(1.0f) },
+        { 0, 0, MaterialType::Textured, glm::mat4(1.0f) },
+        { 1, 0, MaterialType::Textured, glm::mat4(1.0f) },
+        { 2, 1, MaterialType::Textured, glm::mat4(1.0f) },
+        { 3, 1, MaterialType::Textured, glm::mat4(1.0f) },
+        { 4, 2, MaterialType::Textured, glm::mat4(1.0f) },
+        { 5, 2, MaterialType::Textured, glm::mat4(1.0f) },
     } };
 
     std::array<MeshInfo, 6> m2 = { {
-        { 0, 0, glm::mat4(1.0f) },
-        { 1, 0, glm::mat4(1.0f) },
-        { 2, 0, glm::mat4(1.0f) },
-        { 3, 0, glm::mat4(1.0f) },
-        { 4, 0, glm::mat4(1.0f) },
-        { 5, 0, glm::mat4(1.0f) },
+        { 0, 0, MaterialType::Textured, glm::mat4(1.0f) },
+        { 1, 0, MaterialType::Textured, glm::mat4(1.0f) },
+        { 2, 0, MaterialType::Textured, glm::mat4(1.0f) },
+        { 3, 0, MaterialType::Textured, glm::mat4(1.0f) },
+        { 4, 0, MaterialType::Textured, glm::mat4(1.0f) },
+        { 5, 0, MaterialType::Textured, glm::mat4(1.0f) },
     } };
 
     const uint32_t cube1 = sceneBuilder.AddModel(m1);
@@ -307,7 +307,7 @@ void CreateReuseMeshCubesScene(SceneBuilder &sceneBuilder)
         const std::string &material = materials[i];
         sceneBuilder.AddMaterial(
             assetNames[i],
-            Shaders::Material {
+            Shaders::TexturedMaterial {
                 sceneBuilder.AddTexture(AssetImporter::GetTextureInfo(
                     materialPath / (material + "_Color.jpg"), TextureType::Color
                 )),
@@ -355,14 +355,14 @@ void CreateReuseMeshCubesScene(SceneBuilder &sceneBuilder)
     }
 
     std::array<MeshInfo, 6> m = { {
-        { 0, 1, glm::mat4(1.0f) },
-        { 0, 1,
+        { 0, 1, MaterialType::Textured, glm::mat4(1.0f) },
+        { 0, 1, MaterialType::Textured,
           glm::transpose(glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f))) },
-        { 1, 1, glm::mat4(1.0f) },
-        { 1, 2,
+        { 1, 1, MaterialType::Textured, glm::mat4(1.0f) },
+        { 1, 2, MaterialType::Textured,
           glm::transpose(glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(0.0f, 1.0f, 0.0f))) },
-        { 2, 2, glm::mat4(1.0f) },
-        { 2, 2,
+        { 2, 2, MaterialType::Textured, glm::mat4(1.0f) },
+        { 2, 2, MaterialType::Textured,
           glm::transpose(glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(0.0f, 0.0f, 1.0f))) },
     } };
 

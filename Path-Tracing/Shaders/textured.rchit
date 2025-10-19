@@ -22,10 +22,10 @@ layout(binding = 5, set = 0) readonly buffer GeometryBuffer {
 };
 
 layout(binding = 6, set = 0) readonly buffer MaterialBuffer {
-	Material[] materials;
+	TexturedMaterial[] materials;
 };
 
-layout(binding = 7, set = 0) uniform LightsBuffer {
+layout(binding = 8, set = 0) uniform LightsBuffer {
     uint u_lightCount;
 	DirectionalLight u_directionalLight;
 	PointLight[MaxLightCount] u_lights;
@@ -39,6 +39,8 @@ layout(location = 0) rayPayloadInEXT vec3 hitValue;
 layout(location = 1) rayPayloadEXT bool isOccluded;
 hitAttributeEXT vec3 attribs;
 
+#include "shading.glsl"
+
 Vertex transform(Vertex vertex, uint transformIndex)
 {
     const mat3x4 transform = mat3x4(mat4(transforms[transformIndex]) * gl_ObjectToWorld3x4EXT);
@@ -49,98 +51,6 @@ Vertex transform(Vertex vertex, uint transformIndex)
     vertex.Normal = normalize((vec4(vertex.Normal, 0.0f) * transpose(inverse(mat4(transform)))).xyz);  // TODO: Calculate inverse on the CPU
 
     return vertex;
-}
-
-float DistributionGGX(vec3 N, vec3 H, float roughness)
-{
-    float a = roughness * roughness;
-    float a2 = a * a;
-    float NdotH = max(dot(N, H), 0.0);
-    float NdotH2 = NdotH * NdotH;
-
-    float nom = a2;
-    float denom = (NdotH2 * (a2 - 1.0) + 1.0);
-    denom = PI * denom * denom;
-
-    return nom / denom;
-}
-
-float GeometrySchlickGGX(float NdotV, float roughness)
-{
-    float r = (roughness + 1.0);
-    float k = (r * r) / 8.0;
-
-    float nom = NdotV;
-    float denom = NdotV * (1.0 - k) + k;
-
-    return nom / denom;
-}
-
-float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
-{
-    float NdotV = max(dot(N, V), 0.0);
-    float NdotL = max(dot(N, L), 0.0);
-    float ggx2 = GeometrySchlickGGX(NdotV, roughness);
-    float ggx1 = GeometrySchlickGGX(NdotL, roughness);
-
-    return ggx1 * ggx2;
-}
-
-vec3 fresnelSchlick(float cosTheta, vec3 F0)
-{
-    return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
-}
-
-bool checkOccluded(vec3 lightDir, vec3 position, float dist)
-{
-	if ((s_HitGroupFlags & HitGroupFlagsDisableShadows) != HitGroupFlagsNone)
-		return false;
-
-	vec3 direction = -normalize(lightDir);
-
-	float tmin = 0.001;
-	float tmax = dist;
-
-	isOccluded = true;
-
-	traceRayEXT(u_TopLevelAS, gl_RayFlagsNoneEXT, 0xff, 1, 2, 1, position, tmin, direction, tmax, 1);
-
-	return isOccluded;
-}
-
-vec3 computeLightContribution(vec3 lightDir, float dist, vec3 lightColor, float attenuation, vec3 position, vec3 V, vec3 N, mat3 TBN, vec3 color, float roughness, float metalness)
-{
-	if (checkOccluded(lightDir, position, dist))
-		return vec3(0.0f);
-
-	const vec3 L = -normalize(lightDir);
-
-	const vec3 H = normalize(V + L);
-
-	const vec3 R = 2.0f * dot(L, N) * N - L;
-
-	const vec3 radiance = lightColor * attenuation;
-
-	vec3 F0 = vec3(0.04);	
-    F0 = mix(F0, color, metalness);
-
-    float NDF = DistributionGGX(N, H, roughness);   
-    float G   = GeometrySmith(N, V, L, roughness);      
-    vec3 F    = fresnelSchlick(max(dot(H, V), 0.0), F0);
-           
-    vec3 numerator    = NDF * G * F; 
-    float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.0001; // + 0.0001 to prevent divide by zero
-    vec3 specular = numerator / denominator;
-
-    vec3 kS = F;
-
-    vec3 kD = vec3(1.0) - kS;
-
-    kD *= 1.0 - metalness;
-
-    float NdotL = max(dot(N, L), 0.0);        
-
-    return (kD * color / PI + specular) * radiance * NdotL;
 }
 
 void main()
@@ -156,7 +66,7 @@ void main()
 	// TODO: Calculate the LOD properly
 	const float lod = (s_HitGroupFlags & HitGroupFlagsDisableMipMaps) != HitGroupFlagsNone ? 0.0f : log2(gl_RayTmaxEXT);
 
-	const Material material = materials[sbt.MaterialIndex];
+	const TexturedMaterial material = materials[sbt.MaterialIndex];
 	const vec3 color = textureLod(textures[GetColorTextureIndex(s_HitGroupFlags, material)], vertex.TexCoords, lod).xyz;
 	const vec3 normal = textureLod(textures[GetNormalTextureIndex(s_HitGroupFlags, material)], vertex.TexCoords, lod).xyz;
 	const float roughness = textureLod(textures[GetRoughnessTextureIndex(s_HitGroupFlags, material)], vertex.TexCoords, lod).y;
@@ -167,11 +77,10 @@ void main()
 	const mat3 TBN = mat3(vertex.Tangent, vertex.Bitangent, vertex.Normal);
 	const vec3 N = normalize(vertex.Normal + TBN * (2.0f * normal - 1.0f));
 
-	const float ambient = 0.05f;
 	vec3 totalLight = color * ambient;
 
-	const float directionalLightDistance = 100000.0f;
-	totalLight += computeLightContribution(u_directionalLight.Direction, directionalLightDistance, u_directionalLight.Color, 1.0f, vertex.Position, V, N, TBN, color, roughness, metalness);
+	if (!checkOccluded(u_directionalLight.Direction, vertex.Position, directionalLightDistance))
+		totalLight += computeLightContribution(u_directionalLight.Direction, u_directionalLight.Color, 1.0f, vertex.Position, V, N, TBN, color, roughness, metalness);
 	
 	for (uint lightIndex = 0; lightIndex < u_lightCount; lightIndex++)
 	{
@@ -179,8 +88,12 @@ void main()
 		const vec3 lightDirection = vertex.Position - light.Position;
 		const float dist = length(lightDirection);
 		const float attenuation = 1.0f / (light.AttenuationConstant + dist * light.AttenuationLinear + dist * dist * light.AttenuationQuadratic);
-		const vec3 lightContribution = computeLightContribution(lightDirection, dist, light.Color, attenuation, vertex.Position, V, N, TBN, color, roughness, metalness);
-		totalLight += lightContribution;
+		
+		if (!checkOccluded(lightDirection, vertex.Position, dist))
+		{
+			const vec3 lightContribution = computeLightContribution(lightDirection, light.Color, attenuation, vertex.Position, V, N, TBN, color, roughness, metalness);
+			totalLight += lightContribution;
+		}
 	}
 
 	switch (s_RenderMode)

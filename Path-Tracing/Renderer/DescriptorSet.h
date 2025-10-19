@@ -83,6 +83,7 @@ private:
     std::vector<vk::DescriptorSetLayoutBinding> m_Bindings;
     std::vector<vk::DescriptorType> m_Types;
     std::vector<vk::DescriptorBindingFlags> m_Flags;
+    std::vector<bool> m_IsUsed;
 
     vk::DescriptorSetLayout m_Layout;
 };

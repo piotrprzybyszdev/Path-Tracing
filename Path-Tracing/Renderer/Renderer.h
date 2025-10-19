@@ -55,7 +55,8 @@ private:
     {
         ShaderId Raygen = ShaderLibrary::g_UnusedShaderId;
         ShaderId Miss = ShaderLibrary::g_UnusedShaderId;
-        ShaderId ClosestHit = ShaderLibrary::g_UnusedShaderId;
+        ShaderId TexturedClosestHit = ShaderLibrary::g_UnusedShaderId;
+        ShaderId SolidColorClosestHit = ShaderLibrary::g_UnusedShaderId;
         ShaderId AnyHit = ShaderLibrary::g_UnusedShaderId;
         ShaderId OcclusionMiss = ShaderLibrary::g_UnusedShaderId;
         ShaderId SkinningCompute = ShaderLibrary::g_UnusedShaderId;
@@ -66,7 +67,8 @@ private:
         uint32_t RaygenGroupIndex = -1;
         uint32_t PrimaryRayMissIndex = -1;
         uint32_t OcclusionRayMissIndex = -1;
-        uint32_t PrimaryRayHitIndex = -1;
+        uint32_t PrimaryRayTexturedHitIndex = -1;
+        uint32_t PrimaryRaySolidColorHitIndex = -1;
         uint32_t OcclusionRayHitIndex = -1;
         uint32_t HitGroupCount = 2;
     } s_RaytracingConfig;
@@ -112,7 +114,8 @@ private:
         Buffer AnimatedIndexBuffer;
         
         Buffer TransformBuffer;
-        Buffer MaterialBuffer;
+        Buffer TexturedMaterialBuffer;
+        Buffer SolidColorMaterialBuffer;
 
         Image Skybox;
 
@@ -147,6 +150,7 @@ private:
     static uint32_t AddDefaultTexture(glm::u8vec4 value, std::string &&name);
 
     static void CreatePipelines();
+    static void UpdateShaderBindingTable();
 
     static void RecordCommandBuffer(const RenderingResources &resources);
     static void UpdateAnimatedVertices(const RenderingResources &resources);

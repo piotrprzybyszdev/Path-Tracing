@@ -47,10 +47,17 @@ struct Geometry
     bool IsAnimated;
 };
 
+enum class MaterialType : uint8_t
+{
+    Textured,
+    SolidColor,
+};
+
 struct MeshInfo
 {
     uint32_t GeometryIndex;
     uint32_t MaterialIndex;
+    MaterialType MaterialType;
     glm::mat3x4 Transform;
 };
 
@@ -58,6 +65,7 @@ struct Mesh
 {
     uint32_t GeometryIndex;
     uint32_t MaterialIndex;
+    MaterialType MaterialType;
     uint32_t TransformBufferOffset;
 };
 
@@ -126,11 +134,12 @@ public:
         std::vector<Shaders::Vertex> &&vertices, std::vector<Shaders::AnimatedVertex> &&animatedVertices,
         std::vector<uint32_t> &&indices, std::vector<uint32_t> &&animatedIndices,
         std::vector<glm::mat3x4> &&transforms, std::vector<Geometry> &&geometries,
-        std::vector<Shaders::Material> &&materials, std::vector<TextureInfo> &&textures,
-        std::vector<Model> &&models, std::vector<ModelInstance> &&modelInstances, std::vector<Bone> &&bones,
-        SceneGraph &&sceneGraph, std::vector<LightInfo> &&lightInfos,
-        std::vector<Shaders::PointLight> &&pointLights, Shaders::DirectionalLight &&directionalLight,
-        SkyboxVariant &&skybox, const std::vector<CameraInfo> &cameraInfos
+        std::vector<Shaders::TexturedMaterial> &&texturedMaterials, std::vector<TextureInfo> &&textures,
+        std::vector<Shaders::SolidColorMaterial> &&solidColorMaterials, std::vector<Model> &&models,
+        std::vector<ModelInstance> &&modelInstances, std::vector<Bone> &&bones, SceneGraph &&sceneGraph,
+        std::vector<LightInfo> &&lightInfos, std::vector<Shaders::PointLight> &&pointLights,
+        Shaders::DirectionalLight &&directionalLight, SkyboxVariant &&skybox,
+        const std::vector<CameraInfo> &cameraInfos
     );
 
     void Update(float timeStep);
@@ -141,7 +150,8 @@ public:
     [[nodiscard]] std::span<const uint32_t> GetAnimatedIndices() const;
     [[nodiscard]] std::span<const glm::mat3x4> GetTransforms() const;
     [[nodiscard]] std::span<const Geometry> GetGeometries() const;
-    [[nodiscard]] std::span<const Shaders::Material> GetMaterials() const;
+    [[nodiscard]] std::span<const Shaders::TexturedMaterial> GetTexturedMaterials() const;
+    [[nodiscard]] std::span<const Shaders::SolidColorMaterial> GetSolidColorMaterials() const;
     [[nodiscard]] std::span<const TextureInfo> GetTextures() const;
 
     [[nodiscard]] std::span<const Model> GetModels() const;
@@ -177,7 +187,8 @@ private:
 
     std::vector<Geometry> m_Geometries;
 
-    std::vector<Shaders::Material> m_Materials;
+    std::vector<Shaders::TexturedMaterial> m_TexturedMaterials;
+    std::vector<Shaders::SolidColorMaterial> m_SolidColorMaterials;
 
     std::vector<TextureInfo> m_Textures;
 
@@ -197,7 +208,7 @@ private:
     SkyboxVariant m_Skybox = SkyboxClearColor {};
 
     InputCamera m_InputCamera =
-        InputCamera(45.0f, 100.0f, 0.1f, glm::vec3(3.0f, 0.0f, 0.0f), glm::vec3(-1.0f, 0.0f, 0.0f));
+        InputCamera(45.0f, 100.0f, 0.1f, glm::vec3(3.0f, 1.0f, 0.0f), glm::vec3(-1.0f, 0.0f, 0.0f));
     std::vector<AnimatedCamera> m_SceneCameras;
     CameraId m_ActiveCameraId = g_InputCameraId;
 };
@@ -214,7 +225,8 @@ public:
     uint32_t AddModelInstance(uint32_t modelIndex, uint32_t sceneNodeIndex);
 
     uint32_t AddTexture(TextureInfo &&texture);
-    uint32_t AddMaterial(std::string name, Shaders::Material material);
+    uint32_t AddMaterial(std::string name, Shaders::TexturedMaterial material);
+    uint32_t AddMaterial(std::string name, Shaders::SolidColorMaterial material);
 
     std::vector<Shaders::Vertex> &GetVertices();
     std::vector<uint32_t> &GetIndices();
@@ -249,8 +261,11 @@ private:
 
     std::vector<Geometry> m_Geometries;
 
-    std::vector<Shaders::Material> m_Materials;
-    std::unordered_map<std::string, uint32_t> m_MaterialIndices;
+    std::vector<Shaders::TexturedMaterial> m_TexturedMaterials;
+    std::unordered_map<std::string, uint32_t> m_TexturedMaterialIndices;
+
+    std::vector<Shaders::SolidColorMaterial> m_SolidColorMaterials;
+    std::unordered_map<std::string, uint32_t> m_SolidColorMaterialIndices;
 
     std::vector<TextureInfo> m_Textures;
     std::unordered_map<std::string, uint32_t> m_TextureIndices;

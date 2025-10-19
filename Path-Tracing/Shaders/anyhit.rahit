@@ -15,7 +15,7 @@ layout(binding = 5, set = 0) readonly buffer GeometryBuffer {
 };
 
 layout(binding = 6, set = 0) readonly buffer MaterialBuffer {
-	Material[] materials;
+	TexturedMaterial[] materials;
 };
 
 layout(shaderRecordEXT, std430) buffer SBT {
@@ -42,7 +42,7 @@ void main()
 
 	const Vertex vertex = getInterpolatedVertex(vertices, indices, gl_PrimitiveID * 3, barycentricCoords);
 
-	const Material material = materials[sbt.MaterialIndex];
+	const TexturedMaterial material = materials[sbt.MaterialIndex];
 	const float alpha = texture(textures[GetColorTextureIndex(s_HitGroupFlags, material)], vertex.TexCoords).a;
 
 	if (alpha < 0.9f)

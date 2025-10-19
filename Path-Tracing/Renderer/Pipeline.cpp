@@ -595,8 +595,9 @@ vk::PipelineLayout PipelineBuilder::CreateLayout()
     for (auto [binding, size] : m_SizeHints)
         m_Bindings[binding].first.descriptorCount = size;
 
-    for (const auto &binding : m_Bindings)
-        m_DescriptorSetBuilder.SetDescriptor(binding.first, binding.second);
+    for (int i = 0; i < m_Bindings.size(); i++)
+        if (m_IsUsed[i])
+            m_DescriptorSetBuilder.SetDescriptor(m_Bindings[i].first, m_Bindings[i].second);
 
     std::array<vk::DescriptorSetLayout, 1> layouts = { m_DescriptorSetBuilder.CreateLayout() };
     vk::PipelineLayoutCreateInfo createInfo(vk::PipelineLayoutCreateFlags(), layouts, m_PushConstants);

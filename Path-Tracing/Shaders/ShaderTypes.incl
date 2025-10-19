@@ -80,7 +80,12 @@ struct AnimatedVertex
     float BoneWeights[MaxBonesPerVertex];
 };
 
-struct Material
+struct SolidColorMaterial
+{
+    vec3 Color;
+};
+
+struct TexturedMaterial
 {
 	uint ColorIdx;
     uint NormalIdx;

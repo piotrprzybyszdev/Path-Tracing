@@ -131,6 +131,7 @@ DescriptorSetBuilder &DescriptorSetBuilder::SetDescriptor(
         m_Types.resize(bindingIndex + 1);
         m_Flags.resize(bindingIndex + 1);
         m_Bindings.resize(bindingIndex + 1);
+        m_IsUsed.resize(bindingIndex + 1);
     }
 
     m_Types[bindingIndex] = binding.descriptorType;
@@ -139,13 +140,27 @@ DescriptorSetBuilder &DescriptorSetBuilder::SetDescriptor(
                                 ? vk::DescriptorBindingFlags()
                                 : vk::DescriptorBindingFlagBits::ePartiallyBound;
     m_Bindings[bindingIndex] = binding;
+    m_IsUsed[bindingIndex] = true;
+
     return *this;
 }
 
 vk::DescriptorSetLayout DescriptorSetBuilder::CreateLayout()
 {
-    vk::DescriptorSetLayoutBindingFlagsCreateInfo flagsCreateInfo(m_Flags);
-    vk::DescriptorSetLayoutCreateInfo layoutCreateInfo(vk::DescriptorSetLayoutCreateFlags(), m_Bindings);
+    std::vector<vk::DescriptorBindingFlags> usedFlags;
+    std::vector<vk::DescriptorSetLayoutBinding> usedBindings;
+
+    for (int i = 0; i < m_Bindings.size(); i++)
+    {
+        if (!m_IsUsed[i])
+            continue;
+        
+        usedFlags.push_back(m_Flags[i]);
+        usedBindings.push_back(m_Bindings[i]);
+    }
+
+    vk::DescriptorSetLayoutBindingFlagsCreateInfo flagsCreateInfo(usedFlags);
+    vk::DescriptorSetLayoutCreateInfo layoutCreateInfo(vk::DescriptorSetLayoutCreateFlags(), usedBindings);
     layoutCreateInfo.setPNext(&flagsCreateInfo);
 
     m_Layout = DeviceContext::GetLogical().createDescriptorSetLayout(layoutCreateInfo);

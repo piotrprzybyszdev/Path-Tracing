@@ -14,16 +14,18 @@ Scene::Scene(
     std::vector<Shaders::Vertex> &&vertices, std::vector<Shaders::AnimatedVertex> &&animatedVertices,
     std::vector<uint32_t> &&indices, std::vector<uint32_t> &&animatedIndices,
     std::vector<glm::mat3x4> &&transforms, std::vector<Geometry> &&geometries,
-    std::vector<Shaders::Material> &&materials, std::vector<TextureInfo> &&textures,
-    std::vector<Model> &&models, std::vector<ModelInstance> &&modelInstances, std::vector<Bone> &&bones,
-    SceneGraph &&sceneGraph, std::vector<LightInfo> &&lightInfos,
-    std::vector<Shaders::PointLight> &&pointLights, Shaders::DirectionalLight &&directionalLight,
-    SkyboxVariant &&skybox, const std::vector<CameraInfo> &cameraInfos
+    std::vector<Shaders::TexturedMaterial> &&texturedMaterials, std::vector<TextureInfo> &&textures,
+    std::vector<Shaders::SolidColorMaterial> &&solidColorMaterials, std::vector<Model> &&models,
+    std::vector<ModelInstance> &&modelInstances, std::vector<Bone> &&bones, SceneGraph &&sceneGraph,
+    std::vector<LightInfo> &&lightInfos, std::vector<Shaders::PointLight> &&pointLights,
+    Shaders::DirectionalLight &&directionalLight, SkyboxVariant &&skybox,
+    const std::vector<CameraInfo> &cameraInfos
 )
     : m_Vertices(std::move(vertices)), m_AnimatedVertices(std::move(animatedVertices)),
       m_Indices(std::move(indices)), m_AnimatedIndices(std::move(animatedIndices)),
       m_Transforms(std::move(transforms)), m_Geometries(std::move(geometries)),
-      m_Materials(std::move(materials)), m_Textures(std::move(textures)), m_Models(std::move(models)),
+      m_TexturedMaterials(std::move(texturedMaterials)), m_Textures(std::move(textures)),
+      m_SolidColorMaterials(std::move(solidColorMaterials)), m_Models(std::move(models)),
       m_ModelInstances(std::move(modelInstances)), m_Bones(std::move(bones)),
       m_BoneTransforms(m_Bones.size()), m_Graph(std::move(sceneGraph)), m_LightInfos(std::move(lightInfos)),
       m_PointLights(std::move(pointLights)), m_DirectionalLight(std::move(directionalLight)),
@@ -114,18 +116,32 @@ uint32_t SceneBuilder::AddTexture(TextureInfo &&texture)
     return textureIndex;
 }
 
-uint32_t SceneBuilder::AddMaterial(std::string name, Shaders::Material material)
+uint32_t SceneBuilder::AddMaterial(std::string name, Shaders::TexturedMaterial material)
 {
-    if (m_MaterialIndices.contains(name))
-        return m_MaterialIndices[name];
+    if (m_TexturedMaterialIndices.contains(name))
+        return m_TexturedMaterialIndices[name];
 
-    m_Materials.push_back(material);
+    m_TexturedMaterials.push_back(material);
 
-    m_MaterialIndices[std::move(name)] = m_Materials.size() - 1;
+    m_TexturedMaterialIndices[std::move(name)] = m_TexturedMaterials.size() - 1;
 
-    logger::trace("Added material {} to Scene", name);
+    logger::trace("Added textured material {} to Scene", name);
 
-    return m_Materials.size() - 1;
+    return m_TexturedMaterials.size() - 1;
+}
+
+uint32_t SceneBuilder::AddMaterial(std::string name, Shaders::SolidColorMaterial material)
+{
+    if (m_SolidColorMaterialIndices.contains(name))
+        return m_SolidColorMaterialIndices[name];
+
+    m_SolidColorMaterials.push_back(material);
+
+    m_SolidColorMaterialIndices[std::move(name)] = m_SolidColorMaterials.size() - 1;
+
+    logger::trace("Added solid color material {} to Scene", name);
+
+    return m_SolidColorMaterials.size() - 1;
 }
 
 std::vector<Shaders::Vertex> &SceneBuilder::GetVertices()
@@ -199,8 +215,8 @@ std::shared_ptr<Scene> SceneBuilder::CreateSceneShared()
     auto scene = std::make_shared<Scene>(
         std::move(m_Vertices), std::move(m_AnimatedVertices), std::move(m_Indices),
         std::move(m_AnimatedIndices), std::move(m_Transforms), std::move(m_Geometries),
-        std::move(m_Materials), std::move(m_Textures), std::move(m_Models), std::move(modelInstances),
-        std::move(m_Bones),
+        std::move(m_TexturedMaterials), std::move(m_Textures), std::move(m_SolidColorMaterials),
+        std::move(m_Models), std::move(modelInstances), std::move(m_Bones),
         SceneGraph(std::move(m_SceneNodes), std::move(m_IsRelativeTransform), std::move(m_Animations)),
         std::move(m_LightInfos), std::move(m_PointLights), std::move(m_DirectionalLight), std::move(m_Skybox),
         std::move(m_CameraInfos)
@@ -213,8 +229,10 @@ std::shared_ptr<Scene> SceneBuilder::CreateSceneShared()
     m_AnimatedIndices.clear();
     m_Transforms = { glm::mat3x4(1.0f) };
     m_Geometries.clear();
-    m_Materials.clear();
-    m_MaterialIndices.clear();
+    m_TexturedMaterials.clear();
+    m_TexturedMaterialIndices.clear();
+    m_SolidColorMaterials.clear();
+    m_SolidColorMaterialIndices.clear();
     m_Textures.clear();
     m_TextureIndices.clear();
     m_Models.clear();
@@ -242,7 +260,7 @@ Model SceneBuilder::CreateModel(std::span<const MeshInfo> meshInfos)
         const bool isIdentity = glm::all(glm::equal(meshInfo.Transform, glm::mat3x4(1.0f)));
 
         model.Meshes.emplace_back(
-            meshInfo.GeometryIndex, meshInfo.MaterialIndex,
+            meshInfo.GeometryIndex, meshInfo.MaterialIndex, meshInfo.MaterialType,
             isIdentity ? IdentityTransformIndex : static_cast<uint32_t>(m_Transforms.size())
         );
 
@@ -284,9 +302,14 @@ std::span<const Geometry> Scene::GetGeometries() const
     return m_Geometries;
 }
 
-std::span<const Shaders::Material> Scene::GetMaterials() const
+std::span<const Shaders::TexturedMaterial> Scene::GetTexturedMaterials() const
 {
-    return m_Materials;
+    return m_TexturedMaterials;
+}
+
+std::span<const Shaders::SolidColorMaterial> Scene::GetSolidColorMaterials() const
+{
+    return m_SolidColorMaterials;
 }
 
 std::span<const TextureInfo> Scene::GetTextures() const

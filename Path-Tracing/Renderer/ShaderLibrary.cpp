@@ -240,6 +240,10 @@ bool Shader::RecompileIfChanged(
         logger::error(preprocessResult.GetErrorMessage());
         if (m_Module != nullptr)
             logger::warn("Using old version of the shader: {}", m_Path.string());
+        else
+            throw error(
+                std::format("Failed to compile shader {} and an old version doesn't exist", m_Path.string())
+            );
         return false;
     }
 
@@ -271,6 +275,10 @@ bool Shader::RecompileIfChanged(
         logger::error(compileResult.GetErrorMessage());
         if (m_Module != nullptr)
             logger::warn("Using old version of the shader: {}", m_Path.string());
+        else
+            throw error(
+                std::format("Failed to compile shader {} and an old version doesn't exist", m_Path.string())
+            );
         return false;
     }
 

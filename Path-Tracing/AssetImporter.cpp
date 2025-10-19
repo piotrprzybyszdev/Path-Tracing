@@ -129,31 +129,57 @@ uint32_t AddTexture(
     return sceneBuilder.AddTexture(AssetImporter::GetTextureInfo(texturePath, textureType));
 }
 
-std::vector<uint32_t> LoadMaterials(
+Shaders::TexturedMaterial LoadTexturedMaterial(
+    const std::filesystem::path &path, SceneBuilder &sceneBuilder, const aiMaterial *material
+)
+{
+    return Shaders::TexturedMaterial {
+        .ColorIdx = AddTexture(sceneBuilder, path.parent_path(), material, aiTextureType_BASE_COLOR),
+        .NormalIdx = AddTexture(sceneBuilder, path.parent_path(), material, aiTextureType_NORMALS),
+        .RoughnessIdx =
+            AddTexture(sceneBuilder, path.parent_path(), material, aiTextureType_DIFFUSE_ROUGHNESS),
+        .MetalicIdx = AddTexture(sceneBuilder, path.parent_path(), material, aiTextureType_METALNESS),
+    };
+}
+
+Shaders::SolidColorMaterial LoadSolidColorMaterial(const aiMaterial *material)
+{
+    aiColor3D color;
+    material->Get(AI_MATKEY_BASE_COLOR, color);
+
+    return Shaders::SolidColorMaterial { 
+        .Color = TrivialCopyUnsafe<aiColor3D, glm::vec3>(color)
+    };
+}
+
+std::vector<std::pair<uint32_t, MaterialType>> LoadMaterials(
     const std::filesystem::path &path, SceneBuilder &sceneBuilder, const aiScene *scene
 )
 {
-    std::vector<uint32_t> materialIndexMap(scene->mNumMaterials);
+    std::vector<std::pair<uint32_t, MaterialType>> materialInfoMap(scene->mNumMaterials);
+
     for (int i = 0; i < scene->mNumMaterials; i++)
     {
-        const aiMaterial *material = scene->mMaterials[i];
+        const aiMaterial *material = scene->mMaterials[i];      
         const aiString originalName = material->GetName();
         const std::string materialName =
             originalName.length != 0 ? originalName.C_Str() : std::format("Unnamed Material at index {}", i);
 
-        const Shaders::Material outMaterial = {
-            .ColorIdx = AddTexture(sceneBuilder, path.parent_path(), material, aiTextureType_BASE_COLOR),
-            .NormalIdx = AddTexture(sceneBuilder, path.parent_path(), material, aiTextureType_NORMALS),
-            .RoughnessIdx =
-                AddTexture(sceneBuilder, path.parent_path(), material, aiTextureType_DIFFUSE_ROUGHNESS),
-            .MetalicIdx = AddTexture(sceneBuilder, path.parent_path(), material, aiTextureType_METALNESS),
-        };
+        if (material->GetTextureCount(aiTextureType_BASE_COLOR) > 0)
+            materialInfoMap[i] = std::make_pair(
+                sceneBuilder.AddMaterial(materialName, LoadTexturedMaterial(path, sceneBuilder, material)),
+                MaterialType::Textured
+            );
+        else
+            materialInfoMap[i] = std::make_pair(
+                sceneBuilder.AddMaterial(materialName, LoadSolidColorMaterial(material)),
+                MaterialType::SolidColor
+            );
 
-        materialIndexMap[i] = sceneBuilder.AddMaterial(materialName, outMaterial);
         logger::debug("Added Material: {}", materialName);
     }
 
-    return materialIndexMap;
+    return materialInfoMap;
 }
 
 bool CheckOpaque(const std::filesystem::path &path, const aiMaterial *material)
@@ -429,7 +455,7 @@ void LoadModels(
     SceneBuilder &sceneBuilder, const aiScene *scene,
     std::unordered_map<const aiNode *, uint32_t> sceneNodeIndices,
     std::unordered_set<const aiNode *> dynamicNodes, std::unordered_set<const aiNode *> armatures,
-    std::vector<const aiNode *> nodes, const std::vector<uint32_t> &materialIndexMap,
+    std::vector<const aiNode *> nodes, const std::vector<std::pair<uint32_t, MaterialType>> &materialInfoMap,
     const std::vector<uint32_t> &meshToGeometry
 )
 {
@@ -484,8 +510,10 @@ void LoadModels(
                 continue;
             }
 
+            auto [materialIndex, materialType] = materialInfoMap[mesh->mMaterialIndex];
+
             modelToMeshInfos[modelIndex].emplace_back(
-                meshToGeometry[meshIndex], materialIndexMap[mesh->mMaterialIndex], totalTransform
+                meshToGeometry[meshIndex], materialIndex, materialType, totalTransform
             );
         }
 
@@ -528,9 +556,13 @@ void LoadModels(
                 assert(ancestor->FindNode(mesh->mBones[j]->mArmature->mName) != nullptr);
 
             if (CheckAnimated(mesh))
+            {
+                auto [materialIndex, materialType] = materialInfoMap[mesh->mMaterialIndex];
+
                 modelToAnimatedMeshInfos[animatedModelIndex].emplace_back(
-                    meshToGeometry[meshIndex], materialIndexMap[mesh->mMaterialIndex], glm::mat4(1.0f)
+                    meshToGeometry[meshIndex], materialIndex, materialType, glm::mat4(1.0f)
                 );
+            }
         }
     }
 
@@ -756,15 +788,14 @@ SceneBuilder &AssetImporter::AddFile(SceneBuilder &sceneBuilder, const std::file
     std::vector<const aiNode *> nodes;
     std::unordered_map<const aiNode *, uint32_t> sceneNodeIndices =
         LoadSceneNodes(sceneBuilder, scene, nodes);
-    std::vector<uint32_t> materialIndexMap = LoadMaterials(path, sceneBuilder, scene);
+    std::vector<std::pair<uint32_t, MaterialType>> materialInfoMap = LoadMaterials(path, sceneBuilder, scene);
 
     std::unordered_set<const aiNode *> armatures;
     std::vector<uint32_t> meshToGeometry = LoadMeshes(sceneBuilder, path, scene, sceneNodeIndices, armatures);
     std::unordered_set<const aiNode *> dynamicNodes = FindDynamicNodes(scene);
 
     LoadModels(
-        sceneBuilder, scene, sceneNodeIndices, dynamicNodes, armatures, nodes, materialIndexMap,
-        meshToGeometry
+        sceneBuilder, scene, sceneNodeIndices, dynamicNodes, armatures, nodes, materialInfoMap, meshToGeometry
     );
 
     LoadAnimations(sceneBuilder, scene, sceneNodeIndices);

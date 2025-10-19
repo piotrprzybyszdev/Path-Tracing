@@ -46,6 +46,9 @@ struct SBTBuffer
     uint TransformIndex;
 };
 
+const float DefaultRoughness = 0.0f;
+const float DefaultMetalness = 0.0f;
+
 const uint SkinningShaderGroupSizeX         = 256u;
 
 struct SkinningPushConstants
@@ -62,6 +65,11 @@ const uint HitGroupFlagsConstantId          = 3u;
 const uint MaxRecursionDepth                = 2u;
 const uint MaxPayloadSize                   = 12u;
 const uint MaxHitAttributeSize              = 12u;
+
+const uint PrimaryRayHitGroupIndex          = 0u;
+const uint PrimaryRayMissGroupIndex         = 0u;
+const uint OcclusionRayHitGroupIndex        = 1u;
+const uint OcclusionRayMissGroupIndex       = 1u;
 
 struct SpecializationData
 {

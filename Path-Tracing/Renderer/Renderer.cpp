@@ -63,6 +63,17 @@ void Renderer::Init(const Swapchain *swapchain)
 {
     s_Swapchain = swapchain;
 
+    try
+    {
+        CreatePipelines();
+    }
+    catch (const error &error)
+    {
+        logger::critical("Pipeline creation failed - Renderer can't be initialized");
+        s_ShaderLibrary.reset();
+        throw error;
+    }
+
     s_MainCommandBuffer = std::make_unique<CommandBuffer>(DeviceContext::GetGraphicsQueue());
 
     s_StagingBuffer = BufferBuilder()
@@ -80,16 +91,18 @@ void Renderer::Init(const Swapchain *swapchain)
         Utils::SetDebugName(s_TextureSampler, "Texture Sampler");
     }
 
-    CreatePipelines();
-
     s_TextureUploader = std::make_unique<TextureUploader>(s_Textures, s_DescriptorSetMutex);
     s_TextureOwnershipCommandBuffer = std::make_unique<CommandBuffer>(DeviceContext::GetGraphicsQueue());
 
     {
+        auto tou8vec4 = [](float value) { return glm::u8vec4(value * 255.0f); };
+
         uint32_t colorIndex = AddDefaultTexture(glm::u8vec4(255), "Default Color Texture");
         uint32_t normalIndex = AddDefaultTexture(glm::u8vec4(128, 128, 255, 255), "Default Normal Texture");
-        uint32_t roughnessIndex = AddDefaultTexture(glm::u8vec4(0), "Default Roughness Texture");
-        uint32_t metalicIndex = AddDefaultTexture(glm::u8vec4(0), "Default Metalic Texture");
+        uint32_t roughnessIndex =
+            AddDefaultTexture(tou8vec4(Shaders::DefaultRoughness), "Default Roughness Texture");
+        uint32_t metalicIndex =
+            AddDefaultTexture(tou8vec4(Shaders::DefaultMetalness), "Default Metalic Texture");
 
         s_TextureMap.resize(4);
         s_TextureMap[Shaders::DefaultColorTextureIndex] = colorIndex;
@@ -200,8 +213,12 @@ void Renderer::UpdateSceneData()
         s_SceneData->AnimatedVertexMapBuffer =
             CreateDeviceBuffer(std::span(animatedVertexMap), "Animated Vertex Map Buffer");
 
-        const auto &materials = s_SceneData->Handle->GetMaterials();
-        s_SceneData->MaterialBuffer = CreateDeviceBuffer(materials, "Material Buffer");
+        const auto &texturedMaterials = s_SceneData->Handle->GetTexturedMaterials();
+        s_SceneData->TexturedMaterialBuffer = CreateDeviceBuffer(texturedMaterials, "Textured Material Buffer");
+
+        const auto &solidColorMaterials = s_SceneData->Handle->GetSolidColorMaterials();
+        s_SceneData->SolidColorMaterialBuffer =
+            CreateDeviceBuffer(solidColorMaterials, "Solid Color Material Buffer");
 
         std::vector<uint32_t> geometryIndexMap;
         s_SceneData->Geometries.clear();
@@ -248,13 +265,8 @@ void Renderer::UpdateSceneData()
         for (int i = 0; i < s_RenderingResources.size(); i++)
             CreateSceneRenderingResources(s_RenderingResources[i], i);
 
-        s_SceneData->SceneShaderBindingTable = std::make_unique<ShaderBindingTable>(
-            s_RaytracingConfig.RaygenGroupIndex,
-            std::vector<uint32_t> { s_RaytracingConfig.PrimaryRayMissIndex,
-                                    s_RaytracingConfig.OcclusionRayMissIndex },
-            std::vector<uint32_t> { s_RaytracingConfig.PrimaryRayHitIndex,
-                                    s_RaytracingConfig.OcclusionRayHitIndex }
-        );
+        s_SceneData->SceneShaderBindingTable =
+            std::make_unique<ShaderBindingTable>(s_RaytracingConfig.HitGroupCount);
 
         for (const auto &model : models)
             for (const auto &mesh : model.Meshes)
@@ -262,8 +274,29 @@ void Renderer::UpdateSceneData()
                 const Shaders::SBTBuffer data(
                     geometryIndexMap[mesh.GeometryIndex], mesh.MaterialIndex, mesh.TransformBufferOffset
                 );
-                std::array<Shaders::SBTBuffer, 2> buffers = { { data, data } };
-                s_SceneData->SceneShaderBindingTable->AddRecord(buffers);
+
+                std::array<SBTEntryInfo, 2> entries = {};
+                entries[Shaders::PrimaryRayHitGroupIndex] = SBTEntryInfo {
+                    .Buffer = data,
+                };
+                entries[Shaders::OcclusionRayHitGroupIndex] = SBTEntryInfo {
+                    .HitGroupIndex = s_RaytracingConfig.OcclusionRayHitIndex,
+                    .Buffer = data,
+                };
+               
+                switch (mesh.MaterialType)
+                {
+                case MaterialType::Textured:
+                    entries[Shaders::PrimaryRayHitGroupIndex].HitGroupIndex =
+                        s_RaytracingConfig.PrimaryRayTexturedHitIndex;
+                    break;
+                case MaterialType::SolidColor:
+                    entries[Shaders::PrimaryRayHitGroupIndex].HitGroupIndex =
+                        s_RaytracingConfig.PrimaryRaySolidColorHitIndex;
+                    break;
+                }
+
+                s_SceneData->SceneShaderBindingTable->AddRecord(entries);
             }
     }
 
@@ -303,8 +336,6 @@ void Renderer::UpdateSceneData()
     s_TextureOwnershipBufferHasCommands = false;
 
     s_TextureUploader->UploadTextures(s_SceneData->Handle);
-
-    s_SceneData->SceneShaderBindingTable->Upload(s_RaytracingPipeline->GetHandle());
 }
 
 void Renderer::UpdateTexture(uint32_t index)
@@ -364,8 +395,10 @@ void Renderer::CreatePipelines()
 
     s_Shaders.Raygen = s_ShaderLibrary->AddShader("Shaders/raygen.rgen", vk::ShaderStageFlagBits::eRaygenKHR);
     s_Shaders.Miss = s_ShaderLibrary->AddShader("Shaders/miss.rmiss", vk::ShaderStageFlagBits::eMissKHR);
-    s_Shaders.ClosestHit =
-        s_ShaderLibrary->AddShader("Shaders/closesthit.rchit", vk::ShaderStageFlagBits::eClosestHitKHR);
+    s_Shaders.TexturedClosestHit =
+        s_ShaderLibrary->AddShader("Shaders/textured.rchit", vk::ShaderStageFlagBits::eClosestHitKHR);
+    s_Shaders.SolidColorClosestHit =
+        s_ShaderLibrary->AddShader("Shaders/solidColor.rchit", vk::ShaderStageFlagBits::eClosestHitKHR);
     s_Shaders.AnyHit =
         s_ShaderLibrary->AddShader("Shaders/anyhit.rahit", vk::ShaderStageFlagBits::eAnyHitKHR);
     s_Shaders.OcclusionMiss =
@@ -381,13 +414,18 @@ void Renderer::CreatePipelines()
         s_RaytracingConfig.RaygenGroupIndex = builder.AddGeneralGroup(s_Shaders.Raygen);
         s_RaytracingConfig.PrimaryRayMissIndex = builder.AddGeneralGroup(s_Shaders.Miss);
         s_RaytracingConfig.OcclusionRayMissIndex = builder.AddGeneralGroup(s_Shaders.OcclusionMiss);
-        s_RaytracingConfig.PrimaryRayHitIndex = builder.AddHitGroup(s_Shaders.ClosestHit, s_Shaders.AnyHit);
+        s_RaytracingConfig.PrimaryRayTexturedHitIndex =
+            builder.AddHitGroup(s_Shaders.TexturedClosestHit, s_Shaders.AnyHit);
+        s_RaytracingConfig.PrimaryRaySolidColorHitIndex =
+            builder.AddHitGroup(s_Shaders.SolidColorClosestHit, s_Shaders.AnyHit);
         s_RaytracingConfig.OcclusionRayHitIndex =
             builder.AddHitGroup(ShaderLibrary::g_UnusedShaderId, s_Shaders.AnyHit);
 
         builder.AddHintIsPartial(3, true);
-        builder.AddHintIsPartial(8, true);
+        builder.AddHintIsPartial(6, true);
+        builder.AddHintIsPartial(7, true);
         builder.AddHintIsPartial(9, true);
+        builder.AddHintIsPartial(10, true);
         builder.AddHintSize(3, Shaders::MaxTextureCount);
 
         s_RaytracingPipeline = builder.CreatePipelineUnique();
@@ -397,9 +435,16 @@ void Renderer::CreatePipelines()
         ComputePipelineBuilder builder(*s_ShaderLibrary, s_Shaders.SkinningCompute);
         s_SkinningPipeline = builder.CreatePipelineUnique();
     }
+}
 
-    s_RaytracingPipeline->Update(s_ShaderSpecialization);
-    s_SkinningPipeline->Update(s_ShaderSpecialization);
+void Renderer::UpdateShaderBindingTable()
+{
+    std::array<uint32_t, 2> missGroupIndices = {};
+    missGroupIndices[Shaders::PrimaryRayMissGroupIndex] = s_RaytracingConfig.PrimaryRayMissIndex;
+    missGroupIndices[Shaders::OcclusionRayMissGroupIndex] = s_RaytracingConfig.OcclusionRayMissIndex;
+    s_SceneData->SceneShaderBindingTable->Upload(
+        s_RaytracingPipeline->GetHandle(), s_RaytracingConfig.RaygenGroupIndex, missGroupIndices
+    );
 }
 
 void Renderer::ReloadShaders()
@@ -409,7 +454,7 @@ void Renderer::ReloadShaders()
     s_RaytracingPipeline->Update(s_ShaderSpecialization);
     s_SkinningPipeline->Update(s_ShaderSpecialization);
 
-    s_SceneData->SceneShaderBindingTable->Upload(s_RaytracingPipeline->GetHandle());
+    UpdateShaderBindingTable();
 }
 
 void Renderer::UpdateSpecializations(Shaders::SpecializationData data)
@@ -418,8 +463,10 @@ void Renderer::UpdateSpecializations(Shaders::SpecializationData data)
     s_ShaderSpecialization = data;
 
     DeviceContext::GetGraphicsQueue().WaitIdle();
-    s_RaytracingPipeline->Update(data);
-    s_SceneData->SceneShaderBindingTable->Upload(s_RaytracingPipeline->GetHandle());
+    s_RaytracingPipeline->Update(s_ShaderSpecialization);
+    s_SkinningPipeline->Update(s_ShaderSpecialization);
+
+    UpdateShaderBindingTable();
 }
 
 void Renderer::RecordCommandBuffer(const RenderingResources &resources)
@@ -695,15 +742,18 @@ void Renderer::RecreateDescriptorSet()
         );
         raytracingDescriptorSet->UpdateBuffer(4, frameIndex, s_SceneData->TransformBuffer);
         raytracingDescriptorSet->UpdateBuffer(5, frameIndex, res.GeometryBuffer);
-        raytracingDescriptorSet->UpdateBuffer(6, frameIndex, s_SceneData->MaterialBuffer);
-        raytracingDescriptorSet->UpdateBuffer(7, frameIndex, res.LightUniformBuffer);
+        if (s_SceneData->TexturedMaterialBuffer.GetHandle() != nullptr)
+            raytracingDescriptorSet->UpdateBuffer(6, frameIndex, s_SceneData->TexturedMaterialBuffer);
+        if (s_SceneData->SolidColorMaterialBuffer.GetHandle() != nullptr)
+            raytracingDescriptorSet->UpdateBuffer(7, frameIndex, s_SceneData->SolidColorMaterialBuffer);
+        raytracingDescriptorSet->UpdateBuffer(8, frameIndex, res.LightUniformBuffer);
         if ((s_ShaderSpecialization.MissFlags & Shaders::MissFlagsSkybox2D) != Shaders::MissFlagsNone)
             raytracingDescriptorSet->UpdateImage(
-                8, frameIndex, s_SceneData->Skybox, s_TextureSampler, vk::ImageLayout::eShaderReadOnlyOptimal
+                9, frameIndex, s_SceneData->Skybox, s_TextureSampler, vk::ImageLayout::eShaderReadOnlyOptimal
             );
         if ((s_ShaderSpecialization.MissFlags & Shaders::MissFlagsSkyboxCube) != Shaders::MissFlagsNone)
             raytracingDescriptorSet->UpdateImage(
-                9, frameIndex, s_SceneData->Skybox, s_TextureSampler, vk::ImageLayout::eShaderReadOnlyOptimal
+                10, frameIndex, s_SceneData->Skybox, s_TextureSampler, vk::ImageLayout::eShaderReadOnlyOptimal
             );
 
         if (s_SceneData->Handle->HasSkeletalAnimations())
