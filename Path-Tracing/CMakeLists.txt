@@ -23,6 +23,8 @@ if(MSVC)
     target_compile_options(Path-Tracing PRIVATE "/MP")
 endif()
 
+target_compile_definitions(Path-Tracing PRIVATE "${PATH_TRACING_CONFIG}")
+
 target_compile_definitions(Path-Tracing PRIVATE
     $<$<CONFIG:Release>:CONFIG_RELEASE>
     $<$<CONFIG:Profile>:CONFIG_PROFILE>

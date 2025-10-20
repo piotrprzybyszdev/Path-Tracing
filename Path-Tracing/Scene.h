@@ -57,7 +57,7 @@ struct MeshInfo
 {
     uint32_t GeometryIndex;
     uint32_t MaterialIndex;
-    MaterialType MaterialType;
+    MaterialType ShaderMaterialType;
     glm::mat3x4 Transform;
 };
 
@@ -65,7 +65,7 @@ struct Mesh
 {
     uint32_t GeometryIndex;
     uint32_t MaterialIndex;
-    MaterialType MaterialType;
+    MaterialType ShaderMaterialType;
     uint32_t TransformBufferOffset;
 };
 

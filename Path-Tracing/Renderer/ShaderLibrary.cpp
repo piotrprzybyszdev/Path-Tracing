@@ -338,7 +338,8 @@ ShaderLibrary::~ShaderLibrary() = default;
 
 ShaderId ShaderLibrary::AddShader(std::filesystem::path path, vk::ShaderStageFlagBits stage)
 {
-    m_Shaders.emplace_back(std::move(path), stage);
+    std::filesystem::path shaderPath = Application::GetConfig().ShaderDirectoryPath / path;
+    m_Shaders.emplace_back(std::move(shaderPath), stage);
     return m_Shaders.size() - 1;
 }
 

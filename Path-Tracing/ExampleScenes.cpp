@@ -39,7 +39,7 @@ FileSceneLoader::FileSceneLoader(const std::filesystem::path &path) : m_Path(pat
 
 void FileSceneLoader::Load(SceneBuilder &sceneBuilder)
 {
-    AssetImporter::AddFile(sceneBuilder, Application::GetConfig().AssetFolderPath / "scenes" / m_Path);
+    AssetImporter::AddFile(sceneBuilder, Application::GetConfig().AssetDirectoryPath / "scenes" / m_Path);
 }
 
 class KhronosSceneLoader : public FileSceneLoader
@@ -78,7 +78,7 @@ void Skybox2DLoader::Load(SceneBuilder &sceneBuilder)
 {
     TextureType type = m_IsHDR ? TextureType::SkyboxHDR : TextureType::Skybox;
     sceneBuilder.SetSkybox(Skybox2D(
-        AssetImporter::GetTextureInfo(Application::GetConfig().AssetFolderPath / "scenes" / m_Path, type)
+        AssetImporter::GetTextureInfo(Application::GetConfig().AssetDirectoryPath / "scenes" / m_Path, type)
     ));
 }
 
@@ -125,13 +125,13 @@ void AddScenes(std::map<std::string, std::unique_ptr<SceneLoader>> &scenes)
     // TODO: Check if the packages are installed
     auto intelSponzaLoader = std::make_unique<CombinedSceneLoader>();
     intelSponzaLoader->AddLoader(std::make_unique<FileSceneLoader>(
-        std::filesystem::path("main_sponza") / "NewSponza_Main_glTF_003.gltf"
+        std::filesystem::path("IntelSponzaMain") / "main_sponza" / "NewSponza_Main_glTF_003.gltf"
     ));
     intelSponzaLoader->AddLoader(std::make_unique<FileSceneLoader>(
-        std::filesystem::path("pkg_a_curtains") / "NewSponza_Curtains_glTF.gltf"
+        std::filesystem::path("IntelSponzaCurtains") / "pkg_a_curtains" / "NewSponza_Curtains_glTF.gltf"
     ));
     intelSponzaLoader->AddLoader(std::make_unique<Skybox2DLoader>(
-        std::filesystem::path("main_sponza") / "textures" / "kloppenheim_05_4k.hdr", true
+        std::filesystem::path("IntelSponzaMain") / "main_sponza" / "textures" / "kloppenheim_05_4k.hdr", true
     ));
 
     scenes.emplace("Intel Sponza", std::move(intelSponzaLoader));
@@ -145,7 +145,7 @@ void CustomSceneLoader<load>::Load(SceneBuilder &sceneBuilder)
 
 void CreateTexturedCubesScene(SceneBuilder &sceneBuilder)
 {
-    const std::filesystem::path base = Application::GetConfig().AssetFolderPath / "textures";
+    const std::filesystem::path base = Application::GetConfig().AssetDirectoryPath / "textures";
     const std::array<std::string, 3> assetNames = { "Metal", "PavingStones", "Logs" };
     const std::array<std::string, 3> materials = {
         "Metal062C_1K-JPG",
@@ -293,7 +293,7 @@ void CreateTexturedCubesScene(SceneBuilder &sceneBuilder)
 
 void CreateReuseMeshCubesScene(SceneBuilder &sceneBuilder)
 {
-    const std::filesystem::path base = Application::GetConfig().AssetFolderPath / "textures";
+    const std::filesystem::path base = Application::GetConfig().AssetDirectoryPath / "textures";
     const std::array<std::string, 3> assetNames = { "Metal", "PavingStones", "Logs" };
     const std::array<std::string, 3> materials = {
         "Metal062C_1K-JPG",

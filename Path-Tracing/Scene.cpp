@@ -260,7 +260,7 @@ Model SceneBuilder::CreateModel(std::span<const MeshInfo> meshInfos)
         const bool isIdentity = glm::all(glm::equal(meshInfo.Transform, glm::mat3x4(1.0f)));
 
         model.Meshes.emplace_back(
-            meshInfo.GeometryIndex, meshInfo.MaterialIndex, meshInfo.MaterialType,
+            meshInfo.GeometryIndex, meshInfo.MaterialIndex, meshInfo.ShaderMaterialType,
             isIdentity ? IdentityTransformIndex : static_cast<uint32_t>(m_Transforms.size())
         );
 

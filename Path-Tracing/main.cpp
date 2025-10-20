@@ -11,6 +11,10 @@ int main(int argc, char *argv[])
         Application::Init(argc, argv);
         Application::Run();
     }
+    catch (const PrintHelpException &exception)
+    {
+        return EXIT_SUCCESS;
+    }
     catch (const error &error)
     {
         Application::Shutdown();

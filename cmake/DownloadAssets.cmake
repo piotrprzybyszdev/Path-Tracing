@@ -1,0 +1,57 @@
+set(BASE On)
+
+set(PAVING_STONES_TEXTURE_ASSET "BASE;textures/PavingStones;https://ambientcg.com/get?file=PavingStones142_1K-JPG.zip")
+set(METAL_TEXTURE_ASSET "BASE;textures/Metal;https://ambientcg.com/get?file=Metal062C_1K-JPG.zip")
+set(LOGS_TEXTURE_ASSET "BASE;textures/Logs;https://ambientcg.com/get?file=Logs001_1K-JPG.zip")
+set(SKYBOX_TEXTURE_ASSET "BASE;textures/skybox;https://drive.google.com/uc?id=1zg2hlXbV598pRHIVO8Qsu13OpGHLwuFc")
+set(KHRONOS_SCENES_ASSET "BASE;scenes/KhronosScenes;https://github.com/KhronosGroup/glTF-Sample-Models/archive/refs/heads/main.zip")
+set(INTEL_SPONZA_MAIN_ASSET "INTEL_SPONZA_MAIN;scenes/IntelSponzaMain;https://cdrdv2.intel.com/v1/dl/getContent/830833")
+set(INTEL_SPONZA_CURTAINS_ASSET "INTEL_SPONZA_CURTAINS;scenes/IntelSponzaCurtains;https://cdrdv2.intel.com/v1/dl/getContent/726650")
+
+get_cmake_property(ALL_CMAKE_VARIABLES VARIABLES)
+foreach (CMAKE_VARIABLE IN LISTS ALL_CMAKE_VARIABLES)
+    if (CMAKE_VARIABLE MATCHES "_ASSET$")
+        list(APPEND ALL_ASSETS "${CMAKE_VARIABLE}")
+    endif()
+endforeach()
+
+foreach (ASSET_CONFIG_VARIABLE IN LISTS ASSETS)
+    set("${ASSET_CONFIG_VARIABLE}" On)
+endforeach()
+
+if (${INTEL_SPONZA_FULL})
+    set (INTEL_SPONZA_MAIN On)
+    set (INTEL_SPONZA_CURTAINS On)
+endif()
+
+foreach (ASSET_VARIABLE IN LISTS ALL_ASSETS)
+    set(ASSET "${${ASSET_VARIABLE}}")
+
+    list(GET ASSET 0 CONFIG_VARIABLE)
+    list(GET ASSET 1 ASSET_NAME)
+    list(GET ASSET 2 ASSET_URL)
+
+    if (${CONFIG_VARIABLE})
+        list(APPEND ASSET_NAMES ${ASSET_NAME})
+        list(APPEND ASSET_URLS ${ASSET_URL})
+    endif()
+endforeach()
+
+function (download_assets)
+    list(LENGTH ASSET_NAMES ASSET_COUNT)
+    set(INDEX 1)
+    foreach (NAME URL IN ZIP_LISTS ASSET_NAMES ASSET_URLS)
+        set(ZIP_PATH "${CMAKE_SOURCE_DIR}/assets/${NAME}.zip")
+        set(FOLDER_PATH "${CMAKE_SOURCE_DIR}/assets/${NAME}")
+
+        if (NOT EXISTS ${FOLDER_PATH})
+            message("Downloading asset: ${FOLDER_PATH} (${INDEX}/${ASSET_COUNT})")
+            file(DOWNLOAD ${URL} ${ZIP_PATH})
+            file(ARCHIVE_EXTRACT INPUT ${ZIP_PATH} DESTINATION ${FOLDER_PATH})
+        else()
+            message("Asset already exists: ${FOLDER_PATH} (${INDEX}/${ASSET_COUNT})")
+        endif()
+
+        math(EXPR INDEX "${INDEX} + 1")
+    endforeach()
+endfunction()

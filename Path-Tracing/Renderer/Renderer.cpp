@@ -284,7 +284,7 @@ void Renderer::UpdateSceneData()
                     .Buffer = data,
                 };
                
-                switch (mesh.MaterialType)
+                switch (mesh.ShaderMaterialType)
                 {
                 case MaterialType::Textured:
                     entries[Shaders::PrimaryRayHitGroupIndex].HitGroupIndex =
@@ -393,18 +393,17 @@ void Renderer::CreatePipelines()
 
     s_ShaderLibrary = std::make_unique<ShaderLibrary>();
 
-    s_Shaders.Raygen = s_ShaderLibrary->AddShader("Shaders/raygen.rgen", vk::ShaderStageFlagBits::eRaygenKHR);
-    s_Shaders.Miss = s_ShaderLibrary->AddShader("Shaders/miss.rmiss", vk::ShaderStageFlagBits::eMissKHR);
+    s_Shaders.Raygen = s_ShaderLibrary->AddShader("raygen.rgen", vk::ShaderStageFlagBits::eRaygenKHR);
+    s_Shaders.Miss = s_ShaderLibrary->AddShader("miss.rmiss", vk::ShaderStageFlagBits::eMissKHR);
     s_Shaders.TexturedClosestHit =
-        s_ShaderLibrary->AddShader("Shaders/textured.rchit", vk::ShaderStageFlagBits::eClosestHitKHR);
+        s_ShaderLibrary->AddShader("textured.rchit", vk::ShaderStageFlagBits::eClosestHitKHR);
     s_Shaders.SolidColorClosestHit =
-        s_ShaderLibrary->AddShader("Shaders/solidColor.rchit", vk::ShaderStageFlagBits::eClosestHitKHR);
-    s_Shaders.AnyHit =
-        s_ShaderLibrary->AddShader("Shaders/anyhit.rahit", vk::ShaderStageFlagBits::eAnyHitKHR);
+        s_ShaderLibrary->AddShader("solidColor.rchit", vk::ShaderStageFlagBits::eClosestHitKHR);
+    s_Shaders.AnyHit = s_ShaderLibrary->AddShader("anyhit.rahit", vk::ShaderStageFlagBits::eAnyHitKHR);
     s_Shaders.OcclusionMiss =
-        s_ShaderLibrary->AddShader("Shaders/occlusion.rmiss", vk::ShaderStageFlagBits::eMissKHR);
+        s_ShaderLibrary->AddShader("occlusion.rmiss", vk::ShaderStageFlagBits::eMissKHR);
     s_Shaders.SkinningCompute =
-        s_ShaderLibrary->AddShader("Shaders/skinning.comp", vk::ShaderStageFlagBits::eCompute);
+        s_ShaderLibrary->AddShader("skinning.comp", vk::ShaderStageFlagBits::eCompute);
 
     s_ShaderLibrary->CompileShaders();
 
