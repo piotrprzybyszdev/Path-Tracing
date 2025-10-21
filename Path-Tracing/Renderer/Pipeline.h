@@ -43,6 +43,7 @@ public:
     [[nodiscard]] const std::filesystem::path &GetPath() const;
     [[nodiscard]] bool HasVariants() const;
     [[nodiscard]] Config GetConfig(const PipelineConfig &config) const;
+    [[nodiscard]] uint32_t GetVariantCount() const;
     [[nodiscard]] std::span<const vk::SpecializationMapEntry> GetSpecEntries() const;
 
     void UpdateSpecializations();
@@ -58,6 +59,7 @@ protected:
     const vk::PipelineLayout m_Layout;
 
     std::vector<vk::SpecializationMapEntry> m_SpecEntries;
+    std::vector<uint32_t> m_SpecVariantCount;
 
     std::unordered_map<Config, vk::Pipeline> m_Variants;
     vk::PipelineCache m_Cache;
@@ -125,6 +127,8 @@ public:
     RaytracingPipeline &operator=(const RaytracingPipeline &) = delete;
 
     void Update(const PipelineConfig &config);
+    void CancelUpdate();
+
     void CreateDescriptorSet(uint32_t framesInFlight);
     [[nodiscard]] DescriptorSet *GetDescriptorSet();
 
@@ -160,6 +164,8 @@ public:
     ~ComputePipeline();
 
     void Update(const PipelineConfig &config);
+    void CancelUpdate();
+
     void CreateDescriptorSet(uint32_t framesInFlight);
     [[nodiscard]] DescriptorSet *GetDescriptorSet();
 

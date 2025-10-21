@@ -4,7 +4,7 @@ set(PAVING_STONES_TEXTURE_ASSET "BASE;textures/PavingStones;https://ambientcg.co
 set(METAL_TEXTURE_ASSET "BASE;textures/Metal;https://ambientcg.com/get?file=Metal062C_1K-JPG.zip")
 set(LOGS_TEXTURE_ASSET "BASE;textures/Logs;https://ambientcg.com/get?file=Logs001_1K-JPG.zip")
 set(SKYBOX_TEXTURE_ASSET "BASE;textures/skybox;https://drive.google.com/uc?id=1zg2hlXbV598pRHIVO8Qsu13OpGHLwuFc")
-set(KHRONOS_SCENES_ASSET "BASE;scenes/KhronosScenes;https://github.com/KhronosGroup/glTF-Sample-Models/archive/refs/heads/main.zip")
+set(KHRONOS_SCENES_ASSET "BASE;scenes/KhronosScenes;https://github.com/KhronosGroup/glTF-Sample-Assets/archive/refs/heads/main.zip")
 set(INTEL_SPONZA_MAIN_ASSET "INTEL_SPONZA_MAIN;scenes/IntelSponzaMain;https://cdrdv2.intel.com/v1/dl/getContent/830833")
 set(INTEL_SPONZA_CURTAINS_ASSET "INTEL_SPONZA_CURTAINS;scenes/IntelSponzaCurtains;https://cdrdv2.intel.com/v1/dl/getContent/726650")
 

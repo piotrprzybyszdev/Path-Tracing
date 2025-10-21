@@ -4,7 +4,10 @@
 #include <algorithm>
 #include <array>
 #include <string>
+#include <unordered_set>
 #include <vector>
+
+#include "Core/Core.h"
 
 #include "Application.h"
 #include "AssetImporter.h"
@@ -21,120 +24,160 @@ public:
     void Load(SceneBuilder &sceneBuilder) override;
 };
 
-class FileSceneLoader : public SceneLoader
-{
-public:
-    FileSceneLoader(const std::filesystem::path &path);
-    ~FileSceneLoader() override = default;
-
-    void Load(SceneBuilder &sceneBuilder) override;
-
-private:
-    std::filesystem::path m_Path;
-};
-
-FileSceneLoader::FileSceneLoader(const std::filesystem::path &path) : m_Path(path)
-{
-}
-
-void FileSceneLoader::Load(SceneBuilder &sceneBuilder)
-{
-    AssetImporter::AddFile(sceneBuilder, Application::GetConfig().AssetDirectoryPath / "scenes" / m_Path);
-}
-
-class KhronosSceneLoader : public FileSceneLoader
-{
-public:
-    KhronosSceneLoader(const std::string &name);
-    ~KhronosSceneLoader() override = default;
-};
-
-KhronosSceneLoader::KhronosSceneLoader(const std::string &name)
-    : FileSceneLoader(
-          std::filesystem::path("KhronosScenes") / "glTF-Sample-Models-main" / "2.0" / name / "glTF" /
-          (name + ".gltf")
-      )
-{
-}
-
-class Skybox2DLoader : public SceneLoader
-{
-public:
-    Skybox2DLoader(const std::filesystem::path &path, bool isHDR);
-    ~Skybox2DLoader() override = default;
-
-    void Load(SceneBuilder &sceneBuilder) override;
-
-private:
-    std::filesystem::path m_Path;
-    bool m_IsHDR;
-};
-
-Skybox2DLoader::Skybox2DLoader(const std::filesystem::path &path, bool isHDR) : m_Path(path), m_IsHDR(isHDR)
-{
-}
-
-void Skybox2DLoader::Load(SceneBuilder &sceneBuilder)
-{
-    TextureType type = m_IsHDR ? TextureType::SkyboxHDR : TextureType::Skybox;
-    sceneBuilder.SetSkybox(Skybox2D(
-        AssetImporter::GetTextureInfo(Application::GetConfig().AssetDirectoryPath / "scenes" / m_Path, type)
-    ));
-}
-
 class CombinedSceneLoader : public SceneLoader
 {
 public:
-    void AddLoader(std::unique_ptr<SceneLoader> loader);
+    ~CombinedSceneLoader() override = default;
 
+    void AddFile(const std::filesystem::path &path);
+    void AddSkybox2D(const std::filesystem::path &path, bool isHDR);
+
+    [[nodiscard]] bool HasContent() const;
     void Load(SceneBuilder &sceneBuilder) override;
 
 private:
-    std::vector<std::unique_ptr<SceneLoader>> m_Loaders;
+    std::vector<std::filesystem::path> m_FilePaths;
+    std::filesystem::path m_SkyboxPath;
+    bool m_IsSkyboxHDR;
+    bool m_HasSkybox = false;
 };
 
-void CombinedSceneLoader::AddLoader(std::unique_ptr<SceneLoader> loader)
+void CombinedSceneLoader::AddFile(const std::filesystem::path &path)
 {
-    m_Loaders.push_back(std::move(loader));
+    m_FilePaths.push_back(path);
+}
+
+void CombinedSceneLoader::AddSkybox2D(const std::filesystem::path &path, bool isHDR)
+{
+    m_SkyboxPath = path;
+    m_IsSkyboxHDR = isHDR;
+    m_HasSkybox = true;
+}
+
+bool CombinedSceneLoader::HasContent() const
+{
+    return m_HasSkybox || !m_FilePaths.empty();
 }
 
 void CombinedSceneLoader::Load(SceneBuilder &sceneBuilder)
 {
-    for (const auto &loader : m_Loaders)
-        loader->Load(sceneBuilder);
+    for (const auto &path : m_FilePaths)
+        AssetImporter::AddFile(sceneBuilder, path);
+
+    if (!m_HasSkybox)
+        return;
+
+    TextureType type = m_IsSkyboxHDR ? TextureType::SkyboxHDR : TextureType::Skybox;
+    sceneBuilder.SetSkybox(Skybox2D(AssetImporter::GetTextureInfo(
+        Application::GetConfig().AssetDirectoryPath / "scenes" / m_SkyboxPath, type
+    )));
 }
 
 void CreateTexturedCubesScene(SceneBuilder &sceneBuilder);
 void CreateReuseMeshCubesScene(SceneBuilder &sceneBuilder);
 
-void AddScenes(std::map<std::string, std::unique_ptr<SceneLoader>> &scenes)
+static SceneGroup &AddSceneGroup(std::map<std::string, SceneGroup> &scenes, const std::string &name)
 {
-    // TODO: Find example scenes by searching the assets folder
-    scenes.emplace("Textured Cubes", std::make_unique<CustomSceneLoader<CreateTexturedCubesScene>>());
-    scenes.emplace("Reuse Mesh", std::make_unique<CustomSceneLoader<CreateTexturedCubesScene>>());
-    scenes.emplace("Sponza", std::make_unique<KhronosSceneLoader>("Sponza"));
-    scenes.emplace("Chess Game", std::make_unique<KhronosSceneLoader>("ABeautifulGame"));
-    scenes.emplace("Virtual City", std::make_unique<KhronosSceneLoader>("VC"));
-    scenes.emplace("Cesium Man", std::make_unique<KhronosSceneLoader>("CesiumMan"));
-    scenes.emplace("Cesium Milk Truck", std::make_unique<KhronosSceneLoader>("CesiumMilkTruck"));
-    scenes.emplace("Brain Stem", std::make_unique<KhronosSceneLoader>("BrainStem"));
-    scenes.emplace("Box Animated", std::make_unique<KhronosSceneLoader>("BoxAnimated"));
-    scenes.emplace("Lamp", std::make_unique<KhronosSceneLoader>("LightsPunctualLamp"));
-    scenes.emplace("Rigged Simple", std::make_unique<KhronosSceneLoader>("RiggedSimple"));
+    auto [it, _] = scenes.emplace(name, SceneGroup {});
+    return it->second;
+}
 
-    // TODO: Check if the packages are installed
-    auto intelSponzaLoader = std::make_unique<CombinedSceneLoader>();
-    intelSponzaLoader->AddLoader(std::make_unique<FileSceneLoader>(
-        std::filesystem::path("IntelSponzaMain") / "main_sponza" / "NewSponza_Main_glTF_003.gltf"
-    ));
-    intelSponzaLoader->AddLoader(std::make_unique<FileSceneLoader>(
-        std::filesystem::path("IntelSponzaCurtains") / "pkg_a_curtains" / "NewSponza_Curtains_glTF.gltf"
-    ));
-    intelSponzaLoader->AddLoader(std::make_unique<Skybox2DLoader>(
-        std::filesystem::path("IntelSponzaMain") / "main_sponza" / "textures" / "kloppenheim_05_4k.hdr", true
-    ));
+static void AddKhronosScenes(std::map<std::string, SceneGroup> &scenes)
+{
+    const std::filesystem::path base = Application::GetConfig().AssetDirectoryPath / "scenes" /
+                                       "KhronosScenes" / "glTF-Sample-Assets-main" / "Models";
+    SceneGroup &group = AddSceneGroup(scenes, "Khronos Scenes");
 
-    scenes.emplace("Intel Sponza", std::move(intelSponzaLoader));
+    for (const auto &entry : std::filesystem::recursive_directory_iterator(base))
+    {
+        try
+        {
+            if (entry.path().extension() != ".gltf")
+                continue;
+
+            auto loader = std::make_unique<CombinedSceneLoader>();
+            loader->AddFile(entry.path());
+
+            group.emplace(entry.path().stem().string(), std::move(loader));
+        }
+        catch (const std::exception &exc)
+        {
+            logger::debug("Error when iterating scene folders: {}", exc.what());
+        }
+    }
+}
+
+struct SceneDescription
+{
+    std::vector<std::filesystem::path> ComponentPaths;
+    std::filesystem::path SkyboxPath;
+    bool HasSkybox = false;
+    bool IsSkyboxHDR;
+
+    [[nodiscard]] std::unique_ptr<CombinedSceneLoader> ToLoader() const;
+};
+
+std::unique_ptr<CombinedSceneLoader> SceneDescription::ToLoader() const
+{
+    auto loader = std::make_unique<CombinedSceneLoader>();
+    for (const auto &path : ComponentPaths)
+    {
+        if (std::filesystem::exists(path))
+            loader->AddFile(path);
+        else
+            logger::warn("Scene component not found: {}", path.string());
+    }
+
+    if (HasSkybox && std::filesystem::exists(SkyboxPath))
+        loader->AddSkybox2D(SkyboxPath, IsSkyboxHDR);
+    else
+        logger::warn("Skybox file not found: {}", SkyboxPath.string());
+
+    return loader;
+}
+
+static void AddSceneByDescription(
+    SceneGroup &sceneGroup, const std::string &name, SceneDescription &&description
+)
+{
+    auto loader = description.ToLoader();
+    if (loader->HasContent())
+        sceneGroup.emplace(name, std::move(loader));
+    else
+        logger::warn("Entire scene {} not found", name);
+}
+
+static void AddHighQualityScenes(std::map<std::string, SceneGroup> &scenes)
+{
+    const std::filesystem::path base = Application::GetConfig().AssetDirectoryPath / "scenes";
+    SceneGroup &group = AddSceneGroup(scenes, "High Quality Scenes");
+
+    SceneDescription intelSponzaDescription = {
+        .ComponentPaths = {
+            base / "IntelSponzaMain" / "main_sponza" / "NewSponza_Main_glTF_003.gltf",
+            base / "IntelSponzaCurtains" / "pkg_a_curtains" / "NewSponza_Curtains_glTF.gltf",
+        },
+        .SkyboxPath = base / "IntelSponzaMain" / "main_sponza" / "textures" / "kloppenheim_05_4k.hdr",
+        .HasSkybox = true,
+        .IsSkyboxHDR = true,
+    };
+
+    AddSceneByDescription(group, "Intel Sponza", std::move(intelSponzaDescription));
+}
+
+static void AddTestScenes(std::map<std::string, SceneGroup> &scenes)
+{
+    SceneGroup &group = AddSceneGroup(scenes, "Test Scenes");
+    group.emplace("Textured Cubes", std::make_unique<CustomSceneLoader<CreateTexturedCubesScene>>());
+    group.emplace("Reuse Mesh", std::make_unique<CustomSceneLoader<CreateTexturedCubesScene>>());
+}
+
+void AddScenes(std::map<std::string, SceneGroup> &scenes)
+{
+    scenes.clear();
+    AddTestScenes(scenes);
+    AddKhronosScenes(scenes);
+    AddHighQualityScenes(scenes);
 }
 
 template<void(load)(SceneBuilder &sceneBuilder)>

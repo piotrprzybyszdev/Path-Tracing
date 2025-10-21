@@ -1,4 +1,5 @@
 #include <fstream>
+#include <numeric>
 
 #include "Core/Core.h"
 
@@ -35,7 +36,7 @@ RaytracingPipeline::RaytracingPipeline(
 
 RaytracingPipeline::~RaytracingPipeline()
 {
-    m_CompilationDispatch.Cancel();
+    CancelUpdate();
 
     for (auto pipeline : m_Cache.GetValues())
         DeviceContext::GetLogical().destroyPipeline(pipeline);
@@ -53,9 +54,14 @@ DescriptorSet *RaytracingPipeline::GetDescriptorSet()
     return m_DescriptorSet.get();
 }
 
-void RaytracingPipeline::Update(const PipelineConfig &config)
+void RaytracingPipeline::CancelUpdate()
 {
     m_CompilationDispatch.Cancel();
+}
+
+void RaytracingPipeline::Update(const PipelineConfig &config)
+{
+    CancelUpdate();
 
     std::vector<ShaderId> shaderIds;
     for (const RaytracingShaderInfo &info : m_Shaders)
@@ -84,6 +90,12 @@ void RaytracingPipeline::Update(const PipelineConfig &config)
     // Compile the immediately necessary version of the pipeline right away
     if (anyNeedsRecompilation)
         m_Handle = CreateVariantImmediate(config);
+
+    uint32_t taskCount = 0;
+    for (int i = 0; i < m_Shaders.size(); i++)
+        if (needsRecompilation[i])
+            taskCount += m_Shaders[i].GetVariantCount();
+    Application::AddBackgroundTask(BackgroundTaskType::ShaderCompilation, taskCount);
 
     // Now compile shader variants of those that have changed
     m_CompilationDispatch.Dispatch(
@@ -228,9 +240,19 @@ void ShaderInfo::UpdateSpecializations()
     const auto constantIds = m_ShaderLibrary.GetShader(m_Id).GetSpecializationConstantIds();
 
     m_SpecEntries.clear();
+    m_SpecVariantCount.clear();
     m_SpecEntries.reserve(constantIds.size());
+    m_SpecVariantCount.reserve(constantIds.size());
     for (int i = 0; i < constantIds.size(); i++)
+    {
         m_SpecEntries.emplace_back(constantIds[i], i * 4, 4);
+        m_SpecVariantCount.push_back(Shaders::GetMaxSpecializationConstantValue(constantIds[i]) + 1);
+    }
+}
+
+uint32_t ShaderInfo::GetVariantCount() const
+{
+    return std::accumulate(m_SpecVariantCount.begin(), m_SpecVariantCount.end(), 1, std::multiplies<uint32_t>());
 }
 
 void ShaderInfo::CompileVariants()
@@ -245,20 +267,24 @@ void ShaderInfo::CompileVariants()
     // TODO: Support more than two spec constants -> ShaderInfo::Config has to be larger
     assert(m_SpecEntries.size() <= 2);
 
-    uint32_t spec1id = m_SpecEntries.size() < 1 ? -1 : m_SpecEntries[0].constantID;
-    uint32_t spec2id = m_SpecEntries.size() < 2 ? -1 : m_SpecEntries[1].constantID;
+    auto getMaxSpecValue = [this](uint32_t idx) { 
+        return idx >= m_SpecVariantCount.size() ? 1 : m_SpecVariantCount[idx];
+    };
 
-    const Shaders::SpecializationConstant maxSpec1 = Shaders::GetMaxSpecializationConstantValue(spec1id);
-    const Shaders::SpecializationConstant maxSpec2 = Shaders::GetMaxSpecializationConstantValue(spec2id);
+    const Shaders::SpecializationConstant maxSpec1 = getMaxSpecValue(0);
+    const Shaders::SpecializationConstant maxSpec2 = getMaxSpecValue(1);
+    assert(maxSpec1 * maxSpec2 == GetVariantCount());
 
     std::vector<Config> configs;
     configs.reserve(maxSpec1 * maxSpec2);
-    for (Shaders::SpecializationConstant spec1Value = 0; spec1Value <= maxSpec1; spec1Value++)
-        for (Shaders::SpecializationConstant spec2Value = 0; spec2Value <= maxSpec2; spec2Value++)
+    for (Shaders::SpecializationConstant spec1Value = 0; spec1Value < maxSpec1; spec1Value++)
+        for (Shaders::SpecializationConstant spec2Value = 0; spec2Value < maxSpec2; spec2Value++)
             configs.push_back(MakeConfig(spec1Value, spec2Value));
+    assert(configs.size() == maxSpec1 * maxSpec2);
 
     // TODO: Split compilation into smaller batches so that cancellation is faster
     Compile(configs);
+    Application::IncrementBackgroundTaskDone(BackgroundTaskType::ShaderCompilation, configs.size());
     logger::debug("Precompiled {} variants of shader `{}`", configs.size(), GetPath().string());
 }
 
@@ -455,20 +481,25 @@ ComputePipeline::ComputePipeline(
 
 ComputePipeline::~ComputePipeline()
 {
+    CancelUpdate();
+
     DeviceContext::GetLogical().destroyPipelineLayout(m_Layout);
 
     if (m_IsHandleImmediate)
         DeviceContext::GetLogical().destroyPipeline(m_Handle);
 }
 
-void ComputePipeline::Update(const PipelineConfig &config)
+void ComputePipeline::CancelUpdate()
 {
     if (m_CompileThread.joinable())
     {
         m_CompileThread.request_stop();
         m_CompileThread.join();
     }
+}
 
+void ComputePipeline::Update(const PipelineConfig &config)
+{
     ShaderId id = m_Shader.GetId();
     std::vector<bool> isUpToDate = m_ShaderLibrary.RecompileChanged(std::span(&id, 1));
 
@@ -482,6 +513,7 @@ void ComputePipeline::Update(const PipelineConfig &config)
         m_Handle = CreateVariantImmediate(config);
         m_IsHandleImmediate = true;
 
+        Application::AddBackgroundTask(BackgroundTaskType::ShaderCompilation, m_Shader.GetVariantCount());
         m_CompileThread = std::jthread([this]() { m_Shader.CompileVariants(); });
     }
     else

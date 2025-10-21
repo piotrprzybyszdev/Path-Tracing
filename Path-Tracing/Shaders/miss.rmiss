@@ -31,5 +31,5 @@ void main()
         hitValue = texture(skyboxCube, gl_WorldRayDirectionEXT).xyz;
     }
     else
-        hitValue = vec3(0.2f, 0.2f, 0.2f);
+        hitValue = vec3(0.3f, 0.3f, 0.3f);
 }

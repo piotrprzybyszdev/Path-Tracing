@@ -34,7 +34,7 @@ public:
 
     static void OnResize(vk::Extent2D extent);
     static void OnUpdate(float timeStep);
-    static void Render(const Camera &camera);
+    static void Render();
 
     static void ReloadShaders();
     static void UpdateSpecializations(Shaders::SpecializationData data);
@@ -149,6 +149,7 @@ private:
 
     static uint32_t AddDefaultTexture(glm::u8vec4 value, std::string &&name);
 
+    static void UpdatePipelineSpecializations();
     static void CreatePipelines();
     static void UpdateShaderBindingTable();
 

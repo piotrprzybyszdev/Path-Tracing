@@ -17,6 +17,7 @@
 #include "Renderer/Swapchain.h"
 
 #include "Application.h"
+#include "AssetImporter.h"
 #include "SceneManager.h"
 #include "UserInterface.h"
 #include "Window.h"
@@ -72,6 +73,16 @@ static logger::level::level_enum GetLoggerLevel(Config::LogLevel level)
     }
 }
 
+bool BackgroundTaskState::IsRunning() const
+{
+    return TotalCount != DoneCount;
+}
+
+float BackgroundTaskState::GetDoneFraction() const
+{
+    return static_cast<float>(DoneCount) / TotalCount;
+}
+
 uint32_t Application::s_VulkanApiVersion = vk::ApiVersion;
 
 vk::Instance Application::s_Instance = nullptr;
@@ -87,6 +98,7 @@ std::unique_ptr<Swapchain> Application::s_Swapchain = nullptr;
 Application::State Application::s_State = Application::State::Shutdown;
 
 Config Application::s_Config = {};
+std::array<BackgroundTask, 3> Application::s_BackgroundTasks = {};
 
 void Application::Init(int argc, char *argv[])
 {
@@ -184,9 +196,12 @@ void Application::Init(int argc, char *argv[])
     );
     s_State = State::HasSwapchain;
 
-    UserInterface::Init(s_Instance, vk::Format::eR8G8B8A8Unorm, s_Swapchain->GetImageCount());
+    UserInterface::Init(
+        s_Instance, vk::Format::eR8G8B8A8Unorm, s_Swapchain->GetImageCount(), s_Swapchain->GetPresentModes()
+    );
     s_State = State::HasUserInterface;
 
+    AssetImporter::Init();
     SceneManager::Init();
 
     Renderer::Init(s_Swapchain.get());
@@ -204,6 +219,7 @@ void Application::Shutdown()
         [[fallthrough]];
     case State::HasUserInterface:
         SceneManager::Shutdown();
+        AssetImporter::Shutdown();
         UserInterface::Shutdown();
         [[fallthrough]];
     case State::HasSwapchain:
@@ -234,9 +250,6 @@ void Application::Run()
     float lastFrameTime = 0.0f;
     vk::Extent2D previousSize = {};
 
-    SceneManager::SetActiveScene("Sponza");
-    Renderer::UpdateSceneData();
-
     while (!Window::ShouldClose())
     {
         float time = glfwGetTime();
@@ -266,7 +279,6 @@ void Application::Run()
             DeviceContext::GetGraphicsQueue().WaitIdle();
             s_Swapchain->Recreate(windowSize);
 
-            SceneManager::GetActiveScene()->GetActiveCamera().OnResize(windowSize.width, windowSize.height);
             Renderer::OnResize(windowSize);
 
             previousSize = windowSize;
@@ -280,19 +292,10 @@ void Application::Run()
 
                 Window::OnUpdate(timeStep);
                 UserInterface::OnUpdate(timeStep);
-                {
-                    const char *newScene = UserInterface::SceneChange();
-                    if (newScene)
-                    {
-                        SceneManager::SetActiveScene(std::string(newScene));
-                        SceneManager::GetActiveScene()->GetActiveCamera().OnResize(
-                            windowSize.width, windowSize.height
-                        );
-                        Renderer::UpdateSceneData();
-                    }
-                }
 
                 SceneManager::GetActiveScene()->Update(timeStep);
+                Renderer::UpdateSceneData();
+
                 Renderer::s_Exposure = UserInterface::GetExposure();
                 Renderer::OnUpdate(timeStep);
             }
@@ -303,7 +306,7 @@ void Application::Run()
                 if (!s_Swapchain->AcquireImage())
                     continue;
 
-                Renderer::Render(SceneManager::GetActiveScene()->GetActiveCamera());
+                Renderer::Render();
 
                 if (!s_Swapchain->Present())
                     continue;
@@ -329,6 +332,30 @@ const vk::detail::DispatchLoaderDynamic &Application::GetDispatchLoader()
 const Config &Application::GetConfig()
 {
     return s_Config;
+}
+
+void Application::ResetBackgroundTask(BackgroundTaskType type)
+{
+    s_BackgroundTasks[static_cast<uint8_t>(type)].TotalCount = 0;
+    s_BackgroundTasks[static_cast<uint8_t>(type)].DoneCount = 0;
+}
+
+void Application::AddBackgroundTask(BackgroundTaskType type, uint32_t totalCount)
+{
+    s_BackgroundTasks[static_cast<uint8_t>(type)].TotalCount += totalCount;
+}
+
+void Application::IncrementBackgroundTaskDone(BackgroundTaskType type, uint32_t value)
+{
+    s_BackgroundTasks[static_cast<uint8_t>(type)].DoneCount += value;
+}
+
+BackgroundTaskState Application::GetBackgroundTaskState(BackgroundTaskType type)
+{
+    return BackgroundTaskState {
+        .TotalCount = s_BackgroundTasks[static_cast<uint8_t>(type)].TotalCount,
+        .DoneCount = s_BackgroundTasks[static_cast<uint8_t>(type)].DoneCount,
+    };
 }
 
 void Application::SetupLogger()

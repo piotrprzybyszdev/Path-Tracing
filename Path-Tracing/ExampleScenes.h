@@ -9,6 +9,6 @@
 namespace PathTracing::ExampleScenes
 {
 
-void AddScenes(std::map<std::string, std::unique_ptr<SceneLoader>> &scenes);
+void AddScenes(std::map<std::string, SceneGroup> &sceneGroups);
 
 }

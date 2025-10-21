@@ -1,3 +1,5 @@
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#define GLM_FORCE_LEFT_HANDED
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -20,6 +22,9 @@ Camera::Camera(
 
 void Camera::OnResize(uint32_t width, uint32_t height)
 {
+    if (m_Width == width && m_Height == height)
+        return;
+
     m_Width = width;
     m_Height = height;
 
@@ -84,9 +89,9 @@ void InputCamera::OnUpdate(float timeStep)
     if (Input::IsKeyPressed(Key::S))
         m_Position -= timeStep * CameraSpeed * m_Direction;
     if (Input::IsKeyPressed(Key::A))
-        m_Position -= timeStep * CameraSpeed * rightDirection;
-    if (Input::IsKeyPressed(Key::D))
         m_Position += timeStep * CameraSpeed * rightDirection;
+    if (Input::IsKeyPressed(Key::D))
+        m_Position -= timeStep * CameraSpeed * rightDirection;
     if (Input::IsKeyPressed(Key::E))
         m_Position -= timeStep * CameraSpeed * m_UpDirection;
     if (Input::IsKeyPressed(Key::Q))
@@ -107,7 +112,7 @@ void InputCamera::OnUpdate(float timeStep)
 
         if (delta.x != 0.0f || delta.y != 0.0f)
         {
-            m_Yaw -= delta.x;
+            m_Yaw += delta.x;
             m_Pitch = glm::clamp(m_Pitch - delta.y, -89.0f, 89.0f);
 
             m_Direction = glm::normalize(glm::vec3(

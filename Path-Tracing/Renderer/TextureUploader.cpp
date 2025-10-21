@@ -125,6 +125,7 @@ void TextureUploader::UploadTextures(const std::shared_ptr<const Scene> &scene)
 {
     Cancel();
 
+    Application::AddBackgroundTask(BackgroundTaskType::TextureUpload, scene->GetTextures().size());
     StartLoaderThreads(scene);
     StartSubmitThread(scene);
 }
@@ -135,13 +136,13 @@ void TextureUploader::Cancel()
     if (!m_SubmitThread.joinable())
         return;
 
-    m_SubmitThread.request_stop();
     for (auto &thread : m_LoaderThreads)
         thread.request_stop();
-
-    m_SubmitThread.join();
     for (auto &thread : m_LoaderThreads)
         thread.join();
+
+    m_SubmitThread.request_stop();
+    m_SubmitThread.join();
 
     m_TextureIndex = 0;
     m_RejectedCount = 0;
@@ -154,6 +155,8 @@ void TextureUploader::Cancel()
         m_DataBuffersSemaphore.acquire();
     m_DataBuffers.clear();
     m_TextureIndices.clear();
+
+    Application::ResetBackgroundTask(BackgroundTaskType::TextureUpload);
 }
 
 Image TextureUploader::UploadDefault(glm::u8vec4 value, std::string &&name)
@@ -271,6 +274,7 @@ void TextureUploader::StartLoaderThreads(const std::shared_ptr<const Scene> &sce
                 if (!CheckCanUpload(textureInfo))
                 {
                     m_RejectedCount++;
+                    Application::IncrementBackgroundTaskDone(BackgroundTaskType::TextureUpload);
                     continue;
                 }
 
@@ -353,6 +357,9 @@ void TextureUploader::StartSubmitThread(const std::shared_ptr<const Scene> &scen
                 }
             }
 
+            Application::IncrementBackgroundTaskDone(
+                BackgroundTaskType::TextureUpload, textureIndices.size()
+            );
             uploadedCount += textureIndices.size();
             buffers.clear();
             textureIndices.clear();
@@ -399,7 +406,9 @@ void TextureUploader::UploadTexture(
 
     const uint32_t scale =
         std::max(1u, std::max(texture.Width / MaxTextureSize.width, texture.Height / MaxTextureSize.height));
-    const vk::Extent2D extent(texture.Width / scale, texture.Height / scale);
+    const uint32_t width = std::max(texture.Width / scale, 1u);
+    const uint32_t height = std::max(texture.Height / scale, 1u);
+    const vk::Extent2D extent(width, height);
 
     Image image = m_ImageBuilder.CreateImage(extent, texture.Path.string());
 

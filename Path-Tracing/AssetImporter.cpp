@@ -1,4 +1,5 @@
 #include <assimp/Importer.hpp>
+#include <assimp/ProgressHandler.hpp>
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
 #include <glm/ext/matrix_relational.hpp>
@@ -9,6 +10,7 @@
 #include "Core/Config.h"
 #include "Core/Core.h"
 
+#include "Application.h"
 #include "AssetImporter.h"
 
 namespace PathTracing
@@ -39,6 +41,18 @@ static void PremultiplyTextureData(const std::string &path, std::span<std::byte>
             warned = true;
         }
     }
+}
+
+static std::unique_ptr<Assimp::Importer> s_Importer = nullptr;
+
+void AssetImporter::Init()
+{
+    s_Importer = std::make_unique<Assimp::Importer>();
+}
+
+void AssetImporter::Shutdown()
+{
+    s_Importer.reset();
 }
 
 std::byte *AssetImporter::LoadTextureData(const TextureInfo &info)
@@ -82,8 +96,6 @@ TextureInfo AssetImporter::GetTextureInfo(const std::filesystem::path path, Text
 namespace
 {
 
-Assimp::Importer s_Importer = Assimp::Importer();
-
 TextureType ToTextureType(aiTextureType type)
 {
     switch (type)
@@ -126,7 +138,14 @@ uint32_t AddTexture(
 
     std::filesystem::path texturePath = base / std::filesystem::path(path.C_Str());
 
-    return sceneBuilder.AddTexture(AssetImporter::GetTextureInfo(texturePath, textureType));
+    try
+    {
+        return sceneBuilder.AddTexture(AssetImporter::GetTextureInfo(texturePath, textureType));
+    }
+    catch (const error &error)
+    {
+        return Scene::GetDefaultTextureIndex(textureType);
+    }
 }
 
 Shaders::TexturedMaterial LoadTexturedMaterial(
@@ -296,6 +315,8 @@ std::vector<uint32_t> LoadMeshes(
                 "Adding geometry of mesh {} (idx: {}) as the same as geometry of mesh {} (idx: {})",
                 mesh->mName.C_Str(), i, other->mName.C_Str(), otherGeometryIndex
             );
+
+            Application::IncrementBackgroundTaskDone(BackgroundTaskType::SceneImport);
             continue;
         }
 
@@ -366,6 +387,8 @@ std::vector<uint32_t> LoadMeshes(
             "Adding geometry (mesh {}) ({}) with {} vertices and {} indices", mesh->mName.C_Str(),
             isOpaque ? "Opaque" : "Not opaque", vertexCount, indexCount
         );
+
+        Application::IncrementBackgroundTaskDone(BackgroundTaskType::SceneImport);
     }
 
     return meshToGeometry;
@@ -654,6 +677,7 @@ void LoadAnimations(
         }
 
         sceneBuilder.AddAnimation(std::move(outAnimation));
+        Application::IncrementBackgroundTaskDone(BackgroundTaskType::SceneImport);
     }
 }
 
@@ -735,7 +759,9 @@ void LoadCameras(
         const uint32_t nodeIndex = sceneNodeIndices.at(node);
 
         const float aspect = camera->mAspect == 0.0f ? 16.0f / 9.0f : camera->mAspect;
-        const float verticalFov = 2.0f * glm::atan(glm::tan(camera->mHorizontalFOV / 2.0f) / aspect);
+        const float verticalFov = camera->mHorizontalFOV == 0.0f
+                                      ? 45.0f
+                                      : 2.0f * glm::atan(glm::tan(camera->mHorizontalFOV / 2.0f) / aspect);
         glm::vec3 up = TrivialCopy<aiVector3D, glm::vec3>(camera->mUp);
         up.y *= -1;
 
@@ -751,10 +777,38 @@ void LoadCameras(
     }
 }
 
+class ProgressHandler : public Assimp::ProgressHandler
+{
+public:
+    ProgressHandler(uint32_t taskTotal) : m_TaskTotal(taskTotal)
+    {
+    }
+
+    ~ProgressHandler() override = default;
+
+    bool Update(float percentage) override
+    {
+        const uint32_t done = m_TaskTotal * percentage;
+        Application::IncrementBackgroundTaskDone(BackgroundTaskType::SceneImport, done - m_PreviousDone);
+        m_PreviousDone = done;
+
+        return true;
+    }
+
+private:
+    const uint32_t m_TaskTotal;
+    uint32_t m_PreviousDone = 0;
+};
+
 }
 
 SceneBuilder &AssetImporter::AddFile(SceneBuilder &sceneBuilder, const std::filesystem::path &path)
 {
+    // Import by assimp will be half the entire task
+    const uint32_t assimpTasks = 100;
+    Application::ResetBackgroundTask(BackgroundTaskType::SceneImport);
+    Application::AddBackgroundTask(BackgroundTaskType::SceneImport, 2 * assimpTasks);
+
     logger::info("Loading Scene {}", path.string());
     Timer timer("Scene Load");
 
@@ -768,10 +822,11 @@ SceneBuilder &AssetImporter::AddFile(SceneBuilder &sceneBuilder, const std::file
 #endif
 
         Timer timer("File Import");
-        scene = s_Importer.ReadFile(path.string().c_str(), flags);
+        s_Importer->SetProgressHandler(new ProgressHandler(assimpTasks));
+        scene = s_Importer->ReadFile(path.string().c_str(), flags);
 
         if (scene == nullptr)
-            throw error(s_Importer.GetErrorString());
+            throw error(s_Importer->GetErrorString());
     }
 
     assert((scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) == false);
@@ -781,6 +836,12 @@ SceneBuilder &AssetImporter::AddFile(SceneBuilder &sceneBuilder, const std::file
     logger::info("Number of materials in the scene: {}", scene->mNumMaterials);
     logger::info("Number of lights in the scene: {}", scene->mNumLights);
     logger::info("Number of cameras in the scene: {}", scene->mNumCameras);
+    logger::info("Number of animations in the scene: {}", scene->mNumAnimations);
+
+    // Report half of the task as done
+    const uint32_t taskSize = scene->mNumMeshes + scene->mNumAnimations;
+    Application::AddBackgroundTask(BackgroundTaskType::SceneImport, 2 * taskSize - assimpTasks);
+    Application::IncrementBackgroundTaskDone(BackgroundTaskType::SceneImport, taskSize);
 
     // TODO: Support embedded textures
     assert(scene->HasTextures() == false);

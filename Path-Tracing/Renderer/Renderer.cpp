@@ -116,8 +116,8 @@ void Renderer::Shutdown()
 {
     DeviceContext::GetGraphicsQueue().WaitIdle();
 
-    s_TextureOwnershipCommandBuffer.reset();
     s_TextureUploader.reset();
+    s_TextureOwnershipCommandBuffer.reset();
 
     for (RenderingResources &res : s_RenderingResources)
         DeviceContext::GetLogical().destroyCommandPool(res.CommandPool);
@@ -143,6 +143,9 @@ void Renderer::Shutdown()
 
 void Renderer::UpdateSceneData()
 {
+    if (s_SceneData != nullptr && s_SceneData->Handle == SceneManager::GetActiveScene())
+        return;
+
     DeviceContext::GetGraphicsQueue().WaitIdle();
     s_TextureUploader->Cancel();
     s_SceneData = std::make_unique<SceneData>(SceneManager::GetActiveScene());
@@ -446,26 +449,27 @@ void Renderer::UpdateShaderBindingTable()
     );
 }
 
-void Renderer::ReloadShaders()
+void Renderer::UpdatePipelineSpecializations()
 {
     DeviceContext::GetGraphicsQueue().WaitIdle();
-
+    s_RaytracingPipeline->CancelUpdate();
+    s_SkinningPipeline->CancelUpdate();
+    Application::ResetBackgroundTask(BackgroundTaskType::ShaderCompilation);
     s_RaytracingPipeline->Update(s_ShaderSpecialization);
     s_SkinningPipeline->Update(s_ShaderSpecialization);
-
     UpdateShaderBindingTable();
+}
+
+void Renderer::ReloadShaders()
+{
+    UpdatePipelineSpecializations();
 }
 
 void Renderer::UpdateSpecializations(Shaders::SpecializationData data)
 {
     data.MissFlags = s_ShaderSpecialization.MissFlags;
     s_ShaderSpecialization = data;
-
-    DeviceContext::GetGraphicsQueue().WaitIdle();
-    s_RaytracingPipeline->Update(s_ShaderSpecialization);
-    s_SkinningPipeline->Update(s_ShaderSpecialization);
-
-    UpdateShaderBindingTable();
+    UpdatePipelineSpecializations();
 }
 
 void Renderer::RecordCommandBuffer(const RenderingResources &resources)
@@ -769,7 +773,7 @@ void Renderer::OnUpdate(float /* timeStep */)
         OnInFlightCountChange();
 }
 
-void Renderer::Render(const Camera &camera)
+void Renderer::Render()
 {
     s_SkinningPipeline->GetDescriptorSet()->FlushUpdate(s_Swapchain->GetCurrentFrameInFlightIndex());
 
@@ -786,6 +790,8 @@ void Renderer::Render(const Camera &camera)
     const Swapchain::SynchronizationObjects &sync = s_Swapchain->GetCurrentSyncObjects();
     const RenderingResources &res = s_RenderingResources[s_Swapchain->GetCurrentFrameInFlightIndex()];
 
+    Camera &camera = s_SceneData->Handle->GetActiveCamera();
+    camera.OnResize(res.StorageImage.GetExtent().width, res.StorageImage.GetExtent().height);
     Shaders::RaygenUniformData rgenData = { camera.GetInvViewMatrix(), camera.GetInvProjectionMatrix(),
                                             s_Exposure };
 

@@ -66,13 +66,13 @@ namespace PathTracing
 
 #endif
 
-#ifdef CONFIG_ASSERTS
+#ifndef CONFIG_ASSERTS
     #ifndef NDEBUG
         #define NDEBUG
     #endif
 #endif
 
-#ifdef NDEBUG
+#ifndef NDEBUG
     #ifndef CONFIG_ASSERTS
         #define CONFIG_ASSERTS
     #endif
@@ -93,6 +93,8 @@ struct Config
 
     bool ValidationLayers = false;
     bool Asserts = false;
+
+    std::filesystem::path ConfigDirectoryPath;
 
     std::filesystem::path AssetDirectoryPath;
     bool OptimizeScene = false;

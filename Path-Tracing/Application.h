@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <memory>
 
 #include <vulkan/vulkan.hpp>
@@ -10,6 +11,28 @@
 
 namespace PathTracing
 {
+
+enum class BackgroundTaskType : uint8_t
+{
+    ShaderCompilation,
+    TextureUpload,
+    SceneImport,
+};
+
+struct BackgroundTask
+{
+    std::atomic<uint32_t> TotalCount;
+    std::atomic<uint32_t> DoneCount;
+};
+
+struct BackgroundTaskState
+{
+    uint32_t TotalCount;
+    uint32_t DoneCount;
+
+    [[nodiscard]] bool IsRunning() const;
+    [[nodiscard]] float GetDoneFraction() const;
+};
 
 class Application
 {
@@ -22,6 +45,18 @@ public:
     static uint32_t GetVulkanApiVersion();
     static const vk::detail::DispatchLoaderDynamic &GetDispatchLoader();
     static const Config &GetConfig();
+
+    static void ResetBackgroundTask(BackgroundTaskType type);
+    static void AddBackgroundTask(BackgroundTaskType type, uint32_t totalCount);
+    static void IncrementBackgroundTaskDone(BackgroundTaskType type, uint32_t value = 1);
+    static BackgroundTaskState GetBackgroundTaskState(BackgroundTaskType type);
+
+public:
+    static inline constexpr std::array<BackgroundTaskType, 3> g_BackgroundTasks = {
+        BackgroundTaskType::ShaderCompilation,
+        BackgroundTaskType::TextureUpload,
+        BackgroundTaskType::SceneImport,
+    };
 
 private:
     static uint32_t s_VulkanApiVersion;
@@ -50,6 +85,7 @@ private:
     static State s_State;
 
     static Config s_Config;
+    static std::array<BackgroundTask, 3> s_BackgroundTasks;
 
 private:
     static void SetupLogger();

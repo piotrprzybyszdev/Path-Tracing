@@ -30,10 +30,10 @@ Config::LogLevel GetLogLevel()
     return Config::LogLevel::Error;
 }
 
-std::filesystem::path GetLogFilePath()
+std::filesystem::path GetLogFileName()
 {
     const auto time = std::chrono::system_clock::now();
-    return std::filesystem::path("logs") / std::format("Path-Tracing-{:%d-%m-%Y-%H-%M-%OS}.log", time);
+    return std::format("Path-Tracing-{:%d-%m-%Y-%H-%M-%OS}.log", time);
 }
 
 std::string GetShaderExtensionSuffix()
@@ -64,6 +64,8 @@ void PrintHelp()
     std::cout << "        [-h, -H, --help] - Display this message" << std::endl;
     std::cout << "        [-A, --assets]   - Specify asset directory" << std::endl;
     std::cout << "        [-S, --shaders]  - Specify shader directory" << std::endl;
+    std::cout << "        [-C, --config]   - Specify config directory" << std::endl;
+    std::cout << "        [-L, --log]      - Specify log directory" << std::endl;
 
     throw PrintHelpException();
 }
@@ -95,21 +97,24 @@ bool getFlag(std::span<std::string_view> cmd, std::initializer_list<std::string_
     return false;
 }
 
-std::filesystem::path FindFolder(std::string_view name)
+std::filesystem::path FindFolder(std::string_view name, bool optional = false)
 {
-    std::array<std::filesystem::path, 2> searchPaths = {
-        std::filesystem::current_path(),
-        std::filesystem::current_path() / "Path-Tracing",
-    };
+    std::filesystem::path path = std::filesystem::current_path();
 
-    for (std::filesystem::path path : searchPaths)
+    if (std::filesystem::is_directory(path / "Path-Tracing" / name))
+        return path / "Path-Tracing" / name;
+
+    for (int i = 0; i < 3; i++)
     {
-        for (int i = 0; i < 3; i++)
-        {
-            if (std::filesystem::is_directory(path / name))
-                return path / name;
-            path = path.parent_path();
-        }
+        if (std::filesystem::is_directory(path / name))
+            return path / name;
+        path = path.parent_path();
+    }
+
+    if (optional)
+    {
+        std::filesystem::create_directory(std::filesystem::current_path() / name);
+        return std::filesystem::current_path() / name;
     }
 
     std::cout << "ERROR: "<< name << " directory could not be found" << std::endl << std::endl;
@@ -118,14 +123,15 @@ std::filesystem::path FindFolder(std::string_view name)
 }
 
 std::filesystem::path GetDirectory(
-    std::span<std::string_view> cmd, std::initializer_list<std::string_view> options, std::string_view folder
+    std::span<std::string_view> cmd, std::initializer_list<std::string_view> options, std::string_view folder,
+    bool optional = false
 )
 {
     auto argument = getArgument(cmd, options);
     if (!argument.empty())
         return std::filesystem::absolute(argument);
 
-    return FindFolder(folder);
+    return FindFolder(folder, optional);
 }
 
 }
@@ -141,6 +147,8 @@ Config Config::Create(int argc, char *argv[])
 
     const auto assetDirectory = GetDirectory(cmd, { "-A", "--assets" }, "assets");
     const auto shaderDirectory = GetDirectory(cmd, { "-S", "--shaders" }, "Shaders");
+    const auto configDirectory = GetDirectory(cmd, { "-C", "--config" }, "config", true);
+    const auto logDirectory = GetDirectory(cmd, { "-L", "--log" }, "log", true);
 
     return Config {
 #ifdef CONFIG_VALIDATION_LAYERS
@@ -151,6 +159,7 @@ Config Config::Create(int argc, char *argv[])
         .Asserts = true,
 #endif
 
+        .ConfigDirectoryPath = configDirectory,
         .AssetDirectoryPath = assetDirectory,
 
 #ifdef CONFIG_OPTIMIZE_SCENE
@@ -161,7 +170,7 @@ Config Config::Create(int argc, char *argv[])
 
 #ifdef CONFIG_LOG_TO_FILE
         .LogToFile = true,
-        .LogFilePath = GetLogFilePath(),
+        .LogFilePath = logDirectory / GetLogFileName(),
 #endif
 
 #ifdef CONFIG_MAX_TEXTURE_LOADER_THREADS

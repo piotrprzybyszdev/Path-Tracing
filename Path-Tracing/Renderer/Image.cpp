@@ -22,6 +22,7 @@ Image::Image(
 )
     : m_Format(format), m_Extent(extent), m_Layers(layers), m_MipLevels(mipLevels)
 {
+    assert(extent.width > 0 && extent.height > 0);
     if (isCube)
         assert(layers == 6);
 

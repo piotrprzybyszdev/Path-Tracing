@@ -49,6 +49,7 @@ public:
 
     [[nodiscard]] vk::Extent2D GetExtent() const;
     [[nodiscard]] vk::SurfaceFormatKHR GetSurfaceFormat() const;
+    [[nodiscard]] std::span<const vk::PresentModeKHR> GetPresentModes() const;
     [[nodiscard]] vk::PresentModeKHR GetPresentMode() const;
 
 private:
@@ -57,6 +58,8 @@ private:
     const vk::SurfaceKHR m_Surface;
     const vk::SurfaceFormatKHR m_SurfaceFormat;
     const vk::Format m_LinearFormat;
+    std::vector<vk::PresentModeKHR> m_PresentModes;
+
     vk::PresentModeKHR m_PresentMode = vk::PresentModeKHR::eFifo;
 
     uint32_t m_ImageCount;
