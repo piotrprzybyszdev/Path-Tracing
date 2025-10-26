@@ -14,13 +14,25 @@ namespace PathTracing
 
 struct BufferContent
 {
+    BufferContent() = default;
+
+    BufferContent(const void *data, vk::DeviceSize size)
+        : Data(data), Size(size)
+    {
+    }
+
     template<Utils::uploadable T>
     BufferContent(std::span<T> content) : Size(content.size_bytes()), Data(content.data())
     {
     }
 
-    vk::DeviceSize Size;
-    const void *Data;
+    [[nodiscard]] BufferContent GetSubContent(vk::DeviceSize offset, vk::DeviceSize size) const
+    {
+        return BufferContent(reinterpret_cast<const std::byte *>(Data) + offset, size);
+    }
+
+    const void *Data = nullptr;
+    vk::DeviceSize Size = 0;
 };
 
 class Buffer

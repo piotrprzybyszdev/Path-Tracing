@@ -18,6 +18,7 @@
 #include "Scene.h"
 #include "ShaderBindingTable.h"
 #include "ShaderLibrary.h"
+#include "StagingBuffer.h"
 #include "Swapchain.h"
 #include "TextureUploader.h"
 
@@ -42,7 +43,7 @@ public:
     static float s_Exposure;
 
     static std::unique_ptr<CommandBuffer> s_MainCommandBuffer;
-    static std::unique_ptr<Buffer> s_StagingBuffer;
+    static std::unique_ptr<StagingBuffer> s_StagingBuffer;
 
 public:
     // Lock s_DescriptorSetMutex before calling (if not on main thread)
@@ -145,6 +146,7 @@ private:
     static std::unique_ptr<ShaderLibrary> s_ShaderLibrary;
 
 private:
+    static Buffer CreateDeviceBufferUnflushed(BufferContent content, std::string &&name);
     static Buffer CreateDeviceBuffer(BufferContent content, std::string &&name);
 
     static uint32_t AddDefaultTexture(glm::u8vec4 value, std::string &&name);

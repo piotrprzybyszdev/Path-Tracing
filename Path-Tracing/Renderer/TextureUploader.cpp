@@ -203,13 +203,17 @@ Image TextureUploader::UploadSkyboxBlocking(const Skybox2D &skybox)
                          vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst |
                          vk::ImageUsageFlagBits::eTransferSrc
                      )
-                     .EnableMips()
                      .CreateImage(extent, "Skybox 2D");
 
-    const Buffer &buffer = *Renderer::s_StagingBuffer;
     const TextureInfo &textureInfo = skybox.Content;
-    UploadToBuffer(skybox.Content, buffer);
-    SubmitBlocking(image, buffer, extent);
+
+    std::byte *data = AssetImporter::LoadTextureData(textureInfo);
+    const size_t dataSize = Image::GetByteSize(extent, GetTextureDataFormat(textureInfo.Type));
+
+    std::array<BufferContent, 1> contents = { std::span(data, dataSize) };
+
+    Renderer::s_StagingBuffer->UploadToImage(contents, image);
+    AssetImporter::ReleaseTextureData(data);
 
     return image;
 }
@@ -233,20 +237,28 @@ Image TextureUploader::UploadSkyboxBlocking(const SkyboxCube &skybox)
                          vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst |
                          vk::ImageUsageFlagBits::eTransferSrc
                      )
-                     .EnableMips()
                      .EnableCube()
                      .CreateImage(extent, "Skybox Cube");
 
-    const Buffer &buffer = *Renderer::s_StagingBuffer;
-    const vk::DeviceSize layerSize = Image::GetByteSize(extent, format);
+    std::array<std::byte *, 6> data = {};
+    std::array<BufferContent, 6> contents = {};
+
     for (int i = 0; i < textureInfos.size(); i++)
     {
         assert(textureInfos[i]->Width == extent.width && textureInfos[i]->Height == extent.height);
         assert(textureInfos[i]->Type == type);
-        UploadToBuffer(*textureInfos[i], buffer, i * layerSize);
+
+        const size_t dataSize = Image::GetByteSize(extent, GetTextureDataFormat(textureInfos[i]->Type));
+
+        data[i] = AssetImporter::LoadTextureData(*textureInfos[i]);
+        contents[i] = std::span(data[i], dataSize);
     }
 
-    SubmitBlocking(image, buffer, extent);
+    Renderer::s_StagingBuffer->UploadToImage(contents, image);
+
+    for (int i = 0; i < contents.size(); i++)
+        AssetImporter::ReleaseTextureData(data[i]);
+
     return image;
 }
 

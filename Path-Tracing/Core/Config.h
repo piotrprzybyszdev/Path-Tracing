@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <filesystem>
 
+#include "Core/Core.h"
+
 namespace PathTracing
 {
 
@@ -42,6 +44,10 @@ namespace PathTracing
 #define CONFIG_MAX_SHADER_COMPILATION_THEADS 2
 #endif
 
+#ifndef CONFIG_MAX_SHADER_COMPILATION_BATCH_SIZE
+#define CONFIG_MAX_SHADER_COMPILATION_BATCH_SIZE 16
+#endif
+
 #endif
 
 #ifdef CONFIG_TRACE
@@ -62,6 +68,10 @@ namespace PathTracing
 
 #ifndef CONFIG_MAX_SHADER_COMPILATION_THEADS
 #define CONFIG_MAX_SHADER_COMPILATION_THEADS 2
+#endif
+
+#ifndef CONFIG_MAX_SHADER_COMPILATION_BATCH_SIZE
+#define CONFIG_MAX_SHADER_COMPILATION_BATCH_SIZE 16
 #endif
 
 #endif
@@ -117,7 +127,10 @@ struct Config
     bool ShaderPrecompilation = true;
     uint32_t MaxPipelineVariantCacheSize = 1000;
     uint32_t MaxShaderCompilationThreads = std::numeric_limits<uint32_t>::max();
+    uint32_t MaxShaderCompilationBatchSize = std::numeric_limits<uint32_t>::max();
     std::filesystem::path ShaderCacheExtension;
+
+    uint64_t MaxStagingBufferSize = 64_MiB;
 };
 
 class PrintHelpException : public std::exception

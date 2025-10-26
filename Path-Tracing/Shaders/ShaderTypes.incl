@@ -83,6 +83,7 @@ struct AnimatedVertex
 struct SolidColorMaterial
 {
     vec3 Color;
+    float pad0;
 };
 
 struct TexturedMaterial

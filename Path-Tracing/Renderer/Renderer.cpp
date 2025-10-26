@@ -53,7 +53,7 @@ std::unique_ptr<ComputePipeline> Renderer::s_SkinningPipeline = nullptr;
 std::unique_ptr<BufferBuilder> Renderer::s_BufferBuilder = nullptr;
 std::unique_ptr<ImageBuilder> Renderer::s_ImageBuilder = nullptr;
 
-std::unique_ptr<Buffer> Renderer::s_StagingBuffer = nullptr;
+std::unique_ptr<StagingBuffer> Renderer::s_StagingBuffer = nullptr;
 
 vk::Sampler Renderer::s_TextureSampler = nullptr;
 
@@ -76,9 +76,9 @@ void Renderer::Init(const Swapchain *swapchain)
 
     s_MainCommandBuffer = std::make_unique<CommandBuffer>(DeviceContext::GetGraphicsQueue());
 
-    s_StagingBuffer = BufferBuilder()
-                          .SetUsageFlags(vk::BufferUsageFlagBits::eTransferSrc)
-                          .CreateHostBufferUnique(256ull * 1024 * 1024, "Main Staging Buffer");
+    s_StagingBuffer = std::make_unique<StagingBuffer>(
+        Application::GetConfig().MaxStagingBufferSize, "Main Staging Buffer", *s_MainCommandBuffer
+    );
 
     s_BufferBuilder = std::make_unique<BufferBuilder>();
     s_ImageBuilder = std::make_unique<ImageBuilder>();
@@ -158,13 +158,14 @@ void Renderer::UpdateSceneData()
         );
 
         const auto &vertices = s_SceneData->Handle->GetVertices();
-        s_SceneData->VertexBuffer = CreateDeviceBuffer(vertices, "Vertex Buffer");
+        s_SceneData->VertexBuffer = CreateDeviceBufferUnflushed(vertices, "Vertex Buffer");
 
         const auto &indices = s_SceneData->Handle->GetIndices();
-        s_SceneData->IndexBuffer = CreateDeviceBuffer(indices, "Index Buffer");
+        s_SceneData->IndexBuffer = CreateDeviceBufferUnflushed(indices, "Index Buffer");
 
         const auto &animatedIndices = s_SceneData->Handle->GetAnimatedIndices();
-        s_SceneData->AnimatedIndexBuffer = CreateDeviceBuffer(animatedIndices, "Animated Index Buffer");
+        s_SceneData->AnimatedIndexBuffer =
+            CreateDeviceBufferUnflushed(animatedIndices, "Animated Index Buffer");
 
         s_BufferBuilder->ResetFlags().SetUsageFlags(
             vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR |
@@ -173,14 +174,15 @@ void Renderer::UpdateSceneData()
         );
 
         const auto &transforms = s_SceneData->Handle->GetTransforms();
-        s_SceneData->TransformBuffer = CreateDeviceBuffer(transforms, "Transform Buffer");
+        s_SceneData->TransformBuffer = CreateDeviceBufferUnflushed(transforms, "Transform Buffer");
 
         s_BufferBuilder->ResetFlags().SetUsageFlags(
             vk::BufferUsageFlagBits::eShaderDeviceAddress | vk::BufferUsageFlagBits::eTransferDst
         );
 
         const auto &animVertices = s_SceneData->Handle->GetAnimatedVertices();
-        s_SceneData->AnimatedVertexBuffer = CreateDeviceBuffer(animVertices, "Animated Vertex Buffer");
+        s_SceneData->AnimatedVertexBuffer =
+            CreateDeviceBufferUnflushed(animVertices, "Animated Vertex Buffer");
 
         const auto &geometries = s_SceneData->Handle->GetGeometries();
 
@@ -214,14 +216,18 @@ void Renderer::UpdateSceneData()
         );
 
         s_SceneData->AnimatedVertexMapBuffer =
-            CreateDeviceBuffer(std::span(animatedVertexMap), "Animated Vertex Map Buffer");
+            CreateDeviceBufferUnflushed(std::span(animatedVertexMap), "Animated Vertex Map Buffer");
 
         const auto &texturedMaterials = s_SceneData->Handle->GetTexturedMaterials();
-        s_SceneData->TexturedMaterialBuffer = CreateDeviceBuffer(texturedMaterials, "Textured Material Buffer");
+        s_SceneData->TexturedMaterialBuffer =
+            CreateDeviceBufferUnflushed(texturedMaterials, "Textured Material Buffer");
 
         const auto &solidColorMaterials = s_SceneData->Handle->GetSolidColorMaterials();
         s_SceneData->SolidColorMaterialBuffer =
-            CreateDeviceBuffer(solidColorMaterials, "Solid Color Material Buffer");
+            CreateDeviceBufferUnflushed(solidColorMaterials, "Solid Color Material Buffer");
+
+        // Ensure all scene buffers are flushed to device memory
+        s_StagingBuffer->Flush();
 
         std::vector<uint32_t> geometryIndexMap;
         s_SceneData->Geometries.clear();
@@ -286,7 +292,7 @@ void Renderer::UpdateSceneData()
                     .HitGroupIndex = s_RaytracingConfig.OcclusionRayHitIndex,
                     .Buffer = data,
                 };
-               
+
                 switch (mesh.ShaderMaterialType)
                 {
                 case MaterialType::Textured:
@@ -368,18 +374,21 @@ void Renderer::UpdateTexture(uint32_t index)
         );
 }
 
-Buffer Renderer::CreateDeviceBuffer(BufferContent content, std::string &&name)
+Buffer Renderer::CreateDeviceBufferUnflushed(BufferContent content, std::string &&name)
 {
     if (content.Size == 0)
         return Buffer();
 
     auto buffer = s_BufferBuilder->CreateDeviceBuffer(content.Size, name);
-    s_StagingBuffer->Upload(content);
+    s_StagingBuffer->AddContent(content, buffer.GetHandle());
 
-    s_MainCommandBuffer->Begin();
-    buffer.UploadStaging(s_MainCommandBuffer->Buffer, *s_StagingBuffer);
-    s_MainCommandBuffer->SubmitBlocking();
+    return buffer;
+}
 
+Buffer Renderer::CreateDeviceBuffer(BufferContent content, std::string &&name)
+{
+    Buffer buffer = CreateDeviceBufferUnflushed(content, std::move(name));
+    s_StagingBuffer->Flush();
     return buffer;
 }
 
@@ -483,9 +492,7 @@ void Renderer::RecordCommandBuffer(const RenderingResources &resources)
     {
         Utils::DebugLabel label(commandBuffer, "Path tracing pass", { 0.35f, 0.9f, 0.29f, 1.0f });
 
-        commandBuffer.bindPipeline(
-            vk::PipelineBindPoint::eRayTracingKHR, s_RaytracingPipeline->GetHandle()
-        );
+        commandBuffer.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, s_RaytracingPipeline->GetHandle());
         commandBuffer.bindDescriptorSets(
             vk::PipelineBindPoint::eRayTracingKHR, s_RaytracingPipeline->GetLayout(), 0,
             { s_RaytracingPipeline->GetDescriptorSet()->GetSet(s_Swapchain->GetCurrentFrameInFlightIndex()) },
@@ -573,7 +580,8 @@ void Renderer::UpdateAnimatedVertices(const RenderingResources &resources)
         );
         commandBuffer.bindDescriptorSets(
             vk::PipelineBindPoint::eCompute, s_SkinningPipeline->GetLayout(), 0,
-            { s_SkinningPipeline->GetDescriptorSet()->GetSet(s_Swapchain->GetCurrentFrameInFlightIndex()) }, {}
+            { s_SkinningPipeline->GetDescriptorSet()->GetSet(s_Swapchain->GetCurrentFrameInFlightIndex()) },
+            {}
         );
 
         const uint32_t groupCount = std::ceil(

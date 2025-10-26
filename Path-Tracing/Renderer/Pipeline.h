@@ -2,6 +2,10 @@
 
 #include <vulkan/vulkan.hpp>
 
+#include <filesystem>
+#include <span>
+#include <vector>
+
 #include "Core/Cache.h"
 #include "Core/Threads.h"
 
@@ -47,11 +51,11 @@ public:
     [[nodiscard]] std::span<const vk::SpecializationMapEntry> GetSpecEntries() const;
 
     void UpdateSpecializations();
-    void CompileVariants();
+    void CompileVariants(std::stop_token stopToken);
     [[nodiscard]] vk::Pipeline GetVariant(const PipelineConfig &config) const;
 
 protected:
-    virtual void Compile(const std::vector<Config> &configs) = 0;
+    virtual void Compile(std::span<const Config> configs) = 0;
 
 protected:
     ShaderLibrary &m_ShaderLibrary;
@@ -90,7 +94,7 @@ public:
     RaytracingShaderInfo(RaytracingShaderInfo &&info) noexcept;
 
 protected:
-    void Compile(const std::vector<Config> &configs) override;
+    void Compile(std::span<const Config> configs) override;
 
 private:
 };
@@ -107,7 +111,7 @@ public:
     ComputeShaderInfo(ComputeShaderInfo &&info) noexcept;
 
 protected:
-    void Compile(const std::vector<Config> &configs) override;
+    void Compile(std::span<const Config> configs) override;
 };
 
 // TODO: Conider templating pipelines instead of hard coding `PipelineConfig`

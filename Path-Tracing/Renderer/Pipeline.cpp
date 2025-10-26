@@ -60,7 +60,7 @@ void RaytracingPipeline::CancelUpdate()
 }
 
 void RaytracingPipeline::Update(const PipelineConfig &config)
-{
+{  
     CancelUpdate();
 
     std::vector<ShaderId> shaderIds;
@@ -69,42 +69,16 @@ void RaytracingPipeline::Update(const PipelineConfig &config)
 
     std::vector<bool> isUpToDate = m_ShaderLibrary.RecompileChanged(shaderIds);
     bool allUpToDate = std::ranges::all_of(isUpToDate, [](bool value) { return value; });
-    
-    std::vector<bool> needsRecompilation(isUpToDate);
+
+    std::vector<bool> needsCompilingVariants(isUpToDate.size());
     for (int i = 0; i < m_Shaders.size(); i++)
-        needsRecompilation[i] = !needsRecompilation[i] || !m_Shaders[i].HasVariants();
+        needsCompilingVariants[i] = !isUpToDate[i] || !m_Shaders[i].HasVariants();
 
-    bool anyNeedsRecompilation = std::ranges::any_of(needsRecompilation, [](bool value) { return value; });
-
-    if (allUpToDate && m_Cache.Contains(config))
-    {
-        logger::trace("Requested pipeline config is cached");
-        m_Handle = m_Cache.Get(config);
-        return;
-    }
+    bool allHasVariants = std::ranges::none_of(needsCompilingVariants, [](bool value) { return value; });
 
     for (int i = 0; i < m_Shaders.size(); i++)
-        if (needsRecompilation[i])
+        if (needsCompilingVariants[i])
             m_Shaders[i].UpdateSpecializations();
-
-    // Compile the immediately necessary version of the pipeline right away
-    if (anyNeedsRecompilation)
-        m_Handle = CreateVariantImmediate(config);
-
-    uint32_t taskCount = 0;
-    for (int i = 0; i < m_Shaders.size(); i++)
-        if (needsRecompilation[i])
-            taskCount += m_Shaders[i].GetVariantCount();
-    Application::AddBackgroundTask(BackgroundTaskType::ShaderCompilation, taskCount);
-
-    // Now compile shader variants of those that have changed
-    m_CompilationDispatch.Dispatch(
-        m_Shaders.size(),
-        [needsRecompilation, this](uint32_t threadId, uint32_t index) {
-            if (needsRecompilation[index])
-                m_Shaders[index].CompileVariants();
-        }
-    );
 
     if (!allUpToDate)
     {
@@ -114,11 +88,38 @@ void RaytracingPipeline::Update(const PipelineConfig &config)
         m_Cache.Clear();
     }
 
-    if (!anyNeedsRecompilation)
+    if (allUpToDate && m_Cache.Contains(config))
+    {
+        logger::trace("Requested pipeline config is cached");
+        m_Handle = m_Cache.Get(config);
+    }
+    else if (allHasVariants)
+    {
+        logger::trace("All shader variants are up to date - combining them into pipeline variant");
         m_Handle = CreateVariant(config);
+    }
+    else
+    {
+        logger::trace("Creating the immediately necessary pipeline immediately");
+        m_Handle = CreateVariantImmediate(config);
+    }
 
     vk::Pipeline removed = m_Cache.Insert(config, m_Handle);
     DeviceContext::GetLogical().destroyPipeline(removed);
+
+    uint32_t taskCount = 0;
+    for (int i = 0; i < m_Shaders.size(); i++)
+        if (needsCompilingVariants[i])
+            taskCount += m_Shaders[i].GetVariantCount();
+    Application::AddBackgroundTask(BackgroundTaskType::ShaderCompilation, taskCount);
+
+    m_CompilationDispatch.Dispatch(
+        m_Shaders.size(),
+        [needsCompilingVariants, this](uint32_t threadId, uint32_t index, std::stop_token stopToken) {
+            if (needsCompilingVariants[index])
+                m_Shaders[index].CompileVariants(stopToken);
+        }
+    );
 }
 
 vk::PipelineLayout RaytracingPipeline::GetLayout() const
@@ -255,14 +256,18 @@ uint32_t ShaderInfo::GetVariantCount() const
     return std::accumulate(m_SpecVariantCount.begin(), m_SpecVariantCount.end(), 1, std::multiplies<uint32_t>());
 }
 
-void ShaderInfo::CompileVariants()
+void ShaderInfo::CompileVariants(std::stop_token stopToken)
 {
     if (Application::GetConfig().ShaderPrecompilation == false)
         return;
 
-    for (auto pipeline : m_Variants | std::views::values)
-        DeviceContext::GetLogical().destroyPipeline(pipeline);
-    m_Variants.clear();
+    auto clearVariants = [this]() {
+        for (auto pipeline : m_Variants | std::views::values)
+            DeviceContext::GetLogical().destroyPipeline(pipeline);
+        m_Variants.clear();
+    };
+
+    clearVariants();
 
     // TODO: Support more than two spec constants -> ShaderInfo::Config has to be larger
     assert(m_SpecEntries.size() <= 2);
@@ -282,9 +287,30 @@ void ShaderInfo::CompileVariants()
             configs.push_back(MakeConfig(spec1Value, spec2Value));
     assert(configs.size() == maxSpec1 * maxSpec2);
 
-    // TODO: Split compilation into smaller batches so that cancellation is faster
-    Compile(configs);
-    Application::IncrementBackgroundTaskDone(BackgroundTaskType::ShaderCompilation, configs.size());
+    uint32_t compiledCount = 0;
+    auto allTasks = std::span(configs);
+
+    while (compiledCount < allTasks.size())
+    {
+        const uint32_t toCompile = allTasks.size() - compiledCount;
+        const uint32_t batchSize =
+            std::min(toCompile, Application::GetConfig().MaxShaderCompilationBatchSize);
+
+        Compile(allTasks.subspan(compiledCount, batchSize));
+        compiledCount += batchSize;
+
+        Application::IncrementBackgroundTaskDone(BackgroundTaskType::ShaderCompilation, batchSize);
+
+        if (stopToken.stop_requested())
+        {
+            logger::trace("Shader compilation thread for shader `{}` cancelled", GetPath().string());
+            if (compiledCount != allTasks.size())
+                clearVariants();
+
+            return;
+        }
+    }
+    
     logger::debug("Precompiled {} variants of shader `{}`", configs.size(), GetPath().string());
 }
 
@@ -314,7 +340,7 @@ RaytracingShaderInfo::RaytracingShaderInfo(RaytracingShaderInfo &&info) noexcept
 {
 }
 
-void RaytracingShaderInfo::Compile(const std::vector<Config> &configs)
+void RaytracingShaderInfo::Compile(std::span<const Config> configs)
 {
     const auto shaderCreateInfo = m_ShaderLibrary.GetShader(m_Id).GetStageCreateInfo();
 
@@ -360,9 +386,11 @@ void RaytracingShaderInfo::Compile(const std::vector<Config> &configs)
     if (std::ranges::find(binaries, nullptr) != binaries.end())
         throw error(std::format("Compilation for shader `{}` failed!", GetPath().string()));
 
-    assert(m_Variants.empty());
     for (int i = 0; i < binaries.size(); i++)
+    {
+        assert(m_Variants.contains(configs[i]) == false);
         m_Variants.emplace(configs[i], binaries[i]);
+    }
 }
 
 ShaderId ShaderInfo::GetId() const
@@ -432,7 +460,7 @@ ComputeShaderInfo::ComputeShaderInfo(ComputeShaderInfo &&info) noexcept : Shader
 {
 }
 
-void ComputeShaderInfo::Compile(const std::vector<Config> &configs)
+void ComputeShaderInfo::Compile(std::span<const Config> configs)
 {
     const auto shaderCreateInfo = m_ShaderLibrary.GetShader(m_Id).GetStageCreateInfo();
 
@@ -500,6 +528,8 @@ void ComputePipeline::CancelUpdate()
 
 void ComputePipeline::Update(const PipelineConfig &config)
 {
+    CancelUpdate();
+
     ShaderId id = m_Shader.GetId();
     std::vector<bool> isUpToDate = m_ShaderLibrary.RecompileChanged(std::span(&id, 1));
 
@@ -514,7 +544,8 @@ void ComputePipeline::Update(const PipelineConfig &config)
         m_IsHandleImmediate = true;
 
         Application::AddBackgroundTask(BackgroundTaskType::ShaderCompilation, m_Shader.GetVariantCount());
-        m_CompileThread = std::jthread([this]() { m_Shader.CompileVariants(); });
+        m_CompileThread =
+            std::jthread([this](std::stop_token stopToken) { m_Shader.CompileVariants(stopToken); });
     }
     else
         m_Handle = m_Shader.GetVariant(config);

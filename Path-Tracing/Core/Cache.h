@@ -60,6 +60,9 @@ template<typename K, typename V> inline LRUCache<K, V>::LRUCache(size_t maxSize)
 template<typename K, typename V>
 inline V LRUCache<K, V>::Insert(const K &key, const V &value)
 {
+    if (m_Cache.contains(key))
+        return {};
+
     V removed = MakeSpace();
 
     m_LRUQueue.push(key);

@@ -16,6 +16,36 @@ namespace PathTracing
 
 namespace logger = spdlog;
 
+inline constexpr uint64_t FromKiB(uint64_t value)
+{
+    return value * 1024ull;
+}
+
+inline constexpr uint64_t FromMiB(uint64_t value)
+{
+    return FromKiB(value) * 1024ull;
+}
+
+inline constexpr uint64_t FromGiB(uint64_t value)
+{
+    return FromMiB(value) * 1024ull;
+}
+
+inline constexpr uint64_t operator"" _KiB(uint64_t value)
+{
+    return FromKiB(value);
+}
+
+inline constexpr uint64_t operator"" _MiB(uint64_t value)
+{
+    return FromMiB(value);
+}
+
+inline constexpr uint64_t operator"" _GiB(uint64_t value)
+{
+    return FromGiB(value);
+}
+
 class Stats
 {
 public:

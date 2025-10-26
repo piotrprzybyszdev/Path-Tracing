@@ -80,6 +80,8 @@ bool BackgroundTaskState::IsRunning() const
 
 float BackgroundTaskState::GetDoneFraction() const
 {
+    if (!IsRunning())
+        return 1.0f;
     return static_cast<float>(DoneCount) / TotalCount;
 }
 

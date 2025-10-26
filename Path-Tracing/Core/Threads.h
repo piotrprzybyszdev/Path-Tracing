@@ -48,7 +48,7 @@ inline void ThreadDispatch<I, ReservedThreadCount>::Dispatch(size_t inputCount, 
         auto &thread = GetThreads()[threadId];
         thread = std::jthread([process, inputCount, threadId, this](std::stop_token stopToken) {
             while (!stopToken.stop_requested() && m_InputIndex < inputCount)
-                process(threadId, m_InputIndex++);
+                process(threadId, m_InputIndex++, stopToken);
         });
     }
 }

@@ -38,7 +38,7 @@ public:
 private:
     std::vector<std::filesystem::path> m_FilePaths;
     std::filesystem::path m_SkyboxPath;
-    bool m_IsSkyboxHDR;
+    bool m_IsSkyboxHDR = false;
     bool m_HasSkybox = false;
 };
 
@@ -73,6 +73,7 @@ void CombinedSceneLoader::Load(SceneBuilder &sceneBuilder)
     )));
 }
 
+void CreateDefaultScene(SceneBuilder &sceneBuilder);
 void CreateTexturedCubesScene(SceneBuilder &sceneBuilder);
 void CreateReuseMeshCubesScene(SceneBuilder &sceneBuilder);
 
@@ -170,6 +171,7 @@ static void AddTestScenes(std::map<std::string, SceneGroup> &scenes)
     SceneGroup &group = AddSceneGroup(scenes, "Test Scenes");
     group.emplace("Textured Cubes", std::make_unique<CustomSceneLoader<CreateTexturedCubesScene>>());
     group.emplace("Reuse Mesh", std::make_unique<CustomSceneLoader<CreateTexturedCubesScene>>());
+    group.emplace("Default", std::make_unique<CustomSceneLoader<CreateDefaultScene>>());
 }
 
 void AddScenes(std::map<std::string, SceneGroup> &scenes)
@@ -184,6 +186,78 @@ template<void(load)(SceneBuilder &sceneBuilder)>
 void CustomSceneLoader<load>::Load(SceneBuilder &sceneBuilder)
 {
     return load(sceneBuilder);
+}
+
+void CreateDefaultScene(SceneBuilder &sceneBuilder)
+{
+    sceneBuilder.AddMaterial("White Material", Shaders::SolidColorMaterial { .Color = glm::vec3(1.0f) });
+    sceneBuilder.AddMaterial("Green Material", Shaders::SolidColorMaterial { .Color = glm::vec3(0.0f, 1.0f, 0.0f) });
+    sceneBuilder.AddMaterial("Red Material", Shaders::SolidColorMaterial { .Color = glm::vec3(1.0f, 0.0f, 0.0f) });
+
+    auto &vertices = sceneBuilder.GetVertices();
+    vertices = {
+        { { -1, -1, -1 }, { 0, 1 }, { 0, 0, 1 }, { 1, 0, 0 }, { 0, 1, 0 } },
+        { { 1, -1, -1 }, { 1, 1 }, { 0, 0, 1 }, { 1, 0, 0 }, { 0, 1, 0 } },
+        { { 1, 1, -1 }, { 1, 0 }, { 0, 0, 1 }, { 1, 0, 0 }, { 0, 1, 0 } },
+        { { -1, 1, -1 }, { 0, 0 }, { 0, 0, 1 }, { 1, 0, 0 }, { 0, 1, 0 } },
+
+        { { 1, -1, 1 }, { 0, 1 }, { 0, 0, -1 }, { -1, 0, 0 }, { 0, 1, 0 } },
+        { { -1, -1, 1 }, { 1, 1 }, { 0, 0, -1 }, { -1, 0, 0 }, { 0, 1, 0 } },
+        { { -1, 1, 1 }, { 1, 0 }, { 0, 0, -1 }, { -1, 0, 0 }, { 0, 1, 0 } },
+        { { 1, 1, 1 }, { 0, 0 }, { 0, 0, -1 }, { -1, 0, 0 }, { 0, 1, 0 } },
+
+        { { 1, -1, -1 }, { 0, 1 }, { -1, 0, 0 }, { 0, 0, 1 }, { 0, 1, 0 } },
+        { { 1, -1, 1 }, { 1, 1 }, { -1, 0, 0 }, { 0, 0, 1 }, { 0, 1, 0 } },
+        { { 1, 1, 1 }, { 1, 0 }, { -1, 0, 0 }, { 0, 0, 1 }, { 0, 1, 0 } },
+        { { 1, 1, -1 }, { 0, 0 }, { -1, 0, 0 }, { 0, 0, 1 }, { 0, 1, 0 } },
+
+        { { -1, -1, 1 }, { 0, 1 }, { 1, 0, 0 }, { 0, 0, -1 }, { 0, 1, 0 } },
+        { { -1, -1, -1 }, { 1, 1 }, { 1, 0, 0 }, { 0, 0, -1 }, { 0, 1, 0 } },
+        { { -1, 1, -1 }, { 1, 0 }, { 1, 0, 0 }, { 0, 0, -1 }, { 0, 1, 0 } },
+        { { -1, 1, 1 }, { 0, 0 }, { 1, 0, 0 }, { 0, 0, -1 }, { 0, 1, 0 } },
+
+        { { -1, -1, 1 }, { 0, 1 }, { 0, 1, 0 }, { 1, 0, 0 }, { 0, 0, -1 } },
+        { { 1, -1, 1 }, { 1, 1 }, { 0, 1, 0 }, { 1, 0, 0 }, { 0, 0, -1 } },
+        { { 1, -1, -1 }, { 1, 0 }, { 0, 1, 0 }, { 1, 0, 0 }, { 0, 0, -1 } },
+        { { -1, -1, -1 }, { 0, 0 }, { 0, 1, 0 }, { 1, 0, 0 }, { 0, 0, -1 } },
+
+        { { -1, 1, -1 }, { 0, 1 }, { 0, -1, 0 }, { 1, 0, 0 }, { 0, 0, 1 } },
+        { { 1, 1, -1 }, { 1, 1 }, { 0, -1, 0 }, { 1, 0, 0 }, { 0, 0, 1 } },
+        { { 1, 1, 1 }, { 1, 0 }, { 0, -1, 0 }, { 1, 0, 0 }, { 0, 0, 1 } },
+        { { -1, 1, 1 }, { 0, 0 }, { 0, -1, 0 }, { 1, 0, 0 }, { 0, 0, 1 } },
+    };
+
+    auto &indices = sceneBuilder.GetIndices();
+    for (int i = 0; i < 6; i++)
+        std::ranges::copy(std::vector<uint32_t> { 0, 1, 2, 2, 3, 0 }, std::back_inserter(indices));
+
+    uint32_t vertexOffset = 0, indexOffset = 0;
+    for (uint32_t i = 0; i < 6; i++)
+    {
+        sceneBuilder.AddGeometry({ vertexOffset, 4, indexOffset, 6, true });
+        vertexOffset += 4;
+        indexOffset += 6;
+    }
+
+    std::array<MeshInfo, 6> meshes = { {
+        { 0, 2, MaterialType::SolidColor, glm::mat4(1.0f) },
+        { 1, 1, MaterialType::SolidColor, glm::mat4(1.0f) },
+        { 2, 0, MaterialType::SolidColor, glm::mat4(1.0f) },
+        { 3, 0, MaterialType::SolidColor, glm::mat4(1.0f) },
+        { 4, 0, MaterialType::SolidColor, glm::mat4(1.0f) },
+        { 5, 0, MaterialType::SolidColor, glm::mat4(1.0f) },
+    } };
+
+    const uint32_t box = sceneBuilder.AddModel(meshes);
+
+    const glm::mat4 boxTransform = glm::transpose(
+        glm::translate(glm::scale(glm::mat4(1.0f), glm::vec3(3.0f)), glm::vec3(-1.0f, 0.25f, 0.0f))
+    );
+
+    const uint32_t rootNode = sceneBuilder.AddSceneNode({ 0u, glm::mat4(1.0f), glm::mat4(1.0f) });
+    const uint32_t boxNode = sceneBuilder.AddSceneNode({ rootNode, boxTransform, glm::mat4(1.0f) });
+
+    const uint32_t boxInstance = sceneBuilder.AddModelInstance(box, boxNode);
 }
 
 void CreateTexturedCubesScene(SceneBuilder &sceneBuilder)

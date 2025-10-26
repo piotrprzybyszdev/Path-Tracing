@@ -14,9 +14,9 @@ include(${CMAKE_SOURCE_DIR}/cmake/DownloadAssets.cmake)
 add_configuration(TRACE DEBUG TRUE)
 add_configuration(PROFILE RELEASE FALSE)
 
-set(BUILD_SHARED_LIBS OFF)
-set(ASSIMP_BUILD_TESTS OFF)
-set(ASSIMP_INSTALL OFF)
+option(BUILD_SHARED_LIBS OFF)
+option(ASSIMP_BUILD_TESTS OFF)
+option(ASSIMP_INSTALL OFF)
 
 add_subdirectory(Path-Tracing)
 add_subdirectory(vendor/glfw)

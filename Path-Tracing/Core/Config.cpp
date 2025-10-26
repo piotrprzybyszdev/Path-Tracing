@@ -214,7 +214,15 @@ Config Config::Create(int argc, char *argv[])
         .MaxShaderCompilationThreads = CONFIG_MAX_SHADER_COMPILATION_THEADS,
 #endif
 
+#ifdef CONFIG_MAX_SHADER_COMPILATION_BATCH_SIZE
+        .MaxShaderCompilationBatchSize = CONFIG_MAX_SHADER_COMPILATION_BATCH_SIZE,
+#endif
+
         .ShaderCacheExtension = "shadercache" + GetShaderExtensionSuffix(),
+
+#ifdef CONFIG_MAX_STAGING_BUFFER_SIZE_MIB
+        .MaxStagingBufferSize = FromMiB(CONFIG_MAX_STAGING_BUFFER_SIZE_MIB),
+#endif
     };
 }
 
