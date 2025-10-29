@@ -26,7 +26,7 @@ hitAttributeEXT vec3 attribs;
 
 vec2 getTexCoords(VertexBuffer vertices, IndexBuffer indices, uint offset)
 {
-	const uint index = indices.i[offset];
+	const uint index = indices.v[offset];
 	const float p2 = vertices.v[index * 7 + 1].y;
 	const float p3 = vertices.v[index * 7 + 2].x;
 

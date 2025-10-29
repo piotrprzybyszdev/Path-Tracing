@@ -31,7 +31,7 @@ const Swapchain *Renderer::s_Swapchain = nullptr;
 Renderer::ShaderIds Renderer::s_Shaders = {};
 Renderer::RaytracingConfig Renderer::s_RaytracingConfig = {};
 
-Shaders::SpecializationData Renderer::s_ShaderSpecialization = {};
+RaytracingPipelineConfig Renderer::s_PipelineConfig = {};
 
 std::vector<Renderer::RenderingResources> Renderer::s_RenderingResources = {};
 
@@ -310,18 +310,19 @@ void Renderer::UpdateSceneData()
     }
 
     const auto &skybox = s_SceneData->Handle->GetSkybox();
-    s_ShaderSpecialization.MissFlags &= ~(Shaders::MissFlagsSkybox2D | Shaders::MissFlagsSkyboxCube);
+    Shaders::SpecializationConstant &missFlags = s_PipelineConfig[Shaders::MissFlagsConstantId];
+    missFlags &= ~(Shaders::MissFlagsSkybox2D | Shaders::MissFlagsSkyboxCube);
     switch (skybox.index())
     {
     case 0:
         break;
     case 1:
         s_SceneData->Skybox = s_TextureUploader->UploadSkyboxBlocking(std::get<Skybox2D>(skybox));
-        s_ShaderSpecialization.MissFlags |= Shaders::MissFlagsSkybox2D;
+        missFlags |= Shaders::MissFlagsSkybox2D;
         break;
     case 2:
         s_SceneData->Skybox = s_TextureUploader->UploadSkyboxBlocking(std::get<SkyboxCube>(skybox));
-        s_ShaderSpecialization.MissFlags |= Shaders::MissFlagsSkyboxCube;
+        missFlags |= Shaders::MissFlagsSkyboxCube;
         break;
     default:
         throw error("Unhandled skybox type");
@@ -337,7 +338,7 @@ void Renderer::UpdateSceneData()
         s_TextureMap[mapIndex] = Scene::GetDefaultTextureIndex(textures[i].Type);
     }
 
-    UpdateSpecializations(s_ShaderSpecialization);
+    UpdatePipelineConfig(s_PipelineConfig);
 
     RecreateDescriptorSet();
 
@@ -439,12 +440,18 @@ void Renderer::CreatePipelines()
         builder.AddHintIsPartial(10, true);
         builder.AddHintSize(3, Shaders::MaxTextureCount);
 
-        s_RaytracingPipeline = builder.CreatePipelineUnique();
+        static PipelineConfig<4> maxRaytracingConfig = {};
+        maxRaytracingConfig[Shaders::RenderModeConstantId] = Shaders::RenderModeMax;
+        maxRaytracingConfig[Shaders::RaygenFlagsConstantId] = Shaders::RaygenFlagsAll;
+        maxRaytracingConfig[Shaders::MissFlagsConstantId] = Shaders::MissFlagsAll;
+        maxRaytracingConfig[Shaders::HitGroupFlagsConstantId] = Shaders::HitGroupFlagsAll;
+        s_RaytracingPipeline = builder.CreatePipelineUnique(maxRaytracingConfig);
     }
 
     {
         ComputePipelineBuilder builder(*s_ShaderLibrary, s_Shaders.SkinningCompute);
-        s_SkinningPipeline = builder.CreatePipelineUnique();
+        static PipelineConfig<4> maxSkinningConfig = {};
+        s_SkinningPipeline = builder.CreatePipelineUnique(maxSkinningConfig);
     }
 }
 
@@ -464,8 +471,8 @@ void Renderer::UpdatePipelineSpecializations()
     s_RaytracingPipeline->CancelUpdate();
     s_SkinningPipeline->CancelUpdate();
     Application::ResetBackgroundTask(BackgroundTaskType::ShaderCompilation);
-    s_RaytracingPipeline->Update(s_ShaderSpecialization);
-    s_SkinningPipeline->Update(s_ShaderSpecialization);
+    s_RaytracingPipeline->Update(s_PipelineConfig);
+    s_SkinningPipeline->Update(SkinningPipelineConfig());
     UpdateShaderBindingTable();
 }
 
@@ -474,10 +481,10 @@ void Renderer::ReloadShaders()
     UpdatePipelineSpecializations();
 }
 
-void Renderer::UpdateSpecializations(Shaders::SpecializationData data)
+void Renderer::UpdatePipelineConfig(RaytracingPipelineConfig data)
 {
-    data.MissFlags = s_ShaderSpecialization.MissFlags;
-    s_ShaderSpecialization = data;
+    data[Shaders::MissFlagsConstantId] = s_PipelineConfig[Shaders::MissFlagsConstantId];
+    s_PipelineConfig = data;
     UpdatePipelineSpecializations();
 }
 
@@ -758,11 +765,13 @@ void Renderer::RecreateDescriptorSet()
         if (s_SceneData->SolidColorMaterialBuffer.GetHandle() != nullptr)
             raytracingDescriptorSet->UpdateBuffer(7, frameIndex, s_SceneData->SolidColorMaterialBuffer);
         raytracingDescriptorSet->UpdateBuffer(8, frameIndex, res.LightUniformBuffer);
-        if ((s_ShaderSpecialization.MissFlags & Shaders::MissFlagsSkybox2D) != Shaders::MissFlagsNone)
+        if ((s_PipelineConfig[Shaders::MissFlagsConstantId] & Shaders::MissFlagsSkybox2D) !=
+            Shaders::MissFlagsNone)
             raytracingDescriptorSet->UpdateImage(
                 9, frameIndex, s_SceneData->Skybox, s_TextureSampler, vk::ImageLayout::eShaderReadOnlyOptimal
             );
-        if ((s_ShaderSpecialization.MissFlags & Shaders::MissFlagsSkyboxCube) != Shaders::MissFlagsNone)
+        if ((s_PipelineConfig[Shaders::MissFlagsConstantId] & Shaders::MissFlagsSkyboxCube) !=
+            Shaders::MissFlagsNone)
             raytracingDescriptorSet->UpdateImage(
                 10, frameIndex, s_SceneData->Skybox, s_TextureSampler, vk::ImageLayout::eShaderReadOnlyOptimal
             );

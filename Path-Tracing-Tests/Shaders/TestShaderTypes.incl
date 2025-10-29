@@ -1,0 +1,35 @@
+#ifndef GL_core_profile
+#pragma once
+
+#include <glm/glm.hpp>
+
+namespace PathTracingTests::Shaders
+{
+
+using namespace glm;
+
+#endif
+
+const uint PaddingTestModeSolidColorMaterial    = 0u;
+const uint PaddingTestModeTexturedMaterial      = 1u;
+const uint PaddingTestModeDirectionalLight      = 2u;
+const uint PaddingTestModePointLight            = 3u;
+const uint PaddingTestModeMax                   = 3u;
+
+struct FresnelSchlickInput
+{
+    float theta;
+    vec3 f0;
+};
+
+struct FresnelSchlickOutput
+{
+    vec3 result;
+    float pad0;
+};
+
+#ifndef GL_core_profile
+
+}
+
+#endif

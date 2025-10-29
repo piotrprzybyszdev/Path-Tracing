@@ -50,6 +50,7 @@ Vertex transform(Vertex vertex, uint transformIndex)
 }
 
 #include "shading.glsl"
+#include "tracing.glsl"
 
 void main()
 {

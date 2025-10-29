@@ -473,11 +473,7 @@ void DebugTab::RenderContent()
     hasChanged |= std::ranges::any_of(m_Modes.GetContents(), [](const auto &option) { return option.HasChanged(); });
 
     if (hasChanged)
-        Renderer::UpdateSpecializations(Shaders::SpecializationData {
-            .RenderMode = s_RenderMode,
-            .RaygenFlags = s_RaygenFlags,
-            .HitGroupFlags = s_HitGroupFlags,
-        });
+        Renderer::UpdatePipelineConfig(RaytracingPipelineConfig { s_RenderMode, s_RaygenFlags, 0, s_HitGroupFlags });
 }
 
 class StatisticsTab : public Tab

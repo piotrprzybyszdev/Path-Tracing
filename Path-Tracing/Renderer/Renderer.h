@@ -25,6 +25,9 @@
 namespace PathTracing
 {
 
+using RaytracingPipelineConfig = PipelineConfig<4>;
+using SkinningPipelineConfig = PipelineConfig<0>;
+
 class Renderer
 {
 public:
@@ -38,7 +41,7 @@ public:
     static void Render();
 
     static void ReloadShaders();
-    static void UpdateSpecializations(Shaders::SpecializationData data);
+    static void UpdatePipelineConfig(RaytracingPipelineConfig data);
 
     static float s_Exposure;
 
@@ -75,7 +78,7 @@ private:
     } s_RaytracingConfig;
 
 
-    static Shaders::SpecializationData s_ShaderSpecialization;
+    static RaytracingPipelineConfig s_PipelineConfig;
 
     struct RenderingResources
     {

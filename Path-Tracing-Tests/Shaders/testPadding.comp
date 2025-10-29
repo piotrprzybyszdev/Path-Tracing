@@ -1,0 +1,74 @@
+#version 460
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_nonuniform_qualifier : require
+
+#include "Application/ShaderRendererTypes.incl"
+#include "TestShaderTypes.incl"
+
+layout(constant_id = 0) const uint s_Mode = 0;
+
+layout (local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+BUFFER_POINTER(VoidBuffer, bool);
+BUFFER_POINTER(SolidColorMaterialBuffer, SolidColorMaterial);
+BUFFER_POINTER(TexturedMaterialBuffer, TexturedMaterial);
+BUFFER_POINTER(DirectionalLightBuffer, DirectionalLight);
+BUFFER_POINTER(PointLightBuffer, PointLight);
+
+layout(push_constant, std430) uniform PushConstantLayout {
+    VoidBuffer pc_InputBuffer;
+    VoidBuffer pc_OutputBuffer;
+};
+
+void testSolidColorMaterial(uint index)
+{
+    SolidColorMaterialBuffer inputBuffer = SolidColorMaterialBuffer(pc_InputBuffer);
+    SolidColorMaterialBuffer outputBuffer = SolidColorMaterialBuffer(pc_OutputBuffer);
+
+    outputBuffer.v[index] = inputBuffer.v[index];
+}
+
+void testTexturedMaterial(uint index)
+{
+    TexturedMaterialBuffer inputBuffer = TexturedMaterialBuffer(pc_InputBuffer);
+    TexturedMaterialBuffer outputBuffer = TexturedMaterialBuffer(pc_OutputBuffer);
+
+    outputBuffer.v[index] = inputBuffer.v[index];
+}
+
+void testDirectionalLight(uint index)
+{
+    DirectionalLightBuffer inputBuffer = DirectionalLightBuffer(pc_InputBuffer);
+    DirectionalLightBuffer outputBuffer = DirectionalLightBuffer(pc_OutputBuffer);
+
+    outputBuffer.v[index] = inputBuffer.v[index];
+}
+
+void testPointLight(uint index)
+{
+    PointLightBuffer inputBuffer = PointLightBuffer(pc_InputBuffer);
+    PointLightBuffer outputBuffer = PointLightBuffer(pc_OutputBuffer);
+
+    outputBuffer.v[index] = inputBuffer.v[index];
+}
+
+void main()
+{
+    const uint index = gl_GlobalInvocationID.x;
+
+    switch (s_Mode)
+    {
+    case PaddingTestModeSolidColorMaterial:
+        testSolidColorMaterial(index);
+        break;
+    case PaddingTestModeTexturedMaterial:
+        testTexturedMaterial(index);
+        break;
+    case PaddingTestModeDirectionalLight:
+        testDirectionalLight(index);
+        break;
+    case PaddingTestModePointLight:
+        testPointLight(index);
+        break;
+    }
+}

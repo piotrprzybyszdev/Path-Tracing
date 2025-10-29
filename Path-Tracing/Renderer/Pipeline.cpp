@@ -24,11 +24,11 @@ uint32_t GetCompilationThreadCount()
 RaytracingPipeline::RaytracingPipeline(
     ShaderLibrary &shaderLibrary, const std::vector<vk::RayTracingShaderGroupCreateInfoKHR> &groups,
     const std::vector<ShaderId> &shaders, DescriptorSetBuilder &&descriptorSetBuilder,
-    vk::PipelineLayout layout
+    vk::PipelineLayout layout, PipelineConfigView maxConfig
 )
     : m_ShaderLibrary(shaderLibrary), m_DescriptorSetBuilder(std::move(descriptorSetBuilder)),
-      m_Layout(layout), m_Groups(groups), m_Cache(Application::GetConfig().MaxPipelineVariantCacheSize),
-      m_CompilationDispatch(GetCompilationThreadCount())
+      m_Layout(layout), m_Groups(groups), m_CompilationDispatch(GetCompilationThreadCount()),
+      m_MaxConfig(maxConfig)
 {
     for (ShaderId id : shaders)
         m_Shaders.emplace_back(m_ShaderLibrary, id, m_Layout);
@@ -37,9 +37,6 @@ RaytracingPipeline::RaytracingPipeline(
 RaytracingPipeline::~RaytracingPipeline()
 {
     CancelUpdate();
-
-    for (auto pipeline : m_Cache.GetValues())
-        DeviceContext::GetLogical().destroyPipeline(pipeline);
 
     DeviceContext::GetLogical().destroyPipelineLayout(m_Layout);
 }
@@ -59,69 +56,6 @@ void RaytracingPipeline::CancelUpdate()
     m_CompilationDispatch.Cancel();
 }
 
-void RaytracingPipeline::Update(const PipelineConfig &config)
-{  
-    CancelUpdate();
-
-    std::vector<ShaderId> shaderIds;
-    for (const RaytracingShaderInfo &info : m_Shaders)
-        shaderIds.push_back(info.GetId());
-
-    std::vector<bool> isUpToDate = m_ShaderLibrary.RecompileChanged(shaderIds);
-    bool allUpToDate = std::ranges::all_of(isUpToDate, [](bool value) { return value; });
-
-    std::vector<bool> needsCompilingVariants(isUpToDate.size());
-    for (int i = 0; i < m_Shaders.size(); i++)
-        needsCompilingVariants[i] = !isUpToDate[i] || !m_Shaders[i].HasVariants();
-
-    bool allHasVariants = std::ranges::none_of(needsCompilingVariants, [](bool value) { return value; });
-
-    for (int i = 0; i < m_Shaders.size(); i++)
-        if (needsCompilingVariants[i])
-            m_Shaders[i].UpdateSpecializations();
-
-    if (!allUpToDate)
-    {
-        logger::trace("A shader isn't up to date - destroying all cached pipelines");
-        for (auto pipeline : m_Cache.GetValues())
-            DeviceContext::GetLogical().destroyPipeline(pipeline);
-        m_Cache.Clear();
-    }
-
-    if (allUpToDate && m_Cache.Contains(config))
-    {
-        logger::trace("Requested pipeline config is cached");
-        m_Handle = m_Cache.Get(config);
-    }
-    else if (allHasVariants)
-    {
-        logger::trace("All shader variants are up to date - combining them into pipeline variant");
-        m_Handle = CreateVariant(config);
-    }
-    else
-    {
-        logger::trace("Creating the immediately necessary pipeline immediately");
-        m_Handle = CreateVariantImmediate(config);
-    }
-
-    vk::Pipeline removed = m_Cache.Insert(config, m_Handle);
-    DeviceContext::GetLogical().destroyPipeline(removed);
-
-    uint32_t taskCount = 0;
-    for (int i = 0; i < m_Shaders.size(); i++)
-        if (needsCompilingVariants[i])
-            taskCount += m_Shaders[i].GetVariantCount();
-    Application::AddBackgroundTask(BackgroundTaskType::ShaderCompilation, taskCount);
-
-    m_CompilationDispatch.Dispatch(
-        m_Shaders.size(),
-        [needsCompilingVariants, this](uint32_t threadId, uint32_t index, std::stop_token stopToken) {
-            if (needsCompilingVariants[index])
-                m_Shaders[index].CompileVariants(stopToken);
-        }
-    );
-}
-
 vk::PipelineLayout RaytracingPipeline::GetLayout() const
 {
     return m_Layout;
@@ -132,7 +66,7 @@ vk::Pipeline RaytracingPipeline::GetHandle() const
     return m_Handle;
 }
 
-vk::Pipeline RaytracingPipeline::CreateVariant(const PipelineConfig &config)
+vk::Pipeline RaytracingPipeline::CreateVariant(PipelineConfigView config)
 {
     std::vector<vk::Pipeline> libraries;
     libraries.reserve(m_Shaders.size());
@@ -167,9 +101,9 @@ vk::Pipeline RaytracingPipeline::CreateVariant(const PipelineConfig &config)
     return result.value;
 }
 
-vk::Pipeline RaytracingPipeline::CreateVariantImmediate(const PipelineConfig &config)
+vk::Pipeline RaytracingPipeline::CreateVariantImmediate(PipelineConfigView config)
 {
-    std::vector<RaytracingShaderInfo::Config> configs;
+    std::vector<ShaderInfo::Config> configs;
     std::vector<vk::SpecializationInfo> specInfos;
     std::vector<vk::PipelineShaderStageCreateInfo> stages;
     configs.reserve(m_Shaders.size());
@@ -236,7 +170,7 @@ ShaderInfo::ShaderInfo(ShaderInfo &&info) noexcept
     info.m_IsMoved = true;
 }
 
-void ShaderInfo::UpdateSpecializations()
+void ShaderInfo::UpdateSpecializations(PipelineConfigView maxConfig)
 {
     const auto constantIds = m_ShaderLibrary.GetShader(m_Id).GetSpecializationConstantIds();
 
@@ -246,8 +180,9 @@ void ShaderInfo::UpdateSpecializations()
     m_SpecVariantCount.reserve(constantIds.size());
     for (int i = 0; i < constantIds.size(); i++)
     {
-        m_SpecEntries.emplace_back(constantIds[i], i * 4, 4);
-        m_SpecVariantCount.push_back(Shaders::GetMaxSpecializationConstantValue(constantIds[i]) + 1);
+        const uint32_t specConstantSize = sizeof(Shaders::SpecializationConstant);
+        m_SpecEntries.emplace_back(constantIds[i], i * specConstantSize, specConstantSize);
+        m_SpecVariantCount.push_back(maxConfig[constantIds[i]] + 1);
     }
 }
 
@@ -296,7 +231,11 @@ void ShaderInfo::CompileVariants(std::stop_token stopToken)
         const uint32_t batchSize =
             std::min(toCompile, Application::GetConfig().MaxShaderCompilationBatchSize);
 
-        Compile(allTasks.subspan(compiledCount, batchSize));
+        if (m_ShaderLibrary.GetShader(m_Id).GetStage() == vk::ShaderStageFlagBits::eCompute)
+            CompileCompute(allTasks.subspan(compiledCount, batchSize));
+        else
+            CompileRaytracing(allTasks.subspan(compiledCount, batchSize));
+
         compiledCount += batchSize;
 
         Application::IncrementBackgroundTaskDone(BackgroundTaskType::ShaderCompilation, batchSize);
@@ -314,15 +253,13 @@ void ShaderInfo::CompileVariants(std::stop_token stopToken)
     logger::debug("Precompiled {} variants of shader `{}`", configs.size(), GetPath().string());
 }
 
-ShaderInfo::Config ShaderInfo::GetConfig(const PipelineConfig &config) const
+ShaderInfo::Config ShaderInfo::GetConfig(PipelineConfigView config) const
 {
-    uint32_t spec1id = m_SpecEntries.size() < 1 ? -1 : m_SpecEntries[0].constantID;
-    uint32_t spec2id = m_SpecEntries.size() < 2 ? -1 : m_SpecEntries[1].constantID;
+    auto getSpecValue = [this, &config](uint32_t index) {
+        return m_SpecEntries.size() <= index ? 0 : config[m_SpecEntries[index].constantID];
+    };
 
-    Shaders::SpecializationConstant spec1Value = Shaders::GetSpecializationConstant(config, spec1id);
-    Shaders::SpecializationConstant spec2Value = Shaders::GetSpecializationConstant(config, spec2id);
-
-    return MakeConfig(spec1Value, spec2Value);
+    return MakeConfig(getSpecValue(0), getSpecValue(1));
 }
 
 std::span<const vk::SpecializationMapEntry> ShaderInfo::GetSpecEntries() const
@@ -330,17 +267,13 @@ std::span<const vk::SpecializationMapEntry> ShaderInfo::GetSpecEntries() const
     return m_SpecEntries;
 }
 
-vk::Pipeline ShaderInfo::GetVariant(const PipelineConfig &config) const
+vk::Pipeline ShaderInfo::GetVariant(PipelineConfigView config) const
 {
     assert(m_Variants.contains(GetConfig(config)));
     return m_Variants.at(GetConfig(config));
 }
 
-RaytracingShaderInfo::RaytracingShaderInfo(RaytracingShaderInfo &&info) noexcept : ShaderInfo(std::move(info))
-{
-}
-
-void RaytracingShaderInfo::Compile(std::span<const Config> configs)
+void ShaderInfo::CompileRaytracing(std::span<const Config> configs)
 {
     const auto shaderCreateInfo = m_ShaderLibrary.GetShader(m_Id).GetStageCreateInfo();
 
@@ -456,11 +389,7 @@ std::filesystem::path ShaderInfo::ToCachePath(std::filesystem::path path)
     return config.ShaderCachePath / path.filename().replace_extension(config.ShaderCacheExtension);
 }
 
-ComputeShaderInfo::ComputeShaderInfo(ComputeShaderInfo &&info) noexcept : ShaderInfo(std::move(info))
-{
-}
-
-void ComputeShaderInfo::Compile(std::span<const Config> configs)
+void ShaderInfo::CompileCompute(std::span<const Config> configs)
 {
     const auto shaderCreateInfo = m_ShaderLibrary.GetShader(m_Id).GetStageCreateInfo();
 
@@ -500,10 +429,10 @@ void ComputeShaderInfo::Compile(std::span<const Config> configs)
 
 ComputePipeline::ComputePipeline(
     ShaderLibrary &shaderLibrary, DescriptorSetBuilder &&descriptorSetBuilder, vk::PipelineLayout layout,
-    ShaderId shaderId
+    ShaderId shaderId, PipelineConfigView maxConfig
 )
     : m_ShaderLibrary(shaderLibrary), m_DescriptorSetBuilder(std::move(descriptorSetBuilder)),
-      m_Layout(layout), m_Shader(shaderLibrary, shaderId, layout)
+      m_Layout(layout), m_Shader(shaderLibrary, shaderId, layout), m_MaxConfig(maxConfig)
 {
 }
 
@@ -526,39 +455,13 @@ void ComputePipeline::CancelUpdate()
     }
 }
 
-void ComputePipeline::Update(const PipelineConfig &config)
-{
-    CancelUpdate();
-
-    ShaderId id = m_Shader.GetId();
-    std::vector<bool> isUpToDate = m_ShaderLibrary.RecompileChanged(std::span(&id, 1));
-
-    if (m_IsHandleImmediate)
-        DeviceContext::GetLogical().destroyPipeline(m_Handle);
-    m_IsHandleImmediate = false;
-
-    if (!isUpToDate.front() || !m_Shader.HasVariants())
-    {
-        m_Shader.UpdateSpecializations();
-        m_Handle = CreateVariantImmediate(config);
-        m_IsHandleImmediate = true;
-
-        Application::AddBackgroundTask(BackgroundTaskType::ShaderCompilation, m_Shader.GetVariantCount());
-        m_CompileThread =
-            std::jthread([this](std::stop_token stopToken) { m_Shader.CompileVariants(stopToken); });
-    }
-    else
-        m_Handle = m_Shader.GetVariant(config);
-}
-
-vk::Pipeline ComputePipeline::CreateVariantImmediate(const PipelineConfig &config)
+vk::Pipeline ComputePipeline::CreateVariantImmediate(PipelineConfigView config)
 {
     auto shaderCreateInfo = m_ShaderLibrary.GetShader(m_Shader.GetId()).GetStageCreateInfo();
     const auto specEntries = m_Shader.GetSpecEntries();
 
     vk::SpecializationInfo specInfo(
-        static_cast<uint32_t>(specEntries.size()), specEntries.data(),
-        static_cast<uint32_t>(sizeof(ComputeShaderInfo::Config)), &config
+        static_cast<uint32_t>(specEntries.size()), specEntries.data(), config.size_bytes(), config.data()
     );
 
     shaderCreateInfo.setPSpecializationInfo(&specInfo);
@@ -690,11 +593,13 @@ uint32_t RaytracingPipelineBuilder::AddHitGroup(ShaderId closestHitId, ShaderId 
     return m_Groups.size() - 1;
 }
 
-std::unique_ptr<RaytracingPipeline> RaytracingPipelineBuilder::CreatePipelineUnique()
+std::unique_ptr<RaytracingPipeline> RaytracingPipelineBuilder::CreatePipelineUnique(
+    PipelineConfigView maxConfig
+)
 {
     auto layout = CreateLayout();
     return std::make_unique<RaytracingPipeline>(
-        m_ShaderLibrary, m_Groups, m_ShaderIds, std::move(m_DescriptorSetBuilder), layout
+        m_ShaderLibrary, m_Groups, m_ShaderIds, std::move(m_DescriptorSetBuilder), layout, maxConfig
     );
 }
 
@@ -704,11 +609,11 @@ ComputePipelineBuilder::ComputePipelineBuilder(ShaderLibrary &shaderLibrary, Sha
     AddShader(shaderId);
 }
 
-std::unique_ptr<ComputePipeline> ComputePipelineBuilder::CreatePipelineUnique()
+std::unique_ptr<ComputePipeline> ComputePipelineBuilder::CreatePipelineUnique(PipelineConfigView maxConfig)
 {
     auto layout = CreateLayout();
     return std::make_unique<ComputePipeline>(
-        m_ShaderLibrary, std::move(m_DescriptorSetBuilder), layout, m_ShaderIds.front()
+        m_ShaderLibrary, std::move(m_DescriptorSetBuilder), layout, m_ShaderIds.front(), maxConfig
     );
 }
 

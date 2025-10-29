@@ -57,6 +57,8 @@ public:
     void UploadStaging(vk::CommandBuffer commandBuffer, const Buffer &staging) const;
     void UploadStaging(vk::CommandBuffer commandBuffer, const Buffer &staging, vk::DeviceSize size) const;
 
+    [[nodiscard]] std::vector<std::byte> Readback() const;
+
     [[nodiscard]] bool IsDevice() const;
     [[nodiscard]] vk::Buffer GetHandle() const;
     [[nodiscard]] vk::DeviceAddress GetDeviceAddress() const;

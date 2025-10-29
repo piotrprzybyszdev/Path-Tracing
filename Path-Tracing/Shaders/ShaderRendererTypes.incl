@@ -10,22 +10,18 @@ namespace PathTracing::Shaders
 
 using namespace glm;
 
-using VertexBuffer = uint64_t;
-using IndexBuffer = uint64_t;
-
-using AnimatedVertexBuffer = uint64_t;
-using VertexWriteBuffer = uint64_t;
-
-#else
-
-layout(buffer_reference, buffer_reference_align=8) readonly buffer VertexBuffer { vec2[] v; };
-layout(buffer_reference, buffer_reference_align=8) readonly buffer IndexBuffer { uint[] i; };
-
-layout(buffer_reference, buffer_reference_align=8) readonly buffer AnimatedVertexBuffer { vec2[] v; };
-layout(buffer_reference, buffer_reference_align=8) writeonly buffer VertexWriteBuffer { vec2[] v; };
-
 #endif
 
+#ifndef GL_core_profile
+#define BUFFER_POINTER(Name, Type) using Name = uint64_t
+#else
+#define BUFFER_POINTER(Name, Type) layout(buffer_reference, buffer_reference_align=8) buffer Name { Type[] v; }
+#endif
+
+BUFFER_POINTER(VertexBuffer, vec2);
+BUFFER_POINTER(IndexBuffer, uint);
+BUFFER_POINTER(AnimatedVertexBuffer, vec2);
+BUFFER_POINTER(VertexWriteBuffer, vec2);
 
 struct RaygenUniformData
 {
@@ -71,54 +67,8 @@ const uint PrimaryRayMissGroupIndex         = 0u;
 const uint OcclusionRayHitGroupIndex        = 1u;
 const uint OcclusionRayMissGroupIndex       = 1u;
 
-struct SpecializationData
-{
-    uint RenderMode;
-    uint RaygenFlags;
-    uint MissFlags;
-    uint HitGroupFlags;
 
 #ifndef GL_core_profile
-    bool operator==(const SpecializationData &) const = default;
-#endif
-};
-
-
-#ifndef GL_core_profile
-
-inline SpecializationConstant GetMaxSpecializationConstantValue(uint constantId)
-{
-    switch (constantId)
-    {
-    case RenderModeConstantId:
-        return RenderModeMax;
-    case RaygenFlagsConstantId:
-        return RaygenFlagsAll;
-    case MissFlagsConstantId:
-        return MissFlagsAll;
-    case HitGroupFlagsConstantId:
-        return HitGroupFlagsAll;
-    default:
-        return 0;
-    }
-}
-
-inline SpecializationConstant GetSpecializationConstant(const SpecializationData &data, uint constantId)
-{
-    switch (constantId)
-    {
-    case RenderModeConstantId:
-        return data.RenderMode;
-    case RaygenFlagsConstantId:
-        return data.RaygenFlags;
-    case MissFlagsConstantId:
-        return data.MissFlags;
-    case HitGroupFlagsConstantId:
-        return data.HitGroupFlags;
-    default:
-        return 0;
-    }
-}
 
 }
 #endif

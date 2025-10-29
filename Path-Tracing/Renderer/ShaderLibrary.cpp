@@ -188,18 +188,28 @@ void Shader::Reflect(std::span<const uint32_t> code)
     
     if (!resources.push_constant_buffers.empty())
     {
+        assert(resources.push_constant_buffers.size() == 1);
         auto &pushConstants = resources.push_constant_buffers.front();
 
         const auto ranges = compiler.get_active_buffer_ranges(pushConstants.id);
-        assert(ranges.size() == 1);
 
-        const auto &range = ranges.front();
+        uint32_t offset = 0;
+        uint32_t size = 0;
+        for (auto &range : ranges)
+        {
+            if (range.offset <= offset)
+            {
+                size += offset - range.offset;
+                offset = range.offset;
+            }
 
-        m_PushConstants = { m_Stage, static_cast<uint32_t>(range.offset),
-                            static_cast<uint32_t>(range.range) };
+            size = std::max(size, static_cast<uint32_t>(range.offset + range.range) - offset);
+        }
+
+        m_PushConstants = { m_Stage, offset, size };
+
         logger::debug(
-            "{} ({}): PC offset = {}, size = {}", m_Path.string(), vk::to_string(m_Stage), range.offset,
-            range.range
+            "{} ({}): PC offset = {}, size = {}", m_Path.string(), vk::to_string(m_Stage), offset, size
         );
     }
 

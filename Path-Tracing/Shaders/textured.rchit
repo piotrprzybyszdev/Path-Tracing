@@ -40,6 +40,7 @@ layout(location = 1) rayPayloadEXT bool isOccluded;
 hitAttributeEXT vec3 attribs;
 
 #include "shading.glsl"
+#include "tracing.glsl"
 
 Vertex transform(Vertex vertex, uint transformIndex)
 {

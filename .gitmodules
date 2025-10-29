@@ -22,3 +22,6 @@
 [submodule "vendor/nativefiledialog-extended"]
 	path = vendor/nativefiledialog-extended
 	url = https://github.com/btzy/nativefiledialog-extended.git
+[submodule "vendor/googletest"]
+	path = vendor/googletest
+	url = https://github.com/google/googletest.git

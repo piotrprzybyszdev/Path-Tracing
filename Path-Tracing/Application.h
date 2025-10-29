@@ -37,7 +37,7 @@ struct BackgroundTaskState
 class Application
 {
 public:
-    static void Init(int argc, char *argv[]);
+    static void Init(int argc, const char *argv[]);
     static void Shutdown();
 
     static void Run();

@@ -136,7 +136,7 @@ std::filesystem::path GetDirectory(
 
 }
 
-Config Config::Create(int argc, char *argv[])
+Config Config::Create(int argc, const char *argv[])
 {
     std::vector<std::string_view> cmd(argc);
     for (int i = 0; i < argc; i++)

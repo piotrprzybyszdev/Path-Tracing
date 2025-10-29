@@ -12,18 +12,24 @@ template<typename T> struct FNVHash
     static constexpr size_t Offset = 0xcbf29ce484222325ull;
     static constexpr size_t Prime = 0x100000001b3ull;
 
-    constexpr size_t operator()(const T &config) const noexcept;
+    constexpr size_t operator()(const T &data) const noexcept;
 };
 
-template<typename T> inline constexpr size_t FNVHash<T>::operator()(const T &config) const noexcept
+template<typename T>
+inline constexpr size_t FNVHash<T>::operator()(const T &config) const noexcept
 {
-    auto data = std::span<const std::byte>(reinterpret_cast<const std::byte *>(&config), sizeof(T));
-
     size_t hash = Offset;
-    for (std::byte byte : data)
+    for (const auto &element : config)
     {
-        hash ^= std::to_integer<size_t>(byte);
-        hash *= Prime;
+        auto data = std::span<const std::byte>(
+            reinterpret_cast<const std::byte *>(&element), sizeof(decltype(element))
+        );
+
+        for (std::byte byte : data)
+        {
+            hash ^= std::to_integer<size_t>(byte);
+            hash *= Prime;
+        }
     }
 
     return hash;

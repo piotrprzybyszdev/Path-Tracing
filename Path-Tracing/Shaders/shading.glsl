@@ -44,23 +44,6 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0)
     return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 
-bool checkOccluded(vec3 lightDir, vec3 position, float dist)
-{
-    if ((s_HitGroupFlags & HitGroupFlagsDisableShadows) != HitGroupFlagsNone)
-        return false;
-    
-    vec3 direction = -normalize(lightDir);
-
-    float tmin = 0.001;
-    float tmax = dist;
-
-    isOccluded = true;
-
-    traceRayEXT(u_TopLevelAS, gl_RayFlagsNoneEXT, 0xff, OcclusionRayHitGroupIndex, 2, OcclusionRayMissGroupIndex, position, tmin, direction, tmax, 1);
-
-    return isOccluded;
-}
-
 vec3 computeLightContribution(vec3 lightDir, vec3 lightColor, float attenuation, vec3 position, vec3 V, vec3 N, mat3 TBN, vec3 color, float roughness, float metalness)
 {
     const vec3 L = -normalize(lightDir);

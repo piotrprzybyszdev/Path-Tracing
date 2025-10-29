@@ -1,26 +1,15 @@
-#define GLFW_INCLUDE_NONE
-#include <GLFW/glfw3.h>
-#include <spdlog/sinks/basic_file_sink.h>
-#include <spdlog/sinks/stdout_color_sinks.h>
 #include <vulkan/vulkan.hpp>
 
 #include <ranges>
 #include <string_view>
 
-#include "Core/Camera.h"
 #include "Core/Config.h"
 #include "Core/Core.h"
-#include "Core/Input.h"
 
 #include "Renderer/DeviceContext.h"
 #include "Renderer/Renderer.h"
-#include "Renderer/Swapchain.h"
 
 #include "Application.h"
-#include "AssetImporter.h"
-#include "SceneManager.h"
-#include "UserInterface.h"
-#include "Window.h"
 
 namespace PathTracing
 {
@@ -47,11 +36,6 @@ static VKAPI_ATTR vk::Bool32 VKAPI_CALL debugCallback(
     }
 
     return VK_FALSE;
-}
-
-static void GlfwErrorCallback(int error, const char *description)
-{
-    throw PathTracing::error(std::format("GLFW error {} {}", error, description).c_str());
 }
 
 static logger::level::level_enum GetLoggerLevel(Config::LogLevel level)
@@ -90,12 +74,9 @@ uint32_t Application::s_VulkanApiVersion = vk::ApiVersion;
 vk::Instance Application::s_Instance = nullptr;
 std::unique_ptr<vk::detail::DispatchLoaderDynamic> Application::s_DispatchLoader = nullptr;
 
-#if defined(CONFIG_VALIDATION_LAYERS) || defined(CONFIG_SHADER_DEBUG_INFO)
 vk::DebugUtilsMessengerEXT Application::s_DebugMessenger = nullptr;
-#endif
 
 vk::SurfaceKHR Application::s_Surface = nullptr;
-std::unique_ptr<Swapchain> Application::s_Swapchain = nullptr;
 
 Application::State Application::s_State = Application::State::Shutdown;
 
@@ -129,28 +110,16 @@ void Application::Init(int argc, const char *argv[])
     if (variant != 0)
         logger::error(std::format("Vulkan API version variant is not equal to 0: ({})", variant));
 
-    const char *applicationName = "Path Tracing";
+    const char *applicationName = "Path Tracing Tests";
     vk::ApplicationInfo applicationInfo(applicationName, 1, applicationName, 1, s_VulkanApiVersion);
 
-    if (glfwInit() == GLFW_FALSE)
-        throw error("Glfw initialization failed!");
-
-#ifdef CONFIG_ASSERTS
-    glfwSetErrorCallback(GlfwErrorCallback);
-#endif
-
-    uint32_t glfwExtensionCount = 0;
-    const char **glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
-
-    std::vector<const char *> requestedExtensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
+    std::vector<const char *> requestedExtensions = {
+        VK_KHR_SURFACE_EXTENSION_NAME
+    };
     std::vector<const char *> requestedLayers;
 
-#if defined(CONFIG_VALIDATION_LAYERS) || defined(CONFIG_SHADER_DEBUG_INFO)
     requestedExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-#endif
-#ifdef CONFIG_VALIDATION_LAYERS
     requestedLayers.push_back("VK_LAYER_KHRONOS_validation");
-#endif
 
     if (!CheckInstanceSupport(requestedExtensions, requestedLayers))
         throw error("Instance doesn't have required extensions or layers");
@@ -182,62 +151,19 @@ void Application::Init(int argc, const char *argv[])
     }
 #endif
 
-    const vk::Extent2D windowSize(1280, 720);
-
-    Window::Create(windowSize.width, windowSize.height, applicationName);
-    s_Surface = Window::CreateSurface(s_Instance);
-    Input::SetWindow(Window::GetHandle());
-    s_State = State::HasWindow;
-
-    DeviceContext::Init(s_Instance, s_Surface);
+    DeviceContext::Init(s_Instance, nullptr);
     s_State = State::HasDevice;
-
-    s_Swapchain = std::make_unique<Swapchain>(
-        s_Surface, vk::SurfaceFormatKHR(vk::Format::eR8G8B8A8Srgb, vk::ColorSpaceKHR::eSrgbNonlinear),
-        vk::Format::eR8G8B8A8Unorm, UserInterface::GetPresentMode(), windowSize
-    );
-    s_State = State::HasSwapchain;
-
-    UserInterface::Init(
-        s_Instance, vk::Format::eR8G8B8A8Unorm, s_Swapchain->GetImageCount(), s_Swapchain->GetPresentModes()
-    );
-    s_State = State::HasUserInterface;
-
-    AssetImporter::Init();
-    SceneManager::Init();
-
-    Renderer::Init(s_Swapchain.get());
-    s_State = State::Initialized;
 }
 
 void Application::Shutdown()
 {
     switch (s_State)
     {
-    case State::Running:
-        [[fallthrough]];
-    case State::Initialized:
-        Renderer::Shutdown();
-        [[fallthrough]];
-    case State::HasUserInterface:
-        SceneManager::Shutdown();
-        AssetImporter::Shutdown();
-        UserInterface::Shutdown();
-        [[fallthrough]];
-    case State::HasSwapchain:
-        s_Swapchain.reset();
-        [[fallthrough]];
     case State::HasDevice:
         DeviceContext::Shutdown();
         [[fallthrough]];
-    case State::HasWindow:
-        s_Instance.destroySurfaceKHR(s_Surface);
-        Window::Destroy();
-        [[fallthrough]];
     case State::HasInstance:
-#if defined(CONFIG_VALIDATION_LAYERS) || defined(CONFIG_SHADER_DEBUG_INFO)
         s_Instance.destroyDebugUtilsMessengerEXT(s_DebugMessenger, nullptr, *s_DispatchLoader);
-#endif
         s_DispatchLoader.reset();
         s_Instance.destroy();
     }
@@ -247,78 +173,6 @@ void Application::Shutdown()
 
 void Application::Run()
 {
-    s_State = State::Running;
-
-    float lastFrameTime = 0.0f;
-    vk::Extent2D previousSize = {};
-
-    while (!Window::ShouldClose())
-    {
-        float time = glfwGetTime();
-
-        float timeStep = time - lastFrameTime;
-        lastFrameTime = time;
-
-        Window::PollEvents();
-
-        if (Window::IsMinimized())
-        {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            continue;
-        }
-
-        if (s_Swapchain->GetPresentMode() != UserInterface::GetPresentMode())
-        {
-            DeviceContext::GetGraphicsQueue().WaitIdle();
-            s_Swapchain->Recreate(UserInterface::GetPresentMode());
-        }
-
-        const vk::Extent2D windowSize = Window::GetSize();
-        if (windowSize != previousSize)
-        {
-            logger::info("Resize event for: {}x{}", windowSize.width, windowSize.height);
-
-            DeviceContext::GetGraphicsQueue().WaitIdle();
-            s_Swapchain->Recreate(windowSize);
-
-            Renderer::OnResize(windowSize);
-
-            previousSize = windowSize;
-        }
-
-        {
-            MaxTimer timer("Frame total");
-
-            {
-                Timer timer("Update");
-
-                Window::OnUpdate(timeStep);
-                UserInterface::OnUpdate(timeStep);
-
-                SceneManager::GetActiveScene()->Update(timeStep);
-                Renderer::UpdateSceneData();
-
-                Renderer::s_Exposure = UserInterface::GetExposure();
-                Renderer::OnUpdate(timeStep);
-            }
-
-            {
-                MaxTimer timer("Render");
-
-                if (!s_Swapchain->AcquireImage())
-                    continue;
-
-                Renderer::Render();
-
-                if (!s_Swapchain->Present())
-                    continue;
-            }
-        }
-
-        Stats::FlushTimers();
-    }
-
-    s_State = State::Initialized;
 }
 
 uint32_t Application::GetVulkanApiVersion()
@@ -362,16 +216,7 @@ BackgroundTaskState Application::GetBackgroundTaskState(BackgroundTaskType type)
 
 void Application::SetupLogger()
 {
-    if (s_Config.LogToFile)
-    {
-        auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-        auto basic_sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(s_Config.LogFilePath.string());
-        std::array<spdlog::sink_ptr, 2> sinks { console_sink, basic_sink };
-        auto logger = std::make_shared<spdlog::logger>("", sinks.begin(), sinks.end());
-        spdlog::set_default_logger(logger);
-    }
-
-    spdlog::set_level(GetLoggerLevel(s_Config.LoggerLevel));
+    logger::set_level(logger::level::err);
 }
 
 bool Application::CheckInstanceSupport(

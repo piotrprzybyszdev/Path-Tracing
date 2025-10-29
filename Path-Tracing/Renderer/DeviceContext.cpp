@@ -267,6 +267,12 @@ bool DeviceContext::CheckSuitable(
 
 void DeviceContext::FindQueueFamilies(vk::SurfaceKHR surface)
 {
+    auto isSurfaceSupported = [](uint32_t index, vk::SurfaceKHR surface) {
+        if (surface == nullptr)
+            return true;
+        return s_PhysicalDevice.Handle.getSurfaceSupportKHR(index, surface) == vk::True;
+    };
+
     for (vk::QueueFamilyProperties2 prop : s_PhysicalDevice.QueueFamilyProperties)
         logger::debug(
             "Found queue family ({}): {}", prop.queueFamilyProperties.queueCount,
@@ -281,8 +287,7 @@ void DeviceContext::FindQueueFamilies(vk::SurfaceKHR surface)
     for (uint32_t index = 0; index < s_PhysicalDevice.QueueFamilyProperties.size(); index++)
     {
         const auto &properties = s_PhysicalDevice.QueueFamilyProperties[index].queueFamilyProperties;
-        if (s_PhysicalDevice.Handle.getSurfaceSupportKHR(index, surface) == vk::True &&
-            checkHasFlags(properties, vk::QueueFlagBits::eGraphics))
+        if (isSurfaceSupported(index, surface) && checkHasFlags(properties, vk::QueueFlagBits::eGraphics))
         {
             s_LogicalDevice.PresentQueue.FamilyIndex = index;
             s_LogicalDevice.GraphicsQueue.FamilyIndex = index;
@@ -297,7 +302,7 @@ void DeviceContext::FindQueueFamilies(vk::SurfaceKHR surface)
     // Make sure we have a present queue family
     if (s_LogicalDevice.PresentQueue.FamilyIndex == vk::QueueFamilyIgnored)
         for (uint32_t index = 0; index < s_PhysicalDevice.QueueFamilyProperties.size(); index++)
-            if (s_PhysicalDevice.Handle.getSurfaceSupportKHR(index, surface) == vk::True)
+            if (isSurfaceSupported(index, surface))
             {
                 s_LogicalDevice.PresentQueue.FamilyIndex = index;
                 break;

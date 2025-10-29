@@ -9,7 +9,7 @@ vec3 computeBarycentricCoords(vec3 attribs)
 
 Vertex getVertex(VertexBuffer vertices, IndexBuffer indices, uint offset)
 {
-    const uint index = indices.i[offset];
+    const uint index = indices.v[offset];
     const vec2 p1 = vertices.v[index * 7];
     const vec2 p2 = vertices.v[index * 7 + 1];
     const vec2 p3 = vertices.v[index * 7 + 2];
