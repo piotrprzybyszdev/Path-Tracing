@@ -18,7 +18,8 @@ const uint DefaultColorTextureIndex                 = 0;
 const uint DefaultNormalTextureIndex                = 1;
 const uint DefaultRoughnessTextureIndex             = 2;
 const uint DefaultMetalicTextureIndex               = 3;
-const uint SceneTextureOffset                       = 4;
+const uint PlaceholderTextureIndex                  = 4;
+const uint SceneTextureOffset                       = 5;
 
 const uint RenderModeColor                          = 0;
 const uint RenderModeWorldPosition                  = 1;
@@ -89,7 +90,7 @@ struct SolidColorMaterial
 
 struct TexturedMaterial
 {
-	uint ColorIdx;
+    uint ColorIdx;
     uint NormalIdx;
     uint RoughnessIdx;
     uint MetalicIdx;

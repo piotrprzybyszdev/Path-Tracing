@@ -1,7 +1,7 @@
 #include "ShaderRendererTypes.incl"
 #include "common.glsl"
 
-const float directionalLightDistance = 100000.0f;
+const float DirectionalLightDistance = 100000.0f;
 const float ambient = 0.05f;
 
 float DistributionGGX(vec3 N, vec3 H, float roughness)
@@ -75,27 +75,6 @@ vec3 computeLightContribution(vec3 lightDir, vec3 lightColor, float attenuation,
     float NdotL = max(dot(N, L), 0.0);
 
     return (kD * color / PI + specular) * radiance * NdotL;
-}
-
-void sampleMaterial(uint materialId, float lod, out vec3 color, out float roughness, out float metalness)
-{
-    uint materialType;
-    uint materialIndex = unpackMaterialId(payload.MaterialId, materialType);
-
-    if (materialType == MaterialTypeTextured)
-    {
-        const TexturedMaterial material = texturedMaterials[materialIndex];
-        color = textureLod(textures[GetColorTextureIndex(0, material)], payload.TexCoords, lod).xyz;
-        roughness = textureLod(textures[GetRoughnessTextureIndex(0, material)], payload.TexCoords, lod).y;
-        metalness = textureLod(textures[GetMetalicTextureIndex(0, material)], payload.TexCoords, lod).z;
-    }
-    else
-    {
-        const SolidColorMaterial material = solidColorMaterials[materialIndex];
-        color = material.Color;
-        roughness = DefaultRoughness;
-        metalness = DefaultMetalness;
-    }
 }
 
 vec3 getRandomUnitSphere(inout uint rngState)

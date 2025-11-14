@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <string>
 
 #include "Scene.h"
 
@@ -19,7 +20,7 @@ public:
     static SceneBuilder &AddFile(SceneBuilder &builder, const std::filesystem::path &path);
 
 public:
-    static TextureInfo GetTextureInfo(const std::filesystem::path path, TextureType type);
+    static TextureInfo GetTextureInfo(TextureSourceVariant source, TextureType type, std::string &&name);
 };
 
 }

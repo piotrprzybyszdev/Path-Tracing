@@ -100,18 +100,17 @@ uint32_t SceneBuilder::AddModelInstance(uint32_t modelIndex, uint32_t sceneNodeI
 
 uint32_t SceneBuilder::AddTexture(TextureInfo &&texture)
 {
-    const std::string name = texture.Path.string();
-
-    if (m_TextureIndices.contains(name))
-        return m_TextureIndices[name];
+    if (m_TextureIndices.contains(texture.Name))
+        return m_TextureIndices[texture.Name];
 
     assert(m_Textures.size() < Shaders::MaxTextureCount);
 
     m_Textures.push_back(std::move(texture));
+    const std::string &textureName = m_Textures.back().Name;
     const uint32_t textureIndex = Shaders::GetSceneTextureIndex(m_Textures.size() - 1);
 
-    m_TextureIndices[name] = textureIndex;
-    logger::trace("Added texture {} to Scene", name);
+    m_TextureIndices[textureName] = textureIndex;
+    logger::trace("Added texture {} to Scene", textureName);
 
     return textureIndex;
 }

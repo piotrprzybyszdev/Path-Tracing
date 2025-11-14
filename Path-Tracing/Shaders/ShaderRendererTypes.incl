@@ -42,8 +42,10 @@ struct SBTBuffer
     uint TransformIndex;
 };
 
-const float DefaultRoughness = 0.0f;
-const float DefaultMetalness = 0.0f;
+const uint DefaultColor                     = 0xffffffffu;
+const uint DefaultNormal                    = 0xffff8080u;
+const uint DefaultRoughness                 = 0x80808080u;
+const uint DefaultMetalness                 = 0x00000000u;
 
 const uint SkinningShaderGroupSizeX         = 256u;
 

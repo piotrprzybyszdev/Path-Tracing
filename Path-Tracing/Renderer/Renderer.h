@@ -6,13 +6,9 @@
 #include <mutex>
 #include <vector>
 
-#include "Core/Camera.h"
-#include "Core/Core.h"
-
 #include "AccelerationStructure.h"
 #include "Buffer.h"
 #include "CommandBuffer.h"
-#include "DescriptorSet.h"
 #include "Image.h"
 #include "Pipeline.h"
 #include "Scene.h"
@@ -152,7 +148,8 @@ private:
     static Buffer CreateDeviceBufferUnflushed(BufferContent content, std::string &&name);
     static Buffer CreateDeviceBuffer(BufferContent content, std::string &&name);
 
-    static uint32_t AddDefaultTexture(glm::u8vec4 value, std::string &&name);
+    static uint32_t AddTexture(uint32_t data, vk::Extent2D extent, std::string &&name);
+    static uint32_t AddTexture(std::span<const uint8_t> data, std::string &&name);
 
     static void UpdatePipelineSpecializations();
     static void CreatePipelines();

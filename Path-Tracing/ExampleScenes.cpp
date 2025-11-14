@@ -4,7 +4,6 @@
 #include <algorithm>
 #include <array>
 #include <string>
-#include <unordered_set>
 #include <vector>
 
 #include "Core/Core.h"
@@ -12,6 +11,7 @@
 #include "Application.h"
 #include "AssetImporter.h"
 #include "ExampleScenes.h"
+#include "Resources.h"
 
 namespace PathTracing::ExampleScenes
 {
@@ -68,9 +68,10 @@ void CombinedSceneLoader::Load(SceneBuilder &sceneBuilder)
         return;
 
     TextureType type = m_IsSkyboxHDR ? TextureType::SkyboxHDR : TextureType::Skybox;
-    sceneBuilder.SetSkybox(Skybox2D(AssetImporter::GetTextureInfo(
-        Application::GetConfig().AssetDirectoryPath / "scenes" / m_SkyboxPath, type
-    )));
+    TextureInfo info = AssetImporter::GetTextureInfo(
+        Application::GetConfig().AssetDirectoryPath / "scenes" / m_SkyboxPath, type, "Skybox"
+    );
+    sceneBuilder.SetSkybox(Skybox2D(info));
 }
 
 void CreateDefaultScene(SceneBuilder &sceneBuilder);
@@ -188,11 +189,85 @@ void CustomSceneLoader<load>::Load(SceneBuilder &sceneBuilder)
     return load(sceneBuilder);
 }
 
+static std::array<uint32_t, 6> AddCube(SceneBuilder &sceneBuilder)
+{
+    auto &vertices = sceneBuilder.GetVertices();
+    uint32_t vertexOffset = vertices.size();
+    std::ranges::copy(
+        std::array<Shaders::Vertex, 24> { {
+            { { -1, -1, 1 }, { 0, 1 }, { 0, 0, 1 }, { 1, 0, 0 }, { 0, 1, 0 } },
+            { { 1, -1, 1 }, { 1, 1 }, { 0, 0, 1 }, { 1, 0, 0 }, { 0, 1, 0 } },
+            { { 1, 1, 1 }, { 1, 0 }, { 0, 0, 1 }, { 1, 0, 0 }, { 0, 1, 0 } },
+            { { -1, 1, 1 }, { 0, 0 }, { 0, 0, 1 }, { 1, 0, 0 }, { 0, 1, 0 } },
+
+            { { 1, -1, -1 }, { 0, 1 }, { 0, 0, -1 }, { -1, 0, 0 }, { 0, 1, 0 } },
+            { { -1, -1, -1 }, { 1, 1 }, { 0, 0, -1 }, { -1, 0, 0 }, { 0, 1, 0 } },
+            { { -1, 1, -1 }, { 1, 0 }, { 0, 0, -1 }, { -1, 0, 0 }, { 0, 1, 0 } },
+            { { 1, 1, -1 }, { 0, 0 }, { 0, 0, -1 }, { -1, 0, 0 }, { 0, 1, 0 } },
+
+            { { -1, -1, -1 }, { 0, 1 }, { -1, 0, 0 }, { 0, 0, 1 }, { 0, 1, 0 } },
+            { { -1, -1, 1 }, { 1, 1 }, { -1, 0, 0 }, { 0, 0, 1 }, { 0, 1, 0 } },
+            { { -1, 1, 1 }, { 1, 0 }, { -1, 0, 0 }, { 0, 0, 1 }, { 0, 1, 0 } },
+            { { -1, 1, -1 }, { 0, 0 }, { -1, 0, 0 }, { 0, 0, 1 }, { 0, 1, 0 } },
+
+            { { 1, -1, 1 }, { 0, 1 }, { 1, 0, 0 }, { 0, 0, -1 }, { 0, 1, 0 } },
+            { { 1, -1, -1 }, { 1, 1 }, { 1, 0, 0 }, { 0, 0, -1 }, { 0, 1, 0 } },
+            { { 1, 1, -1 }, { 1, 0 }, { 1, 0, 0 }, { 0, 0, -1 }, { 0, 1, 0 } },
+            { { 1, 1, 1 }, { 0, 0 }, { 1, 0, 0 }, { 0, 0, -1 }, { 0, 1, 0 } },
+
+            { { -1, 1, 1 }, { 0, 1 }, { 0, 1, 0 }, { 1, 0, 0 }, { 0, 0, -1 } },
+            { { 1, 1, 1 }, { 1, 1 }, { 0, 1, 0 }, { 1, 0, 0 }, { 0, 0, -1 } },
+            { { 1, 1, -1 }, { 1, 0 }, { 0, 1, 0 }, { 1, 0, 0 }, { 0, 0, -1 } },
+            { { -1, 1, -1 }, { 0, 0 }, { 0, 1, 0 }, { 1, 0, 0 }, { 0, 0, -1 } },
+
+            { { -1, -1, -1 }, { 0, 1 }, { 0, -1, 0 }, { 1, 0, 0 }, { 0, 0, 1 } },
+            { { 1, -1, -1 }, { 1, 1 }, { 0, -1, 0 }, { 1, 0, 0 }, { 0, 0, 1 } },
+            { { 1, -1, 1 }, { 1, 0 }, { 0, -1, 0 }, { 1, 0, 0 }, { 0, 0, 1 } },
+            { { -1, -1, 1 }, { 0, 0 }, { 0, -1, 0 }, { 1, 0, 0 }, { 0, 0, 1 } },
+        } },
+        std::back_inserter(vertices)
+    );
+
+    auto &indices = sceneBuilder.GetIndices();
+    uint32_t indexOffset = indices.size();
+    for (int i = 0; i < 6; i++)
+        std::ranges::copy(std::array<uint32_t, 6> { 0, 1, 2, 2, 3, 0 }, std::back_inserter(indices));
+
+    std::array<uint32_t, 6> geometryIndices = {};
+    for (uint32_t i = 0; i < 6; i++)
+    {
+        geometryIndices[i] = sceneBuilder.AddGeometry({ vertexOffset, 4, indexOffset, 6, true });
+        vertexOffset += 4;
+        indexOffset += 6;
+    }
+    
+    return geometryIndices;
+}
+
 void CreateDefaultScene(SceneBuilder &sceneBuilder)
 {
-    sceneBuilder.AddMaterial("White Material", Shaders::SolidColorMaterial { .Color = glm::vec3(1.0f) });
-    sceneBuilder.AddMaterial("Green Material", Shaders::SolidColorMaterial { .Color = glm::vec3(0.0f, 1.0f, 0.0f) });
-    sceneBuilder.AddMaterial("Red Material", Shaders::SolidColorMaterial { .Color = glm::vec3(1.0f, 0.0f, 0.0f) });
+    auto makeSolidColorMaterial = [](glm::vec3 color) { return Shaders::SolidColorMaterial { .Color = color }; };
+    auto makeTexturedMaterial = [&](std::span<const uint8_t>) {
+        return Shaders::TexturedMaterial {
+            .ColorIdx = sceneBuilder.AddTexture(
+                AssetImporter::GetTextureInfo(
+                    Resources::g_PlaceholderTextureData, TextureType::Color, "Logo Texture"
+                )
+            ),
+            .NormalIdx = Scene::GetDefaultTextureIndex(TextureType::Normal),
+            .RoughnessIdx = Scene::GetDefaultTextureIndex(TextureType::Roughness),
+            .MetalicIdx = Scene::GetDefaultTextureIndex(TextureType::Metalic),
+        };
+    };
+
+    uint32_t whiteMaterial =
+        sceneBuilder.AddMaterial("White Material", Shaders::SolidColorMaterial { .Color = glm::vec3(1.0f) });
+    uint32_t greenMaterial =
+        sceneBuilder.AddMaterial("Green Material", makeSolidColorMaterial(glm::vec3(0.0f, 1.0f, 0.0f)));
+    uint32_t redMaterial =
+        sceneBuilder.AddMaterial("Red Material", makeSolidColorMaterial(glm::vec3(1.0f, 0.0f, 0.0f)));
+    uint32_t logoMaterial =
+        sceneBuilder.AddMaterial("Logo Material", makeTexturedMaterial(Resources::g_PlaceholderTextureData));
 
     auto &vertices = sceneBuilder.GetVertices();
     vertices = {
@@ -235,14 +310,26 @@ void CreateDefaultScene(SceneBuilder &sceneBuilder)
     }
 
     std::array<MeshInfo, 5> meshes = { {
-        { 0, 2, MaterialType::SolidColor, glm::mat4(1.0f) },
-        { 1, 1, MaterialType::SolidColor, glm::mat4(1.0f) },
-        { 2, 0, MaterialType::SolidColor, glm::mat4(1.0f) },
-        { 3, 0, MaterialType::SolidColor, glm::mat4(1.0f) },
-        { 4, 0, MaterialType::SolidColor, glm::mat4(1.0f) },
+        { 0, redMaterial, MaterialType::SolidColor, glm::mat4(1.0f) },
+        { 1, greenMaterial, MaterialType::SolidColor, glm::mat4(1.0f) },
+        { 2, logoMaterial, MaterialType::Textured, glm::mat4(1.0f) },
+        { 3, whiteMaterial, MaterialType::SolidColor, glm::mat4(1.0f) },
+        { 4, whiteMaterial, MaterialType::SolidColor, glm::mat4(1.0f) },
+    } };
+
+    std::array<uint32_t, 6> geometryIndices = AddCube(sceneBuilder);
+
+    std::array<MeshInfo, 6> cubeMeshes = { {
+        { geometryIndices[0], whiteMaterial, MaterialType::SolidColor, glm::mat4(1.0f) },
+        { geometryIndices[1], whiteMaterial, MaterialType::SolidColor, glm::mat4(1.0f) },
+        { geometryIndices[2], whiteMaterial, MaterialType::SolidColor, glm::mat4(1.0f) },
+        { geometryIndices[3], whiteMaterial, MaterialType::SolidColor, glm::mat4(1.0f) },
+        { geometryIndices[4], whiteMaterial, MaterialType::SolidColor, glm::mat4(1.0f) },
+        { geometryIndices[5], whiteMaterial, MaterialType::SolidColor, glm::mat4(1.0f) },
     } };
 
     const uint32_t box = sceneBuilder.AddModel(meshes);
+    const uint32_t cube = sceneBuilder.AddModel(cubeMeshes);
 
     const glm::mat4 boxTransform = glm::transpose(
         glm::translate(glm::scale(glm::mat4(1.0f), glm::vec3(2.0f)), glm::vec3(-1.9f, 0.5f, 0.0f))
@@ -250,8 +337,47 @@ void CreateDefaultScene(SceneBuilder &sceneBuilder)
 
     const uint32_t rootNode = sceneBuilder.AddSceneNode({ 0u, glm::mat4(1.0f), glm::mat4(1.0f) });
     const uint32_t boxNode = sceneBuilder.AddSceneNode({ rootNode, boxTransform, glm::mat4(1.0f) });
-
+    
     const uint32_t boxInstance = sceneBuilder.AddModelInstance(box, boxNode);
+
+    const glm::mat4 leftCubeTransform = glm::transpose(
+        glm::scale(
+            glm::rotate(
+                glm::translate(glm::mat4(1.0f), glm::vec3(-0.4f, -0.8f, 0.5f)), glm::radians(25.0f),
+                glm::vec3(0.0f, 1.0f, 0.0f)
+            ),
+            glm::vec3(0.3f)
+        )
+    );
+    const uint32_t leftCubeNode = sceneBuilder.AddSceneNode({ boxNode, leftCubeTransform, glm::mat4(1.0f) });
+    
+    const glm::mat4 rightCubeTransform = glm::transpose(
+        glm::scale(
+            glm::rotate(
+                glm::translate(glm::mat4(1.0f), glm::vec3(0.2f, -0.8f, -0.6f)), glm::radians(-20.0f),
+                glm::vec3(0.0f, 1.0f, 0.0f)
+            ),
+            glm::vec3(0.3f)
+        )
+    );
+    const uint32_t rightCubeNode = sceneBuilder.AddSceneNode({ boxNode, rightCubeTransform, glm::mat4(1.0f) });
+
+    const uint32_t leftCubeInstance = sceneBuilder.AddModelInstance(cube, leftCubeNode);
+    const uint32_t rightCubeInstance = sceneBuilder.AddModelInstance(cube, rightCubeNode);
+
+    const glm::mat4 lightTransform =
+        glm::transpose(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.5f, 0.0f)));
+    const uint32_t lightNode = sceneBuilder.AddSceneNode({ boxNode, lightTransform, glm::mat4(1.0f) });
+    sceneBuilder.AddLight(
+        {
+            .Color = glm::vec3(1.0f),
+            .Position = glm::vec3(0.0f),
+            .AttenuationConstant = 0.0f,
+            .AttenuationLinear = 0.0f,
+            .AttenuationQuadratic = 1.0f,
+        },
+        lightNode
+    );
 }
 
 void CreateTexturedCubesScene(SceneBuilder &sceneBuilder)
@@ -264,6 +390,13 @@ void CreateTexturedCubesScene(SceneBuilder &sceneBuilder)
         "Logs001_1K-JPG",
     };
 
+    auto addTexture = [&](const std::filesystem::path &materialPath, const std::string &texture,
+                          TextureType type) {
+        return sceneBuilder.AddTexture(
+            AssetImporter::GetTextureInfo(materialPath / texture, type, std::string(texture))
+        );
+    };
+
     for (int i = 0; i < 3; i++)
     {
         const std::filesystem::path materialPath = base / assetNames[i];
@@ -271,83 +404,32 @@ void CreateTexturedCubesScene(SceneBuilder &sceneBuilder)
         sceneBuilder.AddMaterial(
             assetNames[i],
             Shaders::TexturedMaterial {
-                sceneBuilder.AddTexture(AssetImporter::GetTextureInfo(
-                    materialPath / (material + "_Color.jpg"), TextureType::Color
-                )),
-                sceneBuilder.AddTexture(AssetImporter::GetTextureInfo(
-                    materialPath / (material + "_NormalGL.jpg"), TextureType::Normal
-                )),
-                sceneBuilder.AddTexture(AssetImporter::GetTextureInfo(
-                    materialPath / (material + "_Roughness.jpg"), TextureType::Roughness
-                )),
-                sceneBuilder.AddTexture(AssetImporter::GetTextureInfo(
-                    materialPath / (material + "_Roughness.jpg"), TextureType::Metalic
-                )),
+                .ColorIdx = addTexture(materialPath, material + "_Color.jpg", TextureType::Color),
+                .NormalIdx = addTexture(materialPath, material + "_NormalGL.jpg", TextureType::Normal),
+                .RoughnessIdx = addTexture(materialPath, material + "_Roughness.jpg", TextureType::Roughness),
+                .MetalicIdx = addTexture(materialPath, material + "_Roughness.jpg", TextureType::Metalic),
             }
         );
     }
 
-    auto &vertices = sceneBuilder.GetVertices();
-    vertices = {
-        { { -1, -1, 1 }, { 0, 1 }, { 0, 0, 1 }, { 1, 0, 0 }, { 0, 1, 0 } },
-        { { 1, -1, 1 }, { 1, 1 }, { 0, 0, 1 }, { 1, 0, 0 }, { 0, 1, 0 } },
-        { { 1, 1, 1 }, { 1, 0 }, { 0, 0, 1 }, { 1, 0, 0 }, { 0, 1, 0 } },
-        { { -1, 1, 1 }, { 0, 0 }, { 0, 0, 1 }, { 1, 0, 0 }, { 0, 1, 0 } },
-
-        { { 1, -1, -1 }, { 0, 1 }, { 0, 0, -1 }, { -1, 0, 0 }, { 0, 1, 0 } },
-        { { -1, -1, -1 }, { 1, 1 }, { 0, 0, -1 }, { -1, 0, 0 }, { 0, 1, 0 } },
-        { { -1, 1, -1 }, { 1, 0 }, { 0, 0, -1 }, { -1, 0, 0 }, { 0, 1, 0 } },
-        { { 1, 1, -1 }, { 0, 0 }, { 0, 0, -1 }, { -1, 0, 0 }, { 0, 1, 0 } },
-
-        { { -1, -1, -1 }, { 0, 1 }, { -1, 0, 0 }, { 0, 0, 1 }, { 0, 1, 0 } },
-        { { -1, -1, 1 }, { 1, 1 }, { -1, 0, 0 }, { 0, 0, 1 }, { 0, 1, 0 } },
-        { { -1, 1, 1 }, { 1, 0 }, { -1, 0, 0 }, { 0, 0, 1 }, { 0, 1, 0 } },
-        { { -1, 1, -1 }, { 0, 0 }, { -1, 0, 0 }, { 0, 0, 1 }, { 0, 1, 0 } },
-
-        { { 1, -1, 1 }, { 0, 1 }, { 1, 0, 0 }, { 0, 0, -1 }, { 0, 1, 0 } },
-        { { 1, -1, -1 }, { 1, 1 }, { 1, 0, 0 }, { 0, 0, -1 }, { 0, 1, 0 } },
-        { { 1, 1, -1 }, { 1, 0 }, { 1, 0, 0 }, { 0, 0, -1 }, { 0, 1, 0 } },
-        { { 1, 1, 1 }, { 0, 0 }, { 1, 0, 0 }, { 0, 0, -1 }, { 0, 1, 0 } },
-
-        { { -1, 1, 1 }, { 0, 1 }, { 0, 1, 0 }, { 1, 0, 0 }, { 0, 0, -1 } },
-        { { 1, 1, 1 }, { 1, 1 }, { 0, 1, 0 }, { 1, 0, 0 }, { 0, 0, -1 } },
-        { { 1, 1, -1 }, { 1, 0 }, { 0, 1, 0 }, { 1, 0, 0 }, { 0, 0, -1 } },
-        { { -1, 1, -1 }, { 0, 0 }, { 0, 1, 0 }, { 1, 0, 0 }, { 0, 0, -1 } },
-
-        { { -1, -1, -1 }, { 0, 1 }, { 0, -1, 0 }, { 1, 0, 0 }, { 0, 0, 1 } },
-        { { 1, -1, -1 }, { 1, 1 }, { 0, -1, 0 }, { 1, 0, 0 }, { 0, 0, 1 } },
-        { { 1, -1, 1 }, { 1, 0 }, { 0, -1, 0 }, { 1, 0, 0 }, { 0, 0, 1 } },
-        { { -1, -1, 1 }, { 0, 0 }, { 0, -1, 0 }, { 1, 0, 0 }, { 0, 0, 1 } },
-    };
-
-    auto &indices = sceneBuilder.GetIndices();
-    for (int i = 0; i < 6; i++)
-        std::ranges::copy(std::vector<uint32_t> { 0, 1, 2, 2, 3, 0 }, std::back_inserter(indices));
-
-    uint32_t vertexOffset = 0, indexOffset = 0;
-    for (uint32_t i = 0; i < 6; i++)
-    {
-        sceneBuilder.AddGeometry({ vertexOffset, 4, indexOffset, 6, true });
-        vertexOffset += 4;
-        indexOffset += 6;
-    }
+    std::array<uint32_t, 6> geometryIndices = AddCube(sceneBuilder);
 
     std::array<MeshInfo, 6> m1 = { {
-        { 0, 0, MaterialType::Textured, glm::mat4(1.0f) },
-        { 1, 0, MaterialType::Textured, glm::mat4(1.0f) },
-        { 2, 1, MaterialType::Textured, glm::mat4(1.0f) },
-        { 3, 1, MaterialType::Textured, glm::mat4(1.0f) },
-        { 4, 2, MaterialType::Textured, glm::mat4(1.0f) },
-        { 5, 2, MaterialType::Textured, glm::mat4(1.0f) },
+        { geometryIndices[0], 0, MaterialType::Textured, glm::mat4(1.0f) },
+        { geometryIndices[1], 0, MaterialType::Textured, glm::mat4(1.0f) },
+        { geometryIndices[2], 1, MaterialType::Textured, glm::mat4(1.0f) },
+        { geometryIndices[3], 1, MaterialType::Textured, glm::mat4(1.0f) },
+        { geometryIndices[4], 2, MaterialType::Textured, glm::mat4(1.0f) },
+        { geometryIndices[5], 2, MaterialType::Textured, glm::mat4(1.0f) },
     } };
 
     std::array<MeshInfo, 6> m2 = { {
-        { 0, 0, MaterialType::Textured, glm::mat4(1.0f) },
-        { 1, 0, MaterialType::Textured, glm::mat4(1.0f) },
-        { 2, 0, MaterialType::Textured, glm::mat4(1.0f) },
-        { 3, 0, MaterialType::Textured, glm::mat4(1.0f) },
-        { 4, 0, MaterialType::Textured, glm::mat4(1.0f) },
-        { 5, 0, MaterialType::Textured, glm::mat4(1.0f) },
+        { geometryIndices[0], 0, MaterialType::Textured, glm::mat4(1.0f) },
+        { geometryIndices[1], 0, MaterialType::Textured, glm::mat4(1.0f) },
+        { geometryIndices[2], 0, MaterialType::Textured, glm::mat4(1.0f) },
+        { geometryIndices[3], 0, MaterialType::Textured, glm::mat4(1.0f) },
+        { geometryIndices[4], 0, MaterialType::Textured, glm::mat4(1.0f) },
+        { geometryIndices[5], 0, MaterialType::Textured, glm::mat4(1.0f) },
     } };
 
     const uint32_t cube1 = sceneBuilder.AddModel(m1);
@@ -398,7 +480,7 @@ void CreateTexturedCubesScene(SceneBuilder &sceneBuilder)
     sceneBuilder.AddAnimation(Animation({ animNode }, 30.0f, 180.0f));
 
     sceneBuilder.SetSkybox(
-        Skybox2D(AssetImporter::GetTextureInfo(base / "skybox" / "sky_42_2k.png", TextureType::Skybox))
+        Skybox2D(AssetImporter::GetTextureInfo(base / "skybox" / "sky_42_2k.png", TextureType::Skybox, "Skybox"))
     );
 }
 
@@ -412,6 +494,13 @@ void CreateReuseMeshCubesScene(SceneBuilder &sceneBuilder)
         "Logs001_1K-JPG",
     };
 
+    auto addTexture = [&](const std::filesystem::path &materialPath, const std::string &texture,
+                          TextureType type) {
+        return sceneBuilder.AddTexture(
+            AssetImporter::GetTextureInfo(materialPath / texture, type, std::string(texture))
+        );
+    };
+
     for (int i = 0; i < 3; i++)
     {
         const std::filesystem::path materialPath = base / assetNames[i];
@@ -419,18 +508,10 @@ void CreateReuseMeshCubesScene(SceneBuilder &sceneBuilder)
         sceneBuilder.AddMaterial(
             assetNames[i],
             Shaders::TexturedMaterial {
-                sceneBuilder.AddTexture(AssetImporter::GetTextureInfo(
-                    materialPath / (material + "_Color.jpg"), TextureType::Color
-                )),
-                sceneBuilder.AddTexture(AssetImporter::GetTextureInfo(
-                    materialPath / (material + "_NormalGL.jpg"), TextureType::Normal
-                )),
-                sceneBuilder.AddTexture(AssetImporter::GetTextureInfo(
-                    materialPath / (material + "_Roughness.jpg"), TextureType::Roughness
-                )),
-                sceneBuilder.AddTexture(AssetImporter::GetTextureInfo(
-                    materialPath / (material + "_Roughness.jpg"), TextureType::Metalic
-                )),
+                .ColorIdx = addTexture(materialPath, material + "_Color.jpg", TextureType::Color),
+                .NormalIdx = addTexture(materialPath, material + "_NormalGL.jpg", TextureType::Normal),
+                .RoughnessIdx = addTexture(materialPath, material + "_Roughness.jpg", TextureType::Roughness),
+                .MetalicIdx = addTexture(materialPath, material + "_Roughness.jpg", TextureType::Metalic),
             }
         );
     }
@@ -485,12 +566,12 @@ void CreateReuseMeshCubesScene(SceneBuilder &sceneBuilder)
 
     const auto skyboxPath = base / "skybox" / "sky_42_cubemap_(roblox)_2k";
     sceneBuilder.SetSkybox(SkyboxCube(
-        AssetImporter::GetTextureInfo(skyboxPath / "px.png", TextureType::Skybox),
-        AssetImporter::GetTextureInfo(skyboxPath / "nx.png", TextureType::Skybox),
-        AssetImporter::GetTextureInfo(skyboxPath / "py.png", TextureType::Skybox),
-        AssetImporter::GetTextureInfo(skyboxPath / "ny.png", TextureType::Skybox),
-        AssetImporter::GetTextureInfo(skyboxPath / "pz.png", TextureType::Skybox),
-        AssetImporter::GetTextureInfo(skyboxPath / "nz.png", TextureType::Skybox)
+        AssetImporter::GetTextureInfo(skyboxPath / "px.png", TextureType::Skybox, "Skybox px"),
+        AssetImporter::GetTextureInfo(skyboxPath / "nx.png", TextureType::Skybox, "Skybox nx"),
+        AssetImporter::GetTextureInfo(skyboxPath / "py.png", TextureType::Skybox, "Skybox py"),
+        AssetImporter::GetTextureInfo(skyboxPath / "ny.png", TextureType::Skybox, "Skybox ny"),
+        AssetImporter::GetTextureInfo(skyboxPath / "pz.png", TextureType::Skybox, "Skybox pz"),
+        AssetImporter::GetTextureInfo(skyboxPath / "nz.png", TextureType::Skybox, "Skybox nz")
     ));
 }
 

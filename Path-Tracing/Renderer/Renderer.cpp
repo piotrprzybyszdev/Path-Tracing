@@ -1,20 +1,15 @@
 #include <vulkan/vulkan.hpp>
-#include <vulkan/vulkan_format_traits.hpp>
 
-#include <algorithm>
-#include <bit>
 #include <memory>
-#include <ranges>
-#include <set>
 
 #include "Core/Core.h"
 
 #include "Shaders/ShaderRendererTypes.incl"
 
 #include "Application.h"
+#include "Resources.h"
 #include "UserInterface.h"
 
-#include "AssetImporter.h"
 #include "CommandBuffer.h"
 #include "DeviceContext.h"
 #include "Renderer.h"
@@ -36,6 +31,7 @@ RaytracingPipelineConfig Renderer::s_PipelineConfig = {};
 std::vector<Renderer::RenderingResources> Renderer::s_RenderingResources = {};
 
 std::unique_ptr<CommandBuffer> Renderer::s_MainCommandBuffer = nullptr;
+std::unique_ptr<StagingBuffer> Renderer::s_StagingBuffer = nullptr;
 
 std::unique_ptr<Renderer::SceneData> Renderer::s_SceneData = nullptr;
 
@@ -47,17 +43,15 @@ std::unique_ptr<TextureUploader> Renderer::s_TextureUploader = nullptr;
 std::unique_ptr<CommandBuffer> Renderer::s_TextureOwnershipCommandBuffer = nullptr;
 bool Renderer::s_TextureOwnershipBufferHasCommands = false;
 
+std::unique_ptr<ShaderLibrary> Renderer::s_ShaderLibrary = nullptr;
 std::unique_ptr<RaytracingPipeline> Renderer::s_RaytracingPipeline = nullptr;
 std::unique_ptr<ComputePipeline> Renderer::s_SkinningPipeline = nullptr;
 
 std::unique_ptr<BufferBuilder> Renderer::s_BufferBuilder = nullptr;
 std::unique_ptr<ImageBuilder> Renderer::s_ImageBuilder = nullptr;
 
-std::unique_ptr<StagingBuffer> Renderer::s_StagingBuffer = nullptr;
-
 vk::Sampler Renderer::s_TextureSampler = nullptr;
 
-std::unique_ptr<ShaderLibrary> Renderer::s_ShaderLibrary = nullptr;
 
 void Renderer::Init(const Swapchain *swapchain)
 {
@@ -95,20 +89,22 @@ void Renderer::Init(const Swapchain *swapchain)
     s_TextureOwnershipCommandBuffer = std::make_unique<CommandBuffer>(DeviceContext::GetGraphicsQueue());
 
     {
-        auto tou8vec4 = [](float value) { return glm::u8vec4(value * 255.0f); };
-
-        uint32_t colorIndex = AddDefaultTexture(glm::u8vec4(255), "Default Color Texture");
-        uint32_t normalIndex = AddDefaultTexture(glm::u8vec4(128, 128, 255, 255), "Default Normal Texture");
+        uint32_t colorIndex =
+            AddTexture(Shaders::DefaultColor, { 1, 1 }, "Default Color Texture");
+        uint32_t normalIndex =
+            AddTexture(Shaders::DefaultNormal, { 1, 1 }, "Default Normal Texture");
         uint32_t roughnessIndex =
-            AddDefaultTexture(tou8vec4(Shaders::DefaultRoughness), "Default Roughness Texture");
+            AddTexture(Shaders::DefaultRoughness, { 1, 1 }, "Default Roughness Texture");
         uint32_t metalicIndex =
-            AddDefaultTexture(tou8vec4(Shaders::DefaultMetalness), "Default Metalic Texture");
+            AddTexture(Shaders::DefaultMetalness, { 1, 1 }, "Default Metalic Texture");
+        uint32_t placeholderIndex = AddTexture(Resources::g_PlaceholderTextureData, "Placeholder Texture");
 
-        s_TextureMap.resize(4);
+        s_TextureMap.resize(Shaders::SceneTextureOffset);
         s_TextureMap[Shaders::DefaultColorTextureIndex] = colorIndex;
         s_TextureMap[Shaders::DefaultNormalTextureIndex] = normalIndex;
         s_TextureMap[Shaders::DefaultRoughnessTextureIndex] = roughnessIndex;
         s_TextureMap[Shaders::DefaultMetalicTextureIndex] = metalicIndex;
+        s_TextureMap[Shaders::PlaceholderTextureIndex] = placeholderIndex;
     }
 }
 
@@ -334,8 +330,9 @@ void Renderer::UpdateSceneData()
     s_TextureMap.resize(Shaders::SceneTextureOffset + textures.size());
     for (int i = 0; i < textures.size(); i++)
     {
-        const uint32_t mapIndex = Shaders::GetSceneTextureIndex(i);
-        s_TextureMap[mapIndex] = Scene::GetDefaultTextureIndex(textures[i].Type);
+        const TextureType type = textures[i].Type;
+        s_TextureMap[Shaders::GetSceneTextureIndex(i)] =
+            type == TextureType::Color ? Shaders::PlaceholderTextureIndex : Scene::GetDefaultTextureIndex(type);
     }
 
     UpdatePipelineConfig(s_PipelineConfig);
@@ -393,9 +390,16 @@ Buffer Renderer::CreateDeviceBuffer(BufferContent content, std::string &&name)
     return buffer;
 }
 
-uint32_t Renderer::AddDefaultTexture(glm::u8vec4 value, std::string &&name)
+uint32_t Renderer::AddTexture(uint32_t data, vk::Extent2D extent, std::string &&name)
 {
-    auto image = s_TextureUploader->UploadDefault(value, std::move(name));
+    auto image = s_TextureUploader->UploadFromRawContentBlocking(ToByteSpan(data), extent, std::move(name));
+    s_Textures.push_back(std::move(image));
+    return s_Textures.size() - 1;
+}
+
+uint32_t Renderer::AddTexture(std::span<const uint8_t> data, std::string &&name)
+{
+    auto image = s_TextureUploader->UploadSingleBlocking(data, TextureType::Color, std::move(name));
     s_Textures.push_back(std::move(image));
     return s_Textures.size() - 1;
 }

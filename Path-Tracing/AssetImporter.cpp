@@ -16,7 +16,7 @@
 namespace PathTracing
 {
 
-static void PremultiplyTextureData(const std::string &path, std::span<std::byte> data)
+static void PremultiplyTextureData(const std::string &name, std::span<std::byte> data)
 {
     // TODO: Remove when mip map generation is moved into a compute shader
     // Color channels should be premultiplied by the alpha channel between generation of every mip level
@@ -37,7 +37,9 @@ static void PremultiplyTextureData(const std::string &path, std::span<std::byte>
         }
         else if (pixel.a != 255 && !warned)
         {
-            logger::debug("Texture {} has semi-transparent pixels. Generated mips may contain artifacts", path);
+            logger::debug(
+                "Texture {} has semi-transparent pixels. Generated mips may contain artifacts", name
+            );
             warned = true;
         }
     }
@@ -57,21 +59,38 @@ void AssetImporter::Shutdown()
 
 std::byte *AssetImporter::LoadTextureData(const TextureInfo &info)
 {
-    const std::string pathString = info.Path.string();
-
+    std::byte *data;
     int x, y, channels;
-    std::byte *data =
-        info.Type == TextureType::SkyboxHDR
-            ? reinterpret_cast<std::byte *>(stbi_loadf(pathString.c_str(), &x, &y, &channels, STBI_rgb_alpha))
-            : reinterpret_cast<std::byte *>(stbi_load(pathString.c_str(), &x, &y, &channels, STBI_rgb_alpha));
 
-    assert(x == info.Width && y == info.Height && channels == info.Channels);
+    if (const FileTextureSource *source = std::get_if<FileTextureSource>(&info.Source))
+    {
+        const std::string pathString = source->string();
+
+        data = info.Type == TextureType::SkyboxHDR
+                   ? reinterpret_cast<std::byte *>(
+                         stbi_loadf(pathString.c_str(), &x, &y, &channels, STBI_rgb_alpha)
+                     )
+                   : reinterpret_cast<std::byte *>(
+                         stbi_load(pathString.c_str(), &x, &y, &channels, STBI_rgb_alpha)
+                     );
+    }
+    else if (const MemoryTextureSource *source = std::get_if<MemoryTextureSource>(&info.Source))
+    {
+        data = reinterpret_cast<std::byte *>(
+            stbi_load_from_memory(source->data(), source->size_bytes(), &x, &y, &channels, STBI_rgb_alpha)
+        );
+    }
+    else
+        throw error("Unhandled texture source type");
 
     if (data == nullptr)
-        throw error(std::format("Could not load texture {}: {}", pathString, stbi_failure_reason()));
+        throw error(std::format("Could not load texture {}: {}", info.Name, stbi_failure_reason()));
+
+    assert(x == info.Width && y == info.Height && channels == info.Channels);
+    assert(channels != -1 && data != nullptr);
 
     if (info.Type == TextureType::Color && channels == 4)
-        PremultiplyTextureData(pathString, std::span(data, 4 * x * y));
+        PremultiplyTextureData(info.Name, std::span(data, 4 * info.Width * info.Height));
 
     return data;
 }
@@ -81,16 +100,27 @@ void AssetImporter::ReleaseTextureData(std::byte *data)
     stbi_image_free(data);
 }
 
-TextureInfo AssetImporter::GetTextureInfo(const std::filesystem::path path, TextureType type)
+TextureInfo AssetImporter::GetTextureInfo(TextureSourceVariant source, TextureType type, std::string &&name)
 {
-    std::string pathString = path.string();
+    int ret;
     int x, y, channels;
-    int ret = stbi_info(pathString.c_str(), &x, &y, &channels);
+
+    if (const FileTextureSource *src = std::get_if<FileTextureSource>(&source))
+    {
+        std::string pathString = src->string();
+        ret = stbi_info(pathString.c_str(), &x, &y, &channels);
+    }
+    else if (const MemoryTextureSource *src = std::get_if<MemoryTextureSource>(&source))
+    {
+        ret = stbi_info_from_memory(src->data(), src->size_bytes(), &x, &y, &channels);
+    }
+    else
+        throw error("Unhandled texture source type");
 
     if (ret == 0)
-        throw error(std::format("Could not load texture {}: {}", pathString, stbi_failure_reason()));
+        throw error(std::format("Could not load texture {}: {}", name, stbi_failure_reason()));
 
-    return TextureInfo(type, channels, x, y, path);
+    return TextureInfo(type, channels, x, y, std::move(name), std::move(source));
 }
 
 namespace
@@ -140,7 +170,7 @@ uint32_t AddTexture(
 
     try
     {
-        return sceneBuilder.AddTexture(AssetImporter::GetTextureInfo(texturePath, textureType));
+        return sceneBuilder.AddTexture(AssetImporter::GetTextureInfo(texturePath, textureType, path.C_Str()));
     }
     catch (const error &error)
     {
@@ -166,7 +196,7 @@ Shaders::SolidColorMaterial LoadSolidColorMaterial(const aiMaterial *material)
     aiColor3D color;
     material->Get(AI_MATKEY_BASE_COLOR, color);
 
-    return Shaders::SolidColorMaterial { 
+    return Shaders::SolidColorMaterial {
         .Color = TrivialCopyUnsafe<aiColor3D, glm::vec3>(color),
     };
 }
@@ -179,7 +209,7 @@ std::vector<std::pair<uint32_t, MaterialType>> LoadMaterials(
 
     for (int i = 0; i < scene->mNumMaterials; i++)
     {
-        const aiMaterial *material = scene->mMaterials[i];      
+        const aiMaterial *material = scene->mMaterials[i];
         const aiString originalName = material->GetName();
         const std::string materialName =
             originalName.length != 0 ? originalName.C_Str() : std::format("Unnamed Material at index {}", i);
@@ -250,10 +280,12 @@ void LoadBones(
         armatures.insert(bone->mArmature);
 
         const uint32_t sceneNodeIndex = sceneNodeIndices.at(bone->mNode);
-        const uint32_t boneIndex = sceneBuilder.AddBone({
-            .SceneNodeIndex = sceneNodeIndex,
-            .Offset = TrivialCopy<aiMatrix4x4, glm::mat4>(bone->mOffsetMatrix),
-        });
+        const uint32_t boneIndex = sceneBuilder.AddBone(
+            {
+                .SceneNodeIndex = sceneNodeIndex,
+                .Offset = TrivialCopy<aiMatrix4x4, glm::mat4>(bone->mOffsetMatrix),
+            }
+        );
 
         for (int j = 0; j < bone->mNumWeights; j++)
         {
@@ -459,11 +491,13 @@ std::unordered_map<const aiNode *, uint32_t> LoadSceneNodes(
             "{}{}, mesh count: {}", std::string(depth * 4, ' '), node->mName.C_Str(), node->mNumMeshes
         );
 
-        const uint32_t sceneNodeIndex = sceneBuilder.AddSceneNode({
-            .Parent = parentNodeIndex,
-            .Transform = TrivialCopy<aiMatrix4x4, glm::mat4>(node->mTransformation),
-            .CurrentTransform = glm::mat4(1.0f),
-        });
+        const uint32_t sceneNodeIndex = sceneBuilder.AddSceneNode(
+            {
+                .Parent = parentNodeIndex,
+                .Transform = TrivialCopy<aiMatrix4x4, glm::mat4>(node->mTransformation),
+                .CurrentTransform = glm::mat4(1.0f),
+            }
+        );
 
         sceneNodeToIndex.emplace(node, sceneNodeIndex);
 
@@ -765,15 +799,17 @@ void LoadCameras(
         glm::vec3 up = TrivialCopy<aiVector3D, glm::vec3>(camera->mUp);
         up.y *= -1;
 
-        sceneBuilder.AddCamera(CameraInfo {
-            .VerticalFOV = glm::degrees(verticalFov),
-            .NearClip = camera->mClipPlaneNear,
-            .FarClip = camera->mClipPlaneFar,
-            .Position = TrivialCopy<aiVector3D, glm::vec3>(camera->mPosition),
-            .Direction = TrivialCopy<aiVector3D, glm::vec3>(camera->mLookAt),
-            .UpDirection = up,
-            .SceneNodeIndex = nodeIndex,
-        });
+        sceneBuilder.AddCamera(
+            CameraInfo {
+                .VerticalFOV = glm::degrees(verticalFov),
+                .NearClip = camera->mClipPlaneNear,
+                .FarClip = camera->mClipPlaneFar,
+                .Position = TrivialCopy<aiVector3D, glm::vec3>(camera->mPosition),
+                .Direction = TrivialCopy<aiVector3D, glm::vec3>(camera->mLookAt),
+                .UpDirection = up,
+                .SceneNodeIndex = nodeIndex,
+            }
+        );
     }
 }
 

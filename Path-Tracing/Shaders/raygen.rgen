@@ -25,9 +25,9 @@ layout(binding = 7, set = 0) readonly buffer SolidColorMaterialBuffer {
 };
 
 layout(binding = 8, set = 0) uniform LightsBuffer {
-    uint u_lightCount;
-    DirectionalLight u_directionalLight;
-    PointLight[MaxLightCount] u_lights;
+    uint u_LightCount;
+    DirectionalLight u_DirectionalLight;
+    PointLight[MaxLightCount] u_Lights;
 };
 
 layout(location = 0) rayPayloadEXT Payload payload;
@@ -35,6 +35,48 @@ layout(location = 1) rayPayloadEXT bool isOccluded;
 
 #include "shading.glsl"
 #include "tracing.glsl"
+
+void sampleMaterial(uint materialId, vec2 texCoords, float lod, out vec3 color, out float roughness, out float metalness)
+{
+    uint materialType;
+    uint materialIndex = unpackMaterialId(materialId, materialType);
+
+    if (materialType == MaterialTypeTextured)
+    {
+        const TexturedMaterial material = texturedMaterials[materialIndex];
+        color = textureLod(textures[GetColorTextureIndex(0, material)], texCoords, lod).xyz;
+        roughness = textureLod(textures[GetRoughnessTextureIndex(0, material)], texCoords, lod).y;
+        metalness = textureLod(textures[GetMetalicTextureIndex(0, material)], texCoords, lod).z;
+    }
+    else
+    {
+        const SolidColorMaterial material = solidColorMaterials[materialIndex];
+        color = material.Color;
+        roughness = DefaultRoughness;
+        metalness = DefaultMetalness;
+    }
+}
+
+bool sampleLight(out vec3 lightDirection, out vec3 lightColor, out float lightDistance, out float attenuation, vec3 position, inout uint rngState)
+{
+    uint lightIndex = uint(rand(rngState) * (u_LightCount + 1));
+    
+    if (lightIndex >= u_LightCount)
+    {
+        lightDirection = u_DirectionalLight.Direction;
+        lightColor = u_DirectionalLight.Color;
+        lightDistance = DirectionalLightDistance;
+        attenuation = 1.0f;
+        return true;
+    }
+
+    const PointLight light = u_Lights[lightIndex];
+    lightDistance = distance(position, light.Position);
+    lightDirection = normalize(position - light.Position);
+    lightColor = light.Color;
+    attenuation = 1.0f / (light.AttenuationConstant + lightDistance * light.AttenuationLinear + lightDistance * lightDistance * light.AttenuationQuadratic);
+    return false;
+}
 
 void main()
 {
@@ -64,7 +106,7 @@ void main()
     vec3 totalLight = vec3(0.0f);
     vec3 throughput = vec3(1.0f);
 
-    const uint totalBounces = 1;
+    const uint totalBounces = 4;
     for (int bounce = 0; bounce < totalBounces; bounce++)
     {
         traceRayEXT(u_TopLevelAS, flags, 0xff, PrimaryRayHitGroupIndex, 2, PrimaryRayMissGroupIndex, origin, tmin, direction, tmax, 0);
@@ -81,32 +123,36 @@ void main()
 
         vec3 color;
         float roughness, metalness;
-        sampleMaterial(payload.MaterialId, lod, color, roughness, metalness);
+        sampleMaterial(payload.MaterialId, payload.TexCoords, lod, color, roughness, metalness);
 
         const vec3 viewDir = direction;
         const vec3 V = -normalize(viewDir);
         const vec3 N = payload.Normal;
             
-        if (!checkOccluded(u_directionalLight.Direction, payload.Position, directionalLightDistance))
-            totalLight += throughput * computeLightContribution(u_directionalLight.Direction, u_directionalLight.Color, 1.0f, payload.Position, V, N, color, roughness, metalness);
+        vec3 lightDirection, lightColor;
+        float attenuation, lightDistance;
 
-        // TODO: Handle RenderModes
-        if (totalBounces == 1)
+        if (bounce == 0)
             totalLight += ambient * color;
 
+        sampleLight(lightDirection, lightColor, lightDistance, attenuation, payload.Position, rng);
+
+        // TODO: Scale down according to the probability
+        if (!checkOccluded(lightDirection, payload.Position, lightDistance))
+            totalLight += throughput * computeLightContribution(lightDirection, lightColor, attenuation, payload.Position, V, N, color, roughness, metalness);
+
+        // TODO: Handle RenderModes
+
         throughput *= color;
-        
-        // TODO: Handle point lights
 
         origin = payload.Position;
         direction = reflect(direction, N);
 
-        // naive diffuse reflection test
+        // TODO: Sample proper BRDF
         vec3 offset = getRandomUnitSphere(rng);
         if (dot(N, offset) < 0)
             offset *= -1;
-        direction += offset;
-        // (comment out to get perfect specular reflection)        
+        direction = normalize(direction + offset * roughness);
     }
 
     imageStore(u_Image, ivec2(gl_LaunchIDEXT.xy), vec4(totalLight * mainUniform.u_Exposure, 1.0f));

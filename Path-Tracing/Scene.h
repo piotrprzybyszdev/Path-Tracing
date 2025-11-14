@@ -3,7 +3,6 @@
 #include <glm/glm.hpp>
 
 #include <filesystem>
-#include <map>
 #include <span>
 #include <string>
 #include <unordered_map>
@@ -29,12 +28,17 @@ enum class TextureType : uint8_t
     SkyboxHDR,
 };
 
+using FileTextureSource = std::filesystem::path;
+using MemoryTextureSource = std::span<const uint8_t>;
+using TextureSourceVariant = std::variant<FileTextureSource, MemoryTextureSource>;
+
 struct TextureInfo
 {
     TextureType Type;
     uint8_t Channels;
     uint32_t Width, Height;
-    std::filesystem::path Path;
+    std::string Name;
+    TextureSourceVariant Source;
 };
 
 struct Geometry

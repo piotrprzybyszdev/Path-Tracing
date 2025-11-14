@@ -1,5 +1,3 @@
-#include <vulkan/vulkan_format_traits.hpp>
-
 #include "Core/Core.h"
 
 #include "Application.h"
@@ -7,7 +5,6 @@
 
 #include "Renderer.h"
 #include "TextureUploader.h"
-#include "Utils.h"
 
 namespace PathTracing
 {
@@ -117,7 +114,7 @@ void TextureUploader::UploadTexturesBlocking(const Scene &scene)
         Renderer::s_MainCommandBuffer->SubmitBlocking();
 
         Renderer::UpdateTexture(Shaders::GetSceneTextureIndex(i));
-        logger::debug("Uploaded Texture: {}", textureInfo.Path.string());
+        logger::debug("Uploaded Texture: {}", textureInfo.Name);
     }
 }
 
@@ -159,9 +156,10 @@ void TextureUploader::Cancel()
     Application::ResetBackgroundTask(BackgroundTaskType::TextureUpload);
 }
 
-Image TextureUploader::UploadDefault(glm::u8vec4 value, std::string &&name)
+Image TextureUploader::UploadFromRawContentBlocking(
+    std::span<const std::byte> content, vk::Extent2D extent, std::string &&name
+)
 {
-    vk::Extent2D extent = { 1, 1 };
     vk::Format format = vk::Format::eR8G8B8A8Unorm;
 
     Image image = ImageBuilder()
@@ -175,7 +173,7 @@ Image TextureUploader::UploadDefault(glm::u8vec4 value, std::string &&name)
 
     const Buffer &buffer = m_FreeBuffers.front();
 
-    buffer.Upload(ToByteSpan(value));
+    buffer.Upload(content);
 
     assert(m_TemporaryOtherImage.GetFormat() == vk::Format::eR8G8B8A8Unorm);
     Renderer::s_MainCommandBuffer->Begin();
@@ -184,6 +182,21 @@ Image TextureUploader::UploadDefault(glm::u8vec4 value, std::string &&name)
         m_TemporaryOtherImage, extent, vk::ImageLayout::eShaderReadOnlyOptimal
     );
     Renderer::s_MainCommandBuffer->SubmitBlocking();
+
+    return image;
+}
+
+Image TextureUploader::UploadSingleBlocking(TextureSourceVariant source, TextureType type, std::string &&name)
+{
+    TextureInfo info = AssetImporter::GetTextureInfo(std::move(source), type, std::move(name));
+
+    std::byte *content = AssetImporter::LoadTextureData(info);
+    vk::Extent2D extent(info.Width, info.Height);
+    size_t contentSize = static_cast<size_t>(info.Width) * info.Height * info.Channels;
+
+    Image image = UploadFromRawContentBlocking(std::span(content, contentSize), extent, std::move(info.Name));
+
+    AssetImporter::ReleaseTextureData(content);
 
     return image;
 }
@@ -365,7 +378,7 @@ void TextureUploader::StartSubmitThread(const std::shared_ptr<const Scene> &scen
                 for (uint32_t textureIndex : textureIndices)
                 {
                     Renderer::UpdateTexture(Shaders::GetSceneTextureIndex(textureIndex));
-                    logger::debug("Uploaded Texture: {}", textures[textureIndex].Path.string());
+                    logger::debug("Uploaded Texture: {}", textures[textureIndex].Name);
                 }
             }
 
@@ -422,7 +435,7 @@ void TextureUploader::UploadTexture(
     const uint32_t height = std::max(texture.Height / scale, 1u);
     const vk::Extent2D extent(width, height);
 
-    Image image = m_ImageBuilder.CreateImage(extent, texture.Path.string());
+    Image image = m_ImageBuilder.CreateImage(extent, texture.Name);
 
     image.UploadStaging(
         mipBuffer, transferBuffer, buffer, GetTemporaryImage(texture.Type),
@@ -482,7 +495,7 @@ bool TextureUploader::CheckCanUpload(const TextureInfo &info)
         logger::error(
             "Cannot load texture {} because Texture Scaling is not supported and the texture size {}x{} is "
             "larger than the MaxTextureSize {}x{}",
-            info.Path.string(), info.Width, info.Height, MaxTextureSize.width, MaxTextureSize.height
+            info.Name, info.Width, info.Height, MaxTextureSize.width, MaxTextureSize.height
         );
         return false;
     }

@@ -29,7 +29,11 @@ public:
     void UploadTextures(const std::shared_ptr<const Scene> &scene);
     void Cancel();
 
-    Image UploadDefault(glm::u8vec4 value, std::string &&name);
+    // Only call from main thread when the asynchronous upload is not running
+    Image UploadFromRawContentBlocking(
+        std::span<const std::byte> data, vk::Extent2D extent, std::string &&name
+    );
+    Image UploadSingleBlocking(TextureSourceVariant source, TextureType type, std::string &&name);
     Image UploadSkyboxBlocking(const Skybox2D &skybox);
     Image UploadSkyboxBlocking(const SkyboxCube &skybox);
 
