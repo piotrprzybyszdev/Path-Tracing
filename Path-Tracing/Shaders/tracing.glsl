@@ -5,7 +5,7 @@ vec3 offsetRayOrigin(vec3 origin, vec3 normal)
 {
     return origin + normal * 0.01f;
 }
-
+    
 bool checkOccluded(vec3 lightDir, vec3 position, float dist)
 {
     if ((s_HitGroupFlags & HitGroupFlagsDisableShadows) != HitGroupFlagsNone)

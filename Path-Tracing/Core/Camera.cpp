@@ -77,7 +77,7 @@ InputCamera::InputCamera(
 {
 }
 
-void InputCamera::OnUpdate(float timeStep)
+bool InputCamera::OnUpdate(float timeStep)
 {
     glm::vec3 prevPosition = m_Position;
     glm::vec3 prevDirection = m_Direction;
@@ -130,7 +130,12 @@ void InputCamera::OnUpdate(float timeStep)
     }
 
     if (prevDirection != m_Direction || prevPosition != m_Position)
+    {
         UpdateInvView();
+        return true;
+    }
+
+    return false;
 }
 
 AnimatedCamera::AnimatedCamera(
@@ -142,13 +147,21 @@ AnimatedCamera::AnimatedCamera(
 {
 }
 
-void AnimatedCamera::OnUpdate(float timeStep)
+bool AnimatedCamera::OnUpdate(float timeStep)
 {
+    glm::vec3 prevPosition = m_Position, prevDirection = m_Direction, prevUpDirection = m_UpDirection;
+
     m_Position = glm::vec4(m_RelativePosition, 1.0f) * m_Transform;
     m_Direction = glm::vec4(m_RelativeDirection, 0.0f) * m_Transform;
     m_UpDirection = glm::vec4(m_RelativeUpDirection, 0.0f) * m_Transform;
 
-    UpdateInvView();
+    if (prevDirection != m_Direction || prevPosition != m_Position || prevUpDirection != m_UpDirection)
+    {
+        UpdateInvView();
+        return true;
+    }
+
+    return false;
 }
 
 }

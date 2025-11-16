@@ -14,7 +14,7 @@ public:
     );
     virtual ~Camera() = default;
 
-    virtual void OnUpdate(float timeStep) = 0;
+    virtual bool OnUpdate(float timeStep) = 0;
     void OnResize(uint32_t width, uint32_t height);
 
     [[nodiscard]] std::pair<uint32_t, uint32_t> GetExtent() const;
@@ -47,7 +47,7 @@ public:
     InputCamera(float verticalFOV, float nearClip, float farClip, glm::vec3 position, glm::vec3 direction);
     ~InputCamera() override = default;
 
-    void OnUpdate(float timeStep) override;
+    bool OnUpdate(float timeStep) override;
 
 private:
     static constexpr float CameraSpeed = 5.0f;
@@ -69,7 +69,7 @@ public:
     );
     ~AnimatedCamera() override = default;
 
-    void OnUpdate(float timeStep) override;
+    bool OnUpdate(float timeStep) override;
 
 private:
     const glm::vec3 m_RelativePosition;

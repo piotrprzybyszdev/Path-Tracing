@@ -295,10 +295,9 @@ void Application::Run()
                 Window::OnUpdate(timeStep);
                 UserInterface::OnUpdate(timeStep);
 
-                SceneManager::GetActiveScene()->Update(timeStep);
-                Renderer::UpdateSceneData();
+                bool updated = SceneManager::GetActiveScene()->Update(timeStep);
+                Renderer::UpdateSceneData(updated);
 
-                Renderer::s_Exposure = UserInterface::GetExposure();
                 Renderer::OnUpdate(timeStep);
             }
 

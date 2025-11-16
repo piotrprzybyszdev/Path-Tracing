@@ -91,7 +91,7 @@ public:
     SceneGraph(SceneGraph &&sceneGraph) noexcept;
     SceneGraph &operator=(SceneGraph &&sceneGraph) noexcept;
 
-    void Update(float timeStep);
+    bool Update(float timeStep);
 
     [[nodiscard]] std::span<const SceneNode> GetSceneNodes() const;
     [[nodiscard]] bool HasAnimations() const;

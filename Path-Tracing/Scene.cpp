@@ -44,9 +44,12 @@ Scene::Scene(
         std::any_of(m_Geometries.begin(), m_Geometries.end(), [](const auto &g) { return g.IsAnimated; });
 }
 
-void Scene::Update(float timeStep)
+bool Scene::Update(float timeStep)
 {
-    m_Graph.Update(timeStep);
+    bool updated = m_HasCameraChanged;
+    m_HasCameraChanged = false;
+
+    updated |= m_Graph.Update(timeStep);
 
     auto nodes = m_Graph.GetSceneNodes();
 
@@ -59,8 +62,10 @@ void Scene::Update(float timeStep)
     for (int i = 0; i < m_LightInfos.size(); i++)
         m_PointLights[i].Position = glm::vec4(m_LightInfos[i].Position, 1.0f) *
                                     nodes[m_LightInfos[i].SceneNodeIndex].CurrentTransform;
+    
+    updated |= GetActiveCamera().OnUpdate(timeStep);
 
-    GetActiveCamera().OnUpdate(timeStep);
+    return updated;
 }
 
 uint32_t SceneBuilder::AddSceneNode(SceneNode &&node)
@@ -377,6 +382,9 @@ Camera &Scene::GetActiveCamera()
 
 void Scene::SetActiveCamera(CameraId id)
 {
+    if (m_ActiveCameraId == id)
+        return;
+
     Camera *camera = &m_InputCamera;
     if (id != g_InputCameraId)
         camera = &m_SceneCameras[id];
@@ -384,6 +392,7 @@ void Scene::SetActiveCamera(CameraId id)
     auto [width, height] = GetActiveCamera().GetExtent();
     camera->OnResize(width, height);
     m_ActiveCameraId = id;
+    m_HasCameraChanged = true;
 }
 
 uint32_t Scene::GetDefaultTextureIndex(TextureType type)

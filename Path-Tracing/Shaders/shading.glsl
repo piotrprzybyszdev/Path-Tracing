@@ -2,7 +2,6 @@
 #include "common.glsl"
 
 const float DirectionalLightDistance = 100000.0f;
-const float ambient = 0.05f;
 
 float DistributionGGX(vec3 N, vec3 H, float roughness)
 {
@@ -15,7 +14,7 @@ float DistributionGGX(vec3 N, vec3 H, float roughness)
     float denom = (NdotH2 * (a2 - 1.0) + 1.0);
     denom = PI * denom * denom;
 
-    return nom / denom;
+    return nom / max(denom, 0.0001);
 }
 
 float GeometrySchlickGGX(float NdotV, float roughness)
@@ -62,9 +61,8 @@ vec3 computeLightContribution(vec3 lightDir, vec3 lightColor, float attenuation,
     vec3 F = fresnelSchlick(max(dot(H, V), 0.0), F0);
 
     vec3 numerator = NDF * G * F;
-    float denominator =
-        4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.0001;  // + 0.0001 to prevent divide by zero
-    vec3 specular = numerator / denominator;
+    float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0);
+    vec3 specular = numerator / max(denominator, 0.0001);
 
     vec3 kS = F;
 

@@ -9,7 +9,7 @@ layout(constant_id = RaygenFlagsConstantId) const uint s_RaygenFlags = RaygenFla
 layout(constant_id = HitGroupFlagsConstantId) const uint s_HitGroupFlags = HitGroupFlagsNone;
 
 layout(binding = 0, set = 0) uniform accelerationStructureEXT u_TopLevelAS;
-layout(binding = 1, set = 0, rgba8) uniform image2D u_Image;
+layout(binding = 1, set = 0, rgba32f) uniform image2D u_Image;
 layout(binding = 2, set = 0) uniform MainBlock {
     RaygenUniformData mainUniform;
 };
@@ -78,15 +78,18 @@ bool sampleLight(out vec3 lightDirection, out vec3 lightColor, out float lightDi
     return false;
 }
 
-void main()
+struct Ray
 {
-    // TODO: Pass frame number
-    uint rng = initRng(gl_LaunchIDEXT.xy, gl_LaunchSizeEXT.xy, 0);
+    vec3 Origin;
+    float tmin;
+    vec3 Direction;
+    float tmax;
+};
 
-    const Camera camera = mainUniform.u_Camera;
-
-    const vec2 pixelCenter = vec2(gl_LaunchIDEXT.xy) + vec2(0.5);
-    const vec2 inUV = pixelCenter / vec2(gl_LaunchSizeEXT.xy);
+Ray constructPrimaryRay(uvec2 pixel, uvec2 resolution, Camera camera)
+{
+    const vec2 pixelCenter = pixel + vec2(0.5);
+    const vec2 inUV = pixelCenter / resolution;
     vec2 d = inUV * 2.0 - 1.0;
 
     vec3 origin = (camera.ViewInverse * vec4(0, 0, 0, 1)).xyz;
@@ -96,6 +99,15 @@ void main()
     float tmin = 0.00001;
     float tmax = 10000.0;
 
+    return Ray(origin, tmin, direction, tmax);
+}
+
+void main()
+{
+    uint rng = initRng(gl_LaunchIDEXT.xy, gl_LaunchSizeEXT.xy, mainUniform.TotalSamples);
+
+    const Ray primaryRay = constructPrimaryRay(gl_LaunchIDEXT.xy, gl_LaunchSizeEXT.xy, mainUniform.Camera);
+
     uint flags = gl_RayFlagsNoneEXT;
     if ((s_RaygenFlags & RaygenFlagsForceOpaque) != RaygenFlagsNone)
         flags |= gl_RayFlagsOpaqueEXT;
@@ -104,56 +116,66 @@ void main()
 
     const float ambient = 0.05f;
     vec3 totalLight = vec3(0.0f);
-    vec3 throughput = vec3(1.0f);
 
-    const uint totalBounces = 4;
-    for (int bounce = 0; bounce < totalBounces; bounce++)
+    for (int smpl = 0; smpl < mainUniform.SampleCount; smpl++)
     {
-        traceRayEXT(u_TopLevelAS, flags, 0xff, PrimaryRayHitGroupIndex, 2, PrimaryRayMissGroupIndex, origin, tmin, direction, tmax, 0);
+        vec3 throughput = vec3(1.0f);
+        Ray ray = primaryRay;
 
-        if (payload.HitDistance == MISS_HIT_DISTANCE)
+        for (int bounce = 0; bounce < mainUniform.BounceCount; bounce++)
         {
-            totalLight += throughput * payload.Position;
-            break;
+            traceRayEXT(u_TopLevelAS, flags, 0xff, PrimaryRayHitGroupIndex, 2, PrimaryRayMissGroupIndex, ray.Origin, ray.tmin, ray.Direction, ray.tmax, 0);
+
+            if (payload.HitDistance == MISS_HIT_DISTANCE)
+            {
+                totalLight += throughput * payload.Position;
+                break;
+            }
+            
+            payload.Position = offsetRayOrigin(payload.Position, payload.Normal);
+
+            vec3 color;
+            float roughness, metalness;
+            sampleMaterial(payload.MaterialId, payload.TexCoords, payload.Lod, color, roughness, metalness);
+
+            const vec3 viewDir = ray.Direction;
+            const vec3 V = -normalize(viewDir);
+            const vec3 N = payload.Normal;
+            
+            vec3 lightDirection, lightColor;
+            float attenuation, lightDistance;
+
+            // if (mainUniform.TotalSamples == 0 && smpl == 0 && bounce == 0)
+            //     totalLight += ambient * color;
+
+            sampleLight(lightDirection, lightColor, lightDistance, attenuation, payload.Position, rng);
+
+            // TODO: Scale down according to the probability
+            if (!checkOccluded(lightDirection, payload.Position, lightDistance))
+                totalLight += throughput * computeLightContribution(lightDirection, lightColor, attenuation, payload.Position, V, N, color, roughness, metalness);
+
+            // TODO: Handle RenderModes
+
+            throughput *= color;
+
+            // TODO: Russian rulette termination
+
+            ray.Origin = payload.Position;
+            ray.Direction = reflect(ray.Direction, N);
+
+            // TODO: Sample proper BRDF
+            vec3 offset = getRandomUnitSphere(rng);
+            if (offset == vec3(0.0f))
+                offset = N;
+
+            if (dot(N, offset) < 0)
+                offset *= -1;
+            ray.Direction = normalize(ray.Direction + offset * roughness);
         }
-            
-        payload.Position = offsetRayOrigin(payload.Position, payload.Normal);
-
-        const float lod = payload.Lod;
-
-        vec3 color;
-        float roughness, metalness;
-        sampleMaterial(payload.MaterialId, payload.TexCoords, lod, color, roughness, metalness);
-
-        const vec3 viewDir = direction;
-        const vec3 V = -normalize(viewDir);
-        const vec3 N = payload.Normal;
-            
-        vec3 lightDirection, lightColor;
-        float attenuation, lightDistance;
-
-        if (bounce == 0)
-            totalLight += ambient * color;
-
-        sampleLight(lightDirection, lightColor, lightDistance, attenuation, payload.Position, rng);
-
-        // TODO: Scale down according to the probability
-        if (!checkOccluded(lightDirection, payload.Position, lightDistance))
-            totalLight += throughput * computeLightContribution(lightDirection, lightColor, attenuation, payload.Position, V, N, color, roughness, metalness);
-
-        // TODO: Handle RenderModes
-
-        throughput *= color;
-
-        origin = payload.Position;
-        direction = reflect(direction, N);
-
-        // TODO: Sample proper BRDF
-        vec3 offset = getRandomUnitSphere(rng);
-        if (dot(N, offset) < 0)
-            offset *= -1;
-        direction = normalize(direction + offset * roughness);
     }
 
-    imageStore(u_Image, ivec2(gl_LaunchIDEXT.xy), vec4(totalLight * mainUniform.u_Exposure, 1.0f));
+    vec3 prevColor = imageLoad(u_Image, ivec2(gl_LaunchIDEXT.xy)).rgb;
+    totalLight = (totalLight + prevColor * mainUniform.TotalSamples) / (mainUniform.TotalSamples + mainUniform.SampleCount);
+
+    imageStore(u_Image, ivec2(gl_LaunchIDEXT.xy), vec4(totalLight * mainUniform.Exposure, 1.0f));
 }

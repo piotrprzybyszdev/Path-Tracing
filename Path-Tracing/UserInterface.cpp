@@ -30,7 +30,7 @@ Shaders::SpecializationConstant s_RenderMode = Shaders::RenderModeColor;
 Shaders::SpecializationConstant s_RaygenFlags = Shaders::RaygenFlagsNone;
 Shaders::SpecializationConstant s_HitGroupFlags = Shaders::HitGroupFlagsNone;
 std::span<const vk::PresentModeKHR> s_PresentModes = {};
-float s_Exposure = 0.0f;
+Renderer::Settings s_Settings = {};
 
 std::unique_ptr<UIComponents> s_Components = nullptr;
 
@@ -155,11 +155,6 @@ vk::PresentModeKHR UserInterface::GetPresentMode()
     return s_PresentMode;
 }
 
-float UserInterface::GetExposure()
-{
-    return std::pow(2.0f, s_Exposure);
-}
-
 class SceneListContent : public Content
 {
 public:
@@ -277,7 +272,21 @@ void SettingsTab::RenderContent()
     m_CameraList.Render();
     ImGui::Dummy({ 0.0f, 5.0f });
 
-    ImGui::SliderFloat("Exposure:", &s_Exposure, -10.0f, 10.0f, "%.2f");
+    float exposure = std::log2(s_Settings.Exposure);
+    int bounceCount = s_Settings.BounceCount, sampleCount = s_Settings.SampleCount;
+
+    bool hasChanged = false;
+    hasChanged |= ImGui::SliderFloat("Exposure:", &exposure, -10.0f, 10.0f, "%.2f");
+    hasChanged |= ImGui::SliderInt("Bounces:", &bounceCount, 1, 16, "%d");
+    hasChanged |= ImGui::SliderInt("Samples:", &sampleCount, 1, 16, "%d");
+
+    if (hasChanged)
+    {
+        s_Settings.Exposure = std::pow(2.0f, exposure);
+        s_Settings.BounceCount = bounceCount;
+        s_Settings.SampleCount = sampleCount;
+        Renderer::SetSettings(s_Settings);
+    }
 }
 
 class SceneTab : public Tab

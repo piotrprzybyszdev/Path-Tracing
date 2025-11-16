@@ -1,7 +1,5 @@
 #pragma once
 
-#define GLFW_INCLUDE_NONE
-#include <GLFW/glfw3.h>
 #include <imgui.h>
 #include <vulkan/vulkan.hpp>
 
@@ -9,8 +7,6 @@
 #include <span>
 
 #include "Core/Input.h"
-
-#include "Shaders/ShaderTypes.incl"
 
 namespace PathTracing
 {
@@ -33,7 +29,6 @@ public:
     static bool GetIsFocused();
 
     static vk::PresentModeKHR GetPresentMode();
-    static float GetExposure();
 
 private:
     static bool s_IsVisible;

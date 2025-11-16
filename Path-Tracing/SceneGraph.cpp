@@ -83,12 +83,14 @@ SceneGraph &SceneGraph::operator=(SceneGraph &&sceneGraph) noexcept
     return *this;
 }
 
-void SceneGraph::Update(float timeStep)
+bool SceneGraph::Update(float timeStep)
 {
     for (Animation &animation : m_Animations)
         animation.Update(timeStep, m_SceneNodes);
 
     UpdateTransforms();
+
+    return !m_Animations.empty();
 }
 
 std::span<const SceneNode> SceneGraph::GetSceneNodes() const

@@ -6,6 +6,8 @@
 #include <mutex>
 #include <vector>
 
+#include "Shaders/ShaderRendererTypes.incl"
+
 #include "AccelerationStructure.h"
 #include "Buffer.h"
 #include "CommandBuffer.h"
@@ -30,7 +32,7 @@ public:
     static void Init(const Swapchain *swapchain);
     static void Shutdown();
 
-    static void UpdateSceneData();
+    static void UpdateSceneData(bool updated);
 
     static void OnResize(vk::Extent2D extent);
     static void OnUpdate(float timeStep);
@@ -39,7 +41,14 @@ public:
     static void ReloadShaders();
     static void UpdatePipelineConfig(RaytracingPipelineConfig data);
 
-    static float s_Exposure;
+    struct Settings
+    {
+        float Exposure = 1.0f;
+        uint32_t BounceCount = 4;
+        uint32_t SampleCount = 1;
+    };
+
+    static void SetSettings(const Settings &settings);
 
     static std::unique_ptr<CommandBuffer> s_MainCommandBuffer;
     static std::unique_ptr<StagingBuffer> s_StagingBuffer;
@@ -82,6 +91,7 @@ private:
         vk::CommandBuffer CommandBuffer;
 
         Image StorageImage;
+        uint32_t TotalSamples = 0;
 
         Buffer RaygenUniformBuffer;
 
@@ -101,6 +111,8 @@ private:
     };
 
     static std::vector<RenderingResources> s_RenderingResources;
+
+    static Settings s_Settings;
 
     struct SceneData
     {
@@ -154,6 +166,7 @@ private:
     static void UpdatePipelineSpecializations();
     static void CreatePipelines();
     static void UpdateShaderBindingTable();
+    static void ResetAccumulationImage();
 
     static void RecordCommandBuffer(const RenderingResources &resources);
     static void UpdateAnimatedVertices(const RenderingResources &resources);

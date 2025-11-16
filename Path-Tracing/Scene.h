@@ -146,7 +146,7 @@ public:
         const std::vector<CameraInfo> &cameraInfos
     );
 
-    void Update(float timeStep);
+    bool Update(float timeStep);
 
     [[nodiscard]] std::span<const Shaders::Vertex> GetVertices() const;
     [[nodiscard]] std::span<const Shaders::AnimatedVertex> GetAnimatedVertices() const;
@@ -215,6 +215,7 @@ private:
         InputCamera(45.0f, 100.0f, 0.1f, glm::vec3(3.0f, 1.0f, 0.0f), glm::vec3(-1.0f, 0.0f, 0.0f));
     std::vector<AnimatedCamera> m_SceneCameras;
     CameraId m_ActiveCameraId = g_InputCameraId;
+    bool m_HasCameraChanged = true;
 };
 
 class SceneBuilder

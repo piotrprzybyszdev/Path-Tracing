@@ -19,7 +19,7 @@
 namespace PathTracing
 {
 
-float Renderer::s_Exposure = 1.0f;
+Renderer::Settings Renderer::s_Settings = {};
 
 const Swapchain *Renderer::s_Swapchain = nullptr;
 
@@ -90,13 +90,13 @@ void Renderer::Init(const Swapchain *swapchain)
 
     {
         uint32_t colorIndex =
-            AddTexture(Shaders::DefaultColor, { 1, 1 }, "Default Color Texture");
+            AddTexture(Shaders::DefaultTextureColor, { 1, 1 }, "Default Color Texture");
         uint32_t normalIndex =
-            AddTexture(Shaders::DefaultNormal, { 1, 1 }, "Default Normal Texture");
+            AddTexture(Shaders::DefaultTextureNormal, { 1, 1 }, "Default Normal Texture");
         uint32_t roughnessIndex =
-            AddTexture(Shaders::DefaultRoughness, { 1, 1 }, "Default Roughness Texture");
+            AddTexture(Shaders::DefaultTextureRoughness, { 1, 1 }, "Default Roughness Texture");
         uint32_t metalicIndex =
-            AddTexture(Shaders::DefaultMetalness, { 1, 1 }, "Default Metalic Texture");
+            AddTexture(Shaders::DefaultTextureMetalness, { 1, 1 }, "Default Metalic Texture");
         uint32_t placeholderIndex = AddTexture(Resources::g_PlaceholderTextureData, "Placeholder Texture");
 
         s_TextureMap.resize(Shaders::SceneTextureOffset);
@@ -137,8 +137,11 @@ void Renderer::Shutdown()
     s_MainCommandBuffer.reset();
 }
 
-void Renderer::UpdateSceneData()
+void Renderer::UpdateSceneData(bool updated)
 {
+    if (updated)
+        ResetAccumulationImage();
+
     if (s_SceneData != nullptr && s_SceneData->Handle == SceneManager::GetActiveScene())
         return;
 
@@ -478,6 +481,7 @@ void Renderer::UpdatePipelineSpecializations()
     s_RaytracingPipeline->Update(s_PipelineConfig);
     s_SkinningPipeline->Update(SkinningPipelineConfig());
     UpdateShaderBindingTable();
+    ResetAccumulationImage();
 }
 
 void Renderer::ReloadShaders()
@@ -490,6 +494,18 @@ void Renderer::UpdatePipelineConfig(RaytracingPipelineConfig data)
     data[Shaders::MissFlagsConstantId] = s_PipelineConfig[Shaders::MissFlagsConstantId];
     s_PipelineConfig = data;
     UpdatePipelineSpecializations();
+}
+
+void Renderer::ResetAccumulationImage()
+{
+    for (RenderingResources &res : s_RenderingResources)
+        res.TotalSamples = 0;
+}
+
+void Renderer::SetSettings(const Settings &settings)
+{
+    s_Settings = settings;
+    ResetAccumulationImage();
 }
 
 void Renderer::RecordCommandBuffer(const RenderingResources &resources)
@@ -642,7 +658,7 @@ void Renderer::CreateSceneRenderingResources(RenderingResources &res, uint32_t f
 Image Renderer::CreateStorageImage(vk::Extent2D extent)
 {
     Image image = s_ImageBuilder->ResetFlags()
-                      .SetFormat(vk::Format::eR8G8B8A8Unorm)
+                      .SetFormat(vk::Format::eR32G32B32A32Sfloat)
                       .SetUsageFlags(vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eStorage)
                       .CreateImage(extent);
 
@@ -690,6 +706,7 @@ void Renderer::OnResize(vk::Extent2D extent)
     for (int i = 0; i < s_RenderingResources.size(); i++)
     {
         RenderingResources &res = s_RenderingResources[i];
+        res.TotalSamples = 0;
         res.StorageImage = CreateStorageImage(extent);
         res.StorageImage.SetDebugName(std::format("Storage Image {}", i));
 
@@ -804,18 +821,21 @@ void Renderer::Render()
         {
             s_TextureOwnershipCommandBuffer->SubmitBlocking();
             s_TextureOwnershipBufferHasCommands = false;
+            ResetAccumulationImage();
         }
         s_RaytracingPipeline->GetDescriptorSet()->FlushUpdate(s_Swapchain->GetCurrentFrameInFlightIndex());
     }
 
     const Swapchain::SynchronizationObjects &sync = s_Swapchain->GetCurrentSyncObjects();
-    const RenderingResources &res = s_RenderingResources[s_Swapchain->GetCurrentFrameInFlightIndex()];
+    RenderingResources &res = s_RenderingResources[s_Swapchain->GetCurrentFrameInFlightIndex()];
 
     Camera &camera = s_SceneData->Handle->GetActiveCamera();
     camera.OnResize(res.StorageImage.GetExtent().width, res.StorageImage.GetExtent().height);
     Shaders::RaygenUniformData rgenData = { camera.GetInvViewMatrix(), camera.GetInvProjectionMatrix(),
-                                            s_Exposure };
+                                            s_Settings.BounceCount,    s_Settings.SampleCount,
+                                            res.TotalSamples,          s_Settings.Exposure };
 
+    res.TotalSamples += s_Settings.SampleCount;
     res.RaygenUniformBuffer.Upload(&rgenData);
     res.LightUniformBuffer.Upload(ToByteSpan(res.LightCount));
     res.LightUniformBuffer.Upload(

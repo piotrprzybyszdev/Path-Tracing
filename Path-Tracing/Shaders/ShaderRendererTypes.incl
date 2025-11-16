@@ -25,8 +25,11 @@ BUFFER_POINTER(VertexWriteBuffer, vec2);
 
 struct RaygenUniformData
 {
-    Camera u_Camera;
-    float u_Exposure;
+    Camera Camera;
+    uint BounceCount;
+    uint SampleCount;
+    uint TotalSamples;
+    float Exposure;
 };
 
 struct Geometry
@@ -42,10 +45,12 @@ struct SBTBuffer
     uint TransformIndex;
 };
 
-const uint DefaultColor                     = 0xffffffffu;
-const uint DefaultNormal                    = 0xffff8080u;
-const uint DefaultRoughness                 = 0x80808080u;
-const uint DefaultMetalness                 = 0x00000000u;
+const uint DefaultTextureColor              = 0xffffffffu;
+const uint DefaultTextureNormal             = 0xffff8080u;
+const uint DefaultTextureRoughness          = 0x80808080u;
+const uint DefaultTextureMetalness          = 0x00000000u;
+const float DefaultRoughness                = 0.5f;
+const float DefaultMetalness                = 0.0f;
 
 const uint SkinningShaderGroupSizeX         = 256u;
 
