@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <memory>
 #include <span>
+#include <variant>
 #include <vector>
 
 #include "Core/Cache.h"
@@ -44,7 +45,7 @@ template<size_t N> struct PipelineConfig
 
     using Type = std::array<Shaders::SpecializationConstant, N>;
     using Hash = PathTracing::FNVHash<Type>;
-    
+
     Type Value;
 
     Shaders::SpecializationConstant &operator[](size_t index)
@@ -98,14 +99,27 @@ template<size_t N> struct PipelineConfig
     };
 };
 
+struct RaytracingPipelineData
+{
+    uint32_t MaxRayPayloadSize;
+    uint32_t MaxHitAttributeSize;
+    uint32_t MaxRayRecursionDepth;
+};
+
+struct ComputePipelineData
+{
+};
+
+using PipelineData = std::variant<RaytracingPipelineData, ComputePipelineData>;
+
 class ShaderInfo
 {
 public:
     using Config = uint64_t;
 
 public:
-    ShaderInfo(ShaderLibrary &shaderLibrary, ShaderId id, vk::PipelineLayout layout);
-    virtual ~ShaderInfo();
+    ShaderInfo(ShaderLibrary &shaderLibrary, ShaderId id, vk::PipelineLayout layout, PipelineData data);
+    ~ShaderInfo();
 
     ShaderInfo(const ShaderInfo &) = delete;
     ShaderInfo &operator=(const ShaderInfo &) = delete;
@@ -128,6 +142,7 @@ protected:
     ShaderLibrary &m_ShaderLibrary;
     const ShaderId m_Id;
     const vk::PipelineLayout m_Layout;
+    const PipelineData m_PipelineData;
 
     std::vector<vk::SpecializationMapEntry> m_SpecEntries;
     std::vector<uint32_t> m_SpecVariantCount;
@@ -152,15 +167,13 @@ private:
     static std::filesystem::path ToCachePath(std::filesystem::path path);
 };
 
-// TODO: Consider taking MaxRayPayloadSize etc. as constructor parameters
-
 class RaytracingPipeline
 {
 public:
     RaytracingPipeline(
         ShaderLibrary &shaderLibrary, const std::vector<vk::RayTracingShaderGroupCreateInfoKHR> &groups,
         const std::vector<ShaderId> &shaders, DescriptorSetBuilder &&descriptorSetBuilder,
-        vk::PipelineLayout layout, PipelineConfigView maxConfig
+        vk::PipelineLayout layout, PipelineConfigView maxConfig, RaytracingPipelineData data
     );
     ~RaytracingPipeline();
 
@@ -182,6 +195,7 @@ private:
     const vk::PipelineLayout m_Layout;
     std::unique_ptr<DescriptorSet> m_DescriptorSet;
     const PipelineConfigView m_MaxConfig;
+    const RaytracingPipelineData m_Data;
 
     std::vector<ShaderInfo> m_Shaders;
     std::vector<vk::RayTracingShaderGroupCreateInfoKHR> m_Groups;
@@ -269,7 +283,9 @@ public:
     uint32_t AddGeneralGroup(ShaderId shaderId);
     uint32_t AddHitGroup(ShaderId closestHitId, ShaderId anyHitId);
 
-    std::unique_ptr<RaytracingPipeline> CreatePipelineUnique(PipelineConfigView maxConfig);
+    std::unique_ptr<RaytracingPipeline> CreatePipelineUnique(
+        PipelineConfigView maxConfig, RaytracingPipelineData data
+    );
 
 private:
     std::vector<vk::RayTracingShaderGroupCreateInfoKHR> m_Groups;
@@ -291,7 +307,7 @@ template<size_t N> inline void RaytracingPipeline::Update(const PipelineConfig<N
     if (m_Cache == nullptr)
         m_Cache = std::make_unique<Cache>(Application::GetConfig().MaxPipelineVariantCacheSize);
 
-    Cache &cache = *static_cast<Cache*>(m_Cache.get());
+    Cache &cache = *static_cast<Cache *>(m_Cache.get());
 
     CancelUpdate();
 

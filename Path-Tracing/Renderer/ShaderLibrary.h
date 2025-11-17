@@ -5,15 +5,12 @@
 #include <vulkan/vulkan.hpp>
 
 #include <filesystem>
-#include <map>
+#include <optional>
 #include <set>
 #include <span>
-#include <string_view>
 #include <vector>
 
 #include "Core/Cache.h"
-
-#include "Shaders/ShaderRendererTypes.incl"
 
 namespace PathTracing
 {
@@ -36,11 +33,11 @@ public:
     ) override;
     void ReleaseInclude(shaderc_include_result *data) override;
 
-    std::vector<std::filesystem::path> SystemIncludePaths;
-    std::set<std::filesystem::path> IncludedFiles;
+    std::vector<std::filesystem::path> m_SystemIncludePaths;
+    std::set<std::filesystem::path> m_IncludedFiles;
 
 private:
-    std::filesystem::path GetFilePath(
+    std::optional<std::filesystem::path> GetFilePath(
         const char *requested_source, shaderc_include_type type, const char *requesting_source
     );
 

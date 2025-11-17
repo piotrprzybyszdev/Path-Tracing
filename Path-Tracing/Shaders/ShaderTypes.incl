@@ -21,35 +21,6 @@ const uint DefaultMetalicTextureIndex               = 3;
 const uint PlaceholderTextureIndex                  = 4;
 const uint SceneTextureOffset                       = 5;
 
-const uint RenderModeColor                          = 0;
-const uint RenderModeWorldPosition                  = 1;
-const uint RenderModeNormal	                        = 2;
-const uint RenderModeTextureCoords                  = 3;
-const uint RenderModeMips                           = 4;
-const uint RenderModeGeometry                       = 5;
-const uint RenderModePrimitive                      = 6;
-const uint RenderModeInstance                       = 7;
-const uint RenderModeMax                            = 7;
-
-const uint RaygenFlagsNone                          = 0x0u;
-const uint RaygenFlagsForceOpaque                   = 0x1u;
-const uint RaygenFlagsCullBackFaces                 = 0x2u;
-const uint RaygenFlagsAll                           = 0x3u;
-
-const uint MissFlagsNone                            = 0x0u;
-const uint MissFlagsSkybox2D                        = 0x1u;
-const uint MissFlagsSkyboxCube                      = 0x2u;
-const uint MissFlagsAll                             = 0x3u;
-
-const uint HitGroupFlagsNone                        = 0x00u;
-const uint HitGroupFlagsDisableColorTexture         = 0x01u;
-const uint HitGroupFlagsDisableNormalTexture        = 0x02u;
-const uint HitGroupFlagsDisableRoughnessTexture     = 0x04u;
-const uint HitGroupFlagsDisableMetalicTexture       = 0x08u;
-const uint HitGroupFlagsDisableMipMaps              = 0x10u;
-const uint HitGroupFlagsDisableShadows              = 0x20u;
-const uint HitGroupFlagsAll                         = 0x3fu;
-
 const uint MaxTextureCount                          = 128u;
 const uint MaxLightCount                            = 64u;
 const uint MaxBonesPerVertex                        = 4u;

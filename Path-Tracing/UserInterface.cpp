@@ -7,6 +7,8 @@
 
 #include "Core/Core.h"
 
+#include "Shaders/Debug/DebugShaderTypes.incl"
+
 #include "Renderer/DeviceContext.h"
 #include "Renderer/Renderer.h"
 
@@ -31,6 +33,7 @@ Shaders::SpecializationConstant s_RaygenFlags = Shaders::RaygenFlagsNone;
 Shaders::SpecializationConstant s_HitGroupFlags = Shaders::HitGroupFlagsNone;
 std::span<const vk::PresentModeKHR> s_PresentModes = {};
 Renderer::Settings s_Settings = {};
+bool s_DebuggingEnabled = false;
 
 std::unique_ptr<UIComponents> s_Components = nullptr;
 
@@ -225,7 +228,7 @@ public:
     void Render() override;
 
 private:
-    std::array<double, 3> m_LastTimeRunning;
+    std::array<double, 3> m_LastTimeRunning = {};
     const double m_WaitAfterCompleteTime = 1.0;
 };
 
@@ -276,9 +279,22 @@ void SettingsTab::RenderContent()
     int bounceCount = s_Settings.BounceCount, sampleCount = s_Settings.SampleCount;
 
     bool hasChanged = false;
-    hasChanged |= ImGui::SliderFloat("Exposure:", &exposure, -10.0f, 10.0f, "%.2f");
-    hasChanged |= ImGui::SliderInt("Bounces:", &bounceCount, 1, 16, "%d");
-    hasChanged |= ImGui::SliderInt("Samples:", &sampleCount, 1, 16, "%d");
+    ImGui::Text("Exposure:");
+    ImGui::SameLine();
+    hasChanged |= ImGui::SliderFloat("##Exposure", &exposure, -10.0f, 10.0f, "%.2f");
+
+    if (s_DebuggingEnabled)
+        ImGui::BeginDisabled();
+
+    ImGui::Text("Bounces:");
+    ImGui::SameLine();
+    hasChanged |= ImGui::SliderInt("##Bounces", &bounceCount, 1, 16, "%d");
+    ImGui::Text("Samples:");
+    ImGui::SameLine();
+    hasChanged |= ImGui::SliderInt("##Samples", &sampleCount, 1, 16, "%d");
+
+    if (s_DebuggingEnabled)
+        ImGui::EndDisabled();
 
     if (hasChanged)
     {
@@ -469,20 +485,41 @@ private:
 
     Widget<CheckboxOptions<Shaders::SpecializationConstant>, 2> m_Flags;
     Widget<RadioOptions<Shaders::SpecializationConstant>, 1> m_Modes;
+
+    bool m_DebuggingEnabled = false;
 };
 
 void DebugTab::RenderContent()
 {
+    ImGui::Dummy({ 0.0f, 5.0f });
+    ImGui::Dummy({ 5.0f, 0.0f });
+    ImGui::SameLine();
+
+    bool hasChanged = ImGui::Checkbox("Enable debugging", &m_DebuggingEnabled);
+
+    if (!m_DebuggingEnabled)
+        ImGui::BeginDisabled();
+
     m_Flags.Render();
     ImGui::Dummy({ 0.0f, 5.0f });
     m_Modes.Render();
 
-    bool hasChanged = false;
+    if (!m_DebuggingEnabled)
+        ImGui::EndDisabled();
+
     hasChanged |= std::ranges::any_of(m_Flags.GetContents(), [](const auto &option) { return option.HasChanged(); });
     hasChanged |= std::ranges::any_of(m_Modes.GetContents(), [](const auto &option) { return option.HasChanged(); });
 
     if (hasChanged)
-        Renderer::UpdatePipelineConfig(RaytracingPipelineConfig { s_RenderMode, s_RaygenFlags, 0, s_HitGroupFlags });
+    {
+        if (m_DebuggingEnabled)
+            Renderer::SetDebugRaytracingPipeline(
+                DebugRaytracingPipelineConfig { s_RenderMode, s_RaygenFlags, 0, s_HitGroupFlags }
+            );
+        else
+            Renderer::SetPathTracingPipeline({});
+        s_DebuggingEnabled = m_DebuggingEnabled;
+    }
 }
 
 class StatisticsTab : public Tab

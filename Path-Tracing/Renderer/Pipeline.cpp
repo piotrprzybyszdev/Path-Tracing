@@ -24,14 +24,14 @@ uint32_t GetCompilationThreadCount()
 RaytracingPipeline::RaytracingPipeline(
     ShaderLibrary &shaderLibrary, const std::vector<vk::RayTracingShaderGroupCreateInfoKHR> &groups,
     const std::vector<ShaderId> &shaders, DescriptorSetBuilder &&descriptorSetBuilder,
-    vk::PipelineLayout layout, PipelineConfigView maxConfig
+    vk::PipelineLayout layout, PipelineConfigView maxConfig, RaytracingPipelineData data
 )
     : m_ShaderLibrary(shaderLibrary), m_DescriptorSetBuilder(std::move(descriptorSetBuilder)),
       m_Layout(layout), m_Groups(groups), m_CompilationDispatch(GetCompilationThreadCount()),
-      m_MaxConfig(maxConfig)
+      m_MaxConfig(maxConfig), m_Data(data)
 {
     for (ShaderId id : shaders)
-        m_Shaders.emplace_back(m_ShaderLibrary, id, m_Layout);
+        m_Shaders.emplace_back(m_ShaderLibrary, id, m_Layout, m_Data);
 }
 
 RaytracingPipeline::~RaytracingPipeline()
@@ -76,14 +76,12 @@ vk::Pipeline RaytracingPipeline::CreateVariant(PipelineConfigView config)
     vk::PipelineLibraryCreateInfoKHR libraryInfo(libraries);
 
     vk::RayTracingPipelineInterfaceCreateInfoKHR interface(
-        Shaders::MaxPayloadSize, Shaders::MaxHitAttributeSize
+        m_Data.MaxRayPayloadSize, m_Data.MaxHitAttributeSize
     );
 
-    assert(
-        DeviceContext::GetRayTracingPipelineProperties().maxRayRecursionDepth >= Shaders::MaxRecursionDepth
-    );
+    assert(DeviceContext::GetRayTracingPipelineProperties().maxRayRecursionDepth >= m_Data.MaxRayRecursionDepth);
     vk::RayTracingPipelineCreateInfoKHR createInfo(
-        vk::PipelineCreateFlags(), nullptr, m_Groups, Shaders::MaxRecursionDepth
+        vk::PipelineCreateFlags(), nullptr, m_Groups, m_Data.MaxRayRecursionDepth
     );
     createInfo.setLayout(m_Layout);
     createInfo.setPLibraryInfo(&libraryInfo);
@@ -144,8 +142,11 @@ vk::Pipeline RaytracingPipeline::CreateVariantImmediate(PipelineConfigView confi
     return result.value;
 }
 
-ShaderInfo::ShaderInfo(ShaderLibrary &shaderLibrary, ShaderId id, vk::PipelineLayout layout)
-    : m_ShaderLibrary(shaderLibrary), m_Id(id), m_Layout(layout), m_CachePath(ToCachePath(GetPath()))
+ShaderInfo::ShaderInfo(
+    ShaderLibrary &shaderLibrary, ShaderId id, vk::PipelineLayout layout, PipelineData data
+)
+    : m_ShaderLibrary(shaderLibrary), m_Id(id), m_Layout(layout), m_CachePath(ToCachePath(GetPath())),
+      m_PipelineData(data)
 {
     CreateCache();
 }
@@ -165,7 +166,8 @@ ShaderInfo::~ShaderInfo()
 
 ShaderInfo::ShaderInfo(ShaderInfo &&info) noexcept
     : m_ShaderLibrary(info.m_ShaderLibrary), m_Id(info.m_Id), m_Layout(info.m_Layout),
-      m_CachePath(info.m_CachePath), m_Variants(std::move(info.m_Variants)), m_Cache(info.m_Cache)
+      m_CachePath(info.m_CachePath), m_Variants(std::move(info.m_Variants)), m_Cache(info.m_Cache),
+      m_PipelineData(std::move(info.m_PipelineData))
 {
     info.m_IsMoved = true;
 }
@@ -188,7 +190,9 @@ void ShaderInfo::UpdateSpecializations(PipelineConfigView maxConfig)
 
 uint32_t ShaderInfo::GetVariantCount() const
 {
-    return std::accumulate(m_SpecVariantCount.begin(), m_SpecVariantCount.end(), 1, std::multiplies<uint32_t>());
+    return std::accumulate(
+        m_SpecVariantCount.begin(), m_SpecVariantCount.end(), 1, std::multiplies<uint32_t>()
+    );
 }
 
 void ShaderInfo::CompileVariants(std::stop_token stopToken)
@@ -207,7 +211,7 @@ void ShaderInfo::CompileVariants(std::stop_token stopToken)
     // TODO: Support more than two spec constants -> ShaderInfo::Config has to be larger
     assert(m_SpecEntries.size() <= 2);
 
-    auto getMaxSpecValue = [this](uint32_t idx) { 
+    auto getMaxSpecValue = [this](uint32_t idx) {
         return idx >= m_SpecVariantCount.size() ? 1 : m_SpecVariantCount[idx];
     };
 
@@ -249,7 +253,7 @@ void ShaderInfo::CompileVariants(std::stop_token stopToken)
             return;
         }
     }
-    
+
     logger::debug("Precompiled {} variants of shader `{}`", configs.size(), GetPath().string());
 }
 
@@ -277,10 +281,6 @@ void ShaderInfo::CompileRaytracing(std::span<const Config> configs)
 {
     const auto shaderCreateInfo = m_ShaderLibrary.GetShader(m_Id).GetStageCreateInfo();
 
-    vk::RayTracingPipelineInterfaceCreateInfoKHR interface(
-        Shaders::MaxPayloadSize, Shaders::MaxHitAttributeSize
-    );
-
     std::vector<vk::PipelineShaderStageCreateInfo> shaderCreateInfos;
     std::vector<vk::SpecializationInfo> specInfos;
     std::vector<vk::RayTracingPipelineCreateInfoKHR> createInfos;
@@ -289,8 +289,11 @@ void ShaderInfo::CompileRaytracing(std::span<const Config> configs)
     specInfos.reserve(configs.size());
     createInfos.reserve(configs.size());
 
+    const auto &data = std::get<RaytracingPipelineData>(m_PipelineData);
+    vk::RayTracingPipelineInterfaceCreateInfoKHR interface(data.MaxRayPayloadSize, data.MaxHitAttributeSize);
+
     assert(
-        DeviceContext::GetRayTracingPipelineProperties().maxRayRecursionDepth >= Shaders::MaxRecursionDepth
+        DeviceContext::GetRayTracingPipelineProperties().maxRayRecursionDepth >= data.MaxRayRecursionDepth
     );
 
     for (int i = 0; i < configs.size(); i++)
@@ -303,7 +306,7 @@ void ShaderInfo::CompileRaytracing(std::span<const Config> configs)
         shaderCreateInfos.back().setPSpecializationInfo(&specInfo);
         auto &createInfo =
             createInfos.emplace_back(vk::PipelineCreateFlagBits::eLibraryKHR, shaderCreateInfos.back());
-        createInfo.setMaxPipelineRayRecursionDepth(Shaders::MaxRecursionDepth);
+        createInfo.setMaxPipelineRayRecursionDepth(data.MaxRayRecursionDepth);
         createInfo.setLayout(m_Layout);
         createInfo.setPLibraryInterface(&interface);
     }
@@ -432,7 +435,8 @@ ComputePipeline::ComputePipeline(
     ShaderId shaderId, PipelineConfigView maxConfig
 )
     : m_ShaderLibrary(shaderLibrary), m_DescriptorSetBuilder(std::move(descriptorSetBuilder)),
-      m_Layout(layout), m_Shader(shaderLibrary, shaderId, layout), m_MaxConfig(maxConfig)
+      m_Layout(layout), m_Shader(shaderLibrary, shaderId, layout, ComputePipelineData()),
+      m_MaxConfig(maxConfig)
 {
 }
 
@@ -594,12 +598,13 @@ uint32_t RaytracingPipelineBuilder::AddHitGroup(ShaderId closestHitId, ShaderId 
 }
 
 std::unique_ptr<RaytracingPipeline> RaytracingPipelineBuilder::CreatePipelineUnique(
-    PipelineConfigView maxConfig
+    PipelineConfigView maxConfig, RaytracingPipelineData data
 )
 {
     auto layout = CreateLayout();
     return std::make_unique<RaytracingPipeline>(
-        m_ShaderLibrary, m_Groups, m_ShaderIds, std::move(m_DescriptorSetBuilder), layout, maxConfig
+        m_ShaderLibrary, m_Groups, m_ShaderIds, std::move(m_DescriptorSetBuilder), layout, maxConfig,
+        data
     );
 }
 

@@ -23,7 +23,8 @@
 namespace PathTracing
 {
 
-using RaytracingPipelineConfig = PipelineConfig<4>;
+using PathTracingPipelineConfig = PipelineConfig<1>;
+using DebugRaytracingPipelineConfig = PipelineConfig<4>;
 using SkinningPipelineConfig = PipelineConfig<0>;
 
 class Renderer
@@ -39,7 +40,8 @@ public:
     static void Render();
 
     static void ReloadShaders();
-    static void UpdatePipelineConfig(RaytracingPipelineConfig data);
+    static void SetPathTracingPipeline(PathTracingPipelineConfig config);
+    static void SetDebugRaytracingPipeline(DebugRaytracingPipelineConfig config);
 
     struct Settings
     {
@@ -69,9 +71,14 @@ private:
         ShaderId AnyHit = ShaderLibrary::g_UnusedShaderId;
         ShaderId OcclusionMiss = ShaderLibrary::g_UnusedShaderId;
         ShaderId SkinningCompute = ShaderLibrary::g_UnusedShaderId;
+
+        ShaderId DebugRaygen = ShaderLibrary::g_UnusedShaderId;
+        ShaderId DebugMiss = ShaderLibrary::g_UnusedShaderId;
+        ShaderId DebugTexturedClosestHit = ShaderLibrary::g_UnusedShaderId;
+        ShaderId DebugSolidColorClosestHit = ShaderLibrary::g_UnusedShaderId;
     } s_Shaders;
 
-    static struct RaytracingConfig
+    static struct ShaderConfig
     {
         uint32_t RaygenGroupIndex = -1;
         uint32_t PrimaryRayMissIndex = -1;
@@ -80,10 +87,12 @@ private:
         uint32_t PrimaryRaySolidColorHitIndex = -1;
         uint32_t OcclusionRayHitIndex = -1;
         uint32_t HitGroupCount = 2;
-    } s_RaytracingConfig;
+    } s_PathTracingShaderConfig, s_DebugRayTracingShaderConfig;
 
+    static ShaderConfig *s_ActiveShaderConfig;
 
-    static RaytracingPipelineConfig s_PipelineConfig;
+    static PathTracingPipelineConfig s_PathTracingPipelineConfig;
+    static DebugRaytracingPipelineConfig s_DebugRayTracingPipelineConfig;
 
     struct RenderingResources
     {
@@ -151,8 +160,11 @@ private:
     static std::unique_ptr<CommandBuffer> s_TextureOwnershipCommandBuffer;
     static bool s_TextureOwnershipBufferHasCommands;
 
-    static std::unique_ptr<RaytracingPipeline> s_RaytracingPipeline;
+    static std::unique_ptr<RaytracingPipeline> s_PathTracingPipeline;
+    static std::unique_ptr<RaytracingPipeline> s_DebugRayTracingPipeline;
     static std::unique_ptr<ComputePipeline> s_SkinningPipeline;
+
+    static RaytracingPipeline *s_ActiveRayTracingPipeline;
 
     static std::unique_ptr<ShaderLibrary> s_ShaderLibrary;
 

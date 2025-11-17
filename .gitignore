@@ -6,25 +6,26 @@ build*
 
 # Visual Studio
 .vs
-
-Debug
-MinSizeRel
-Release
-RelWithDebInfo
-
 *.dir
-
 ZERO_CHECK.*
 INSTALL.*
 *.vcxproj*
 *.sln
+x64
+
+# Build Artifacts
+*.pdb
+*.exp
+*.lib
+*.dll
+*.exe
 
 # Cache
 ShaderCache
 
 # Assets
 assets
+config
 
 # Other
-imgui.ini
 Path-Tracing-Tests/Shaders/Application

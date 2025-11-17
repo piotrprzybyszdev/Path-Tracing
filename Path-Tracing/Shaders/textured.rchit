@@ -6,25 +6,22 @@
 #include "ShaderRendererTypes.incl"
 #include "common.glsl"
 
-layout(constant_id = RenderModeConstantId) const uint s_RenderMode = RenderModeColor;
-layout(constant_id = HitGroupFlagsConstantId) const uint s_HitGroupFlags = HitGroupFlagsNone;
-
 layout(binding = 3, set = 0) uniform sampler2D textures[];
 
 layout(binding = 4, set = 0) readonly buffer TransformBuffer {
-	mat3x4[] transforms;
+    mat3x4[] transforms;
 };
 
 layout(binding = 5, set = 0) readonly buffer GeometryBuffer {
-	Geometry[] geometries;
+    Geometry[] geometries;
 };
 
 layout(binding = 6, set = 0) readonly buffer MaterialBuffer {
-	TexturedMaterial[] materials;
+    TexturedMaterial[] materials;
 };
 
 layout(shaderRecordEXT, std430) buffer SBT {
-	SBTBuffer sbt;
+    SBTBuffer sbt;
 };
 
 layout(location = 0) rayPayloadInEXT Payload payload;
@@ -34,7 +31,7 @@ Vertex transform(Vertex vertex, uint transformIndex)
 {
     const mat3x4 transform = mat3x4(mat4(transforms[transformIndex]) * gl_ObjectToWorld3x4EXT);
 
-	vertex.Position = vec4(vertex.Position, 1.0f) * transform;
+    vertex.Position = vec4(vertex.Position, 1.0f) * transform;
     vertex.Tangent = normalize(vec4(vertex.Tangent, 0.0f) * transform);
     vertex.Bitangent = normalize(vec4(vertex.Bitangent, 0.0f) * transform);
     vertex.Normal = normalize((vec4(vertex.Normal, 0.0f) * transpose(inverse(mat4(transform)))).xyz);  // TODO: Calculate inverse on the CPU
@@ -44,27 +41,27 @@ Vertex transform(Vertex vertex, uint transformIndex)
 
 void main()
 {
-	const vec3 barycentricCoords = computeBarycentricCoords(attribs);
+    const vec3 barycentricCoords = computeBarycentricCoords(attribs);
 
-	VertexBuffer vertices = VertexBuffer(geometries[sbt.GeometryIndex].Vertices);
-	IndexBuffer indices = IndexBuffer(geometries[sbt.GeometryIndex].Indices);
+    VertexBuffer vertices = VertexBuffer(geometries[sbt.GeometryIndex].Vertices);
+    IndexBuffer indices = IndexBuffer(geometries[sbt.GeometryIndex].Indices);
 
-	const Vertex originalVertex = getInterpolatedVertex(vertices, indices, gl_PrimitiveID * 3, barycentricCoords);
-	const Vertex vertex = transform(originalVertex, sbt.TransformIndex);
+    const Vertex originalVertex = getInterpolatedVertex(vertices, indices, gl_PrimitiveID * 3, barycentricCoords);
+    const Vertex vertex = transform(originalVertex, sbt.TransformIndex);
 
-	// TODO: Calculate the LOD properly
-	const float lod = 0.0f; //log2(gl_RayTmaxEXT);
+    // TODO: Calculate the LOD properly
+    const float lod = 0.0f;
 
-	const TexturedMaterial material = materials[sbt.MaterialIndex];
-	const vec3 normal = textureLod(textures[GetNormalTextureIndex(0, material)], vertex.TexCoords, lod).xyz;
+    const TexturedMaterial material = materials[sbt.MaterialIndex];
+    const vec3 normal = textureLod(textures[material.NormalIdx], vertex.TexCoords, lod).xyz;
 
-	const mat3 TBN = mat3(vertex.Tangent, vertex.Bitangent, vertex.Normal);
-	const vec3 N = normalize(vertex.Normal + TBN * (2.0f * normal - 1.0f));
+    const mat3 TBN = mat3(vertex.Tangent, vertex.Bitangent, vertex.Normal);
+    const vec3 N = normalize(vertex.Normal + TBN * (2.0f * normal - 1.0f));
 
-	payload.Position = vertex.Position;
-	payload.Normal = N;
-	payload.MaterialId = packMaterialId(sbt.MaterialIndex, MaterialTypeTextured);
-	payload.TexCoords = vertex.TexCoords;
-	payload.HitDistance = gl_RayTmaxEXT;
-	payload.Lod = lod;
+    payload.Position = vertex.Position;
+    payload.Normal = N;
+    payload.MaterialId = packMaterialId(sbt.MaterialIndex, MaterialTypeTextured);
+    payload.TexCoords = vertex.TexCoords;
+    payload.HitDistance = gl_RayTmaxEXT;
+    payload.Lod = lod;
 }

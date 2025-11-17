@@ -5,7 +5,6 @@
 #include "Application.h"
 #include "DeviceContext.h"
 #include "ShaderLibrary.h"
-#include "Utils.h"
 
 namespace PathTracing
 {
@@ -185,7 +184,7 @@ void Shader::Reflect(std::span<const uint32_t> code)
     Reflect(compiler, resources.storage_buffers, vk::DescriptorType::eStorageBuffer);
     Reflect(compiler, resources.storage_images, vk::DescriptorType::eStorageImage);
     Reflect(compiler, resources.uniform_buffers, vk::DescriptorType::eUniformBuffer);
-    
+
     if (!resources.push_constant_buffers.empty())
     {
         assert(resources.push_constant_buffers.size() == 1);
@@ -239,7 +238,7 @@ bool Shader::RecompileIfChanged(
         throw error(std::format("Failed to compile shader {} - file doesn't exist", m_Path.string()));
     FileInfo info = ReadFile(m_Path);
 
-    includer->IncludedFiles.clear();
+    includer->m_IncludedFiles.clear();
     auto preprocessResult = compiler.PreprocessGlsl(
         info.Buffer.data(), info.Buffer.size(), ToShaderKind(m_Stage), info.Path.c_str(), options
     );
@@ -257,7 +256,7 @@ bool Shader::RecompileIfChanged(
         return false;
     }
 
-    includer->IncludedFiles.swap(m_IncludedPaths);
+    includer->m_IncludedFiles.swap(m_IncludedPaths);
     for (const auto &include : m_IncludedPaths)
         logger::trace("{} depends on {}", m_Path.string(), include.string());
     updateTime = ComputeUpdateTime();
@@ -367,7 +366,7 @@ void ShaderLibrary::CompileShaders()
 std::vector<bool> ShaderLibrary::RecompileChanged(std::span<const ShaderId> shaderIds)
 {
     std::vector<bool> upToDate;
-   
+
     std::ranges::transform(shaderIds, std::back_inserter(upToDate), [this](ShaderId id) {
         return !m_Shaders[id].RecompileIfChanged(m_Compiler, m_Options, m_Includer);
     });
@@ -377,7 +376,8 @@ std::vector<bool> ShaderLibrary::RecompileChanged(std::span<const ShaderId> shad
 
 Includer::Includer()
     : m_MaxIncludeDepth(Application::GetConfig().MaxShaderIncludeDepth),
-      m_Cache(Application::GetConfig().MaxShaderIncludeCacheSize)
+      m_Cache(Application::GetConfig().MaxShaderIncludeCacheSize),
+      m_SystemIncludePaths({ Application::GetConfig().ShaderDirectoryPath })
 {
 }
 
@@ -396,22 +396,22 @@ shaderc_include_result *Includer::GetInclude(
         };
     }
 
-    std::filesystem::path path;
+    auto filePath = GetFilePath(requested_source, type, requesting_source);
 
-    try
+    if (!filePath.has_value())
     {
-        path = GetFilePath(requested_source, type, requesting_source);
-    }
-    catch (const error &err)
-    {
+        std::string include = type == shaderc_include_type_standard ? std::format("<{}>", requested_source)
+                                                                    : std::format("\"{}\"", requested_source);
         FileInfo *fileInfo = new FileInfo();
-        fileInfo->Path = err.what();
+        fileInfo->Path = std::format("File not found when including {}", include);
         return new shaderc_include_result {
             "", 0, fileInfo->Path.c_str(), fileInfo->Path.size(), fileInfo,
         };
     }
 
-    if (IncludedFiles.contains(path))
+    const auto &path = filePath.value();
+
+    if (m_IncludedFiles.contains(path))
     {
         // File was already included - return empty file as to not include it twice (#pragma once)
         FileInfo *fileInfo = new FileInfo();
@@ -423,7 +423,7 @@ shaderc_include_result *Includer::GetInclude(
     if (!m_Cache.Contains(path) || m_Cache.Get(path).Time < std::filesystem::last_write_time(path))
         auto _ = m_Cache.Insert(path, ReadFile(path));
 
-    IncludedFiles.insert(path);
+    m_IncludedFiles.insert(path);
     const FileInfo *fileInfo = &m_Cache.Get(path);
 
     return new shaderc_include_result { fileInfo->Path.c_str(), fileInfo->Path.size(),
@@ -436,7 +436,7 @@ void Includer::ReleaseInclude(shaderc_include_result *data)
     delete data;
 }
 
-std::filesystem::path Includer::GetFilePath(
+std::optional<std::filesystem::path> Includer::GetFilePath(
     const char *requested_source, shaderc_include_type type, const char *requesting_source
 )
 {
@@ -454,7 +454,7 @@ std::filesystem::path Includer::GetFilePath(
     }
     case shaderc_include_type_standard:
     {
-        for (const std::filesystem::path &path : SystemIncludePaths)
+        for (const std::filesystem::path &path : m_SystemIncludePaths)
         {
             std::filesystem::path absolutePath = path / requested;
             if (std::filesystem::is_regular_file(absolutePath))
@@ -466,9 +466,7 @@ std::filesystem::path Includer::GetFilePath(
         throw error("Invalid include type");
     }
 
-    std::string include = type == shaderc_include_type_standard ? std::format("<{}>", requested_source)
-                                                                : std::format("\"{}\"", requested_source);
-    throw error(std::format("File not found when including {}", include));
+    return std::optional<std::filesystem::path>();
 }
 
 }

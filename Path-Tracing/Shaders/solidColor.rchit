@@ -6,9 +6,6 @@
 #include "ShaderRendererTypes.incl"
 #include "common.glsl"
 
-layout(constant_id = RenderModeConstantId) const uint s_RenderMode = RenderModeColor;
-layout(constant_id = HitGroupFlagsConstantId) const uint s_HitGroupFlags = HitGroupFlagsNone;
-
 layout(binding = 0, set = 0) uniform accelerationStructureEXT u_TopLevelAS;
 
 layout(binding = 4, set = 0) readonly buffer TransformBuffer {
@@ -37,7 +34,7 @@ Vertex transform(Vertex vertex, uint transformIndex)
     vertex.Position = vec4(vertex.Position, 1.0f) * transform;
     vertex.Tangent = normalize(vec4(vertex.Tangent, 0.0f) * transform);
     vertex.Bitangent = normalize(vec4(vertex.Bitangent, 0.0f) * transform);
-    vertex.Normal = normalize((vec4(vertex.Normal, 0.0f) * transpose(inverse(mat4(transform)))).xyz);  // TODO: Calculate inverse on the CPU
+    vertex.Normal = normalize((vec4(vertex.Normal, 0.0f) * transpose(inverse(mat4(transform)))).xyz);  // TODO: Disallow non-uniform scale
 
     return vertex;
 }
@@ -53,7 +50,7 @@ void main()
     const Vertex vertex = transform(originalVertex, sbt.TransformIndex);
 
     // TODO: Calculate the LOD properly
-    const float lod = 0.0f; //log2(gl_RayTmaxEXT);
+    const float lod = 0.0f;
 
     const SolidColorMaterial material = materials[sbt.MaterialIndex];
     const vec3 N = normalize(vertex.Normal);

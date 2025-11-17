@@ -1,0 +1,51 @@
+#ifndef GL_core_profile
+#pragma once
+
+#include <glm/glm.hpp>
+
+namespace PathTracing::Shaders
+{
+
+using namespace glm;
+
+#endif
+
+const uint DebugRenderModeConstantId				= 0u;
+const uint DebugRaygenFlagsConstantId				= 1u;
+const uint DebugMissFlagsConstantId					= 2u;
+const uint DebugHitGroupFlagsConstantId				= 3u;
+
+const uint RenderModeColor							= 0;
+const uint RenderModeWorldPosition					= 1;
+const uint RenderModeNormal							= 2;
+const uint RenderModeTextureCoords					= 3;
+const uint RenderModeMips							= 4;
+const uint RenderModeGeometry						= 5;
+const uint RenderModePrimitive						= 6;
+const uint RenderModeInstance						= 7;
+const uint RenderModeMax							= 7;
+
+const uint RaygenFlagsNone                          = 0x0u;
+const uint RaygenFlagsForceOpaque                   = 0x1u;
+const uint RaygenFlagsCullBackFaces                 = 0x2u;
+const uint RaygenFlagsAll                           = 0x3u;
+
+const uint HitGroupFlagsNone                        = 0x00u;
+const uint HitGroupFlagsDisableColorTexture         = 0x01u;
+const uint HitGroupFlagsDisableNormalTexture        = 0x02u;
+const uint HitGroupFlagsDisableRoughnessTexture     = 0x04u;
+const uint HitGroupFlagsDisableMetalicTexture       = 0x08u;
+const uint HitGroupFlagsDisableMipMaps              = 0x10u;
+const uint HitGroupFlagsDisableShadows              = 0x20u;
+const uint HitGroupFlagsAll                         = 0x3fu;
+
+const uint MaxDebugRecursionDepth					= 2u;
+const uint MaxDebugPayloadSize						= 12u;
+const uint MaxDebugHitAttributeSize					= 12u;
+
+
+#ifndef GL_core_profile
+
+}
+
+#endif

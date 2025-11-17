@@ -1,4 +1,3 @@
-#include "ShaderRendererTypes.incl"
 #include "common.glsl"
 
 const float DirectionalLightDistance = 100000.0f;

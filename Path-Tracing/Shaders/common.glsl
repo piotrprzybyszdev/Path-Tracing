@@ -97,26 +97,6 @@ Vertex interpolate(Vertex v1, Vertex v2, Vertex v3, vec3 barycentricCoords)
     return v;
 }
 
-uint GetColorTextureIndex(uint HitGroupFlags, TexturedMaterial material)
-{
-    return (HitGroupFlags & HitGroupFlagsDisableColorTexture) == 0 ? material.ColorIdx : DefaultColorTextureIndex;
-}
-
-uint GetNormalTextureIndex(uint HitGroupFlags, TexturedMaterial material)
-{
-    return (HitGroupFlags & HitGroupFlagsDisableNormalTexture) == 0 ? material.NormalIdx : DefaultNormalTextureIndex;
-}
-
-uint GetRoughnessTextureIndex(uint HitGroupFlags, TexturedMaterial material)
-{
-    return (HitGroupFlags & HitGroupFlagsDisableRoughnessTexture) == 0 ? material.RoughnessIdx : DefaultRoughnessTextureIndex;
-}
-
-uint GetMetalicTextureIndex(uint HitGroupFlags, TexturedMaterial material)
-{
-    return (HitGroupFlags & HitGroupFlagsDisableMetalicTexture) == 0 ? material.MetalicIdx : DefaultMetalicTextureIndex;
-}
-
 Vertex getInterpolatedVertex(VertexBuffer vertices, IndexBuffer indices, uint indexOffset, vec3 barycentricCoords)
 {
     return interpolate(
@@ -137,27 +117,6 @@ uint unpackMaterialId(uint materialId, out uint materialType)
 {
     materialType = materialId & 0x000000ffu;
     return materialId >> 8;
-}
-
-uint hash(uint x)
-{
-    x *= 0x1eca7d79u;
-    x ^= x >> 20;
-    x = (x << 8) | (x >> 24);
-    x = ~x;
-    x ^= x << 5;
-    x += 0x10afe4e7u;
-    return x;
-}
-
-vec3 getRandomColor(uint x)
-{
-    uint rand = hash(x);
-    float r = ((rand & 0xff000000) >> 24) / 255.0f;
-    float g = ((rand & 0x00ff0000) >> 16) / 255.0f;
-    float b = ((rand & 0x0000ff00) >> 8) / 255.0f;
-
-    return vec3(r, g, b);
 }
 
 uint jenkinsHash(uint x)

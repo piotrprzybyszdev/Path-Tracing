@@ -6,45 +6,43 @@
 #include "ShaderRendererTypes.incl"
 #include "common.glsl"
 
-layout(constant_id = HitGroupFlagsConstantId) const uint s_HitGroupFlags = HitGroupFlagsNone;
-
 layout(binding = 3, set = 0) uniform sampler2D textures[];
 
 layout(binding = 5, set = 0) readonly buffer GeometryBuffer {
-	Geometry[] geometries;
+    Geometry[] geometries;
 };
 
 layout(binding = 6, set = 0) readonly buffer MaterialBuffer {
-	TexturedMaterial[] materials;
+    TexturedMaterial[] materials;
 };
 
 layout(shaderRecordEXT, std430) buffer SBT {
-	SBTBuffer sbt;
+    SBTBuffer sbt;
 };
 
 hitAttributeEXT vec3 attribs;
 
 vec2 getTexCoords(VertexBuffer vertices, IndexBuffer indices, uint offset)
 {
-	const uint index = indices.v[offset];
-	const float p2 = vertices.v[index * 7 + 1].y;
-	const float p3 = vertices.v[index * 7 + 2].x;
+    const uint index = indices.v[offset];
+    const float p2 = vertices.v[index * 7 + 1].y;
+    const float p3 = vertices.v[index * 7 + 2].x;
 
-	return vec2(p2, p3);
+    return vec2(p2, p3);
 }
 
 void main()
 {
-	const vec3 barycentricCoords = computeBarycentricCoords(attribs);
+    const vec3 barycentricCoords = computeBarycentricCoords(attribs);
 
-	VertexBuffer vertices = VertexBuffer(geometries[sbt.GeometryIndex].Vertices);
-	IndexBuffer indices = IndexBuffer(geometries[sbt.GeometryIndex].Indices);
+    VertexBuffer vertices = VertexBuffer(geometries[sbt.GeometryIndex].Vertices);
+    IndexBuffer indices = IndexBuffer(geometries[sbt.GeometryIndex].Indices);
 
-	const Vertex vertex = getInterpolatedVertex(vertices, indices, gl_PrimitiveID * 3, barycentricCoords);
+    const Vertex vertex = getInterpolatedVertex(vertices, indices, gl_PrimitiveID * 3, barycentricCoords);
 
-	const TexturedMaterial material = materials[sbt.MaterialIndex];
-	const float alpha = texture(textures[GetColorTextureIndex(s_HitGroupFlags, material)], vertex.TexCoords).a;
+    const TexturedMaterial material = materials[sbt.MaterialIndex];
+    const float alpha = texture(textures[material.ColorIdx], vertex.TexCoords).a;
 
-	if (alpha < 0.9f)
-		ignoreIntersectionEXT;
+    if (alpha < 0.9f)
+        ignoreIntersectionEXT;
 }
