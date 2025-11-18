@@ -13,12 +13,12 @@ layout(binding = 2, set = 0) uniform MainBlock {
 
 layout(binding = 3, set = 0) uniform sampler2D textures[];
 
-layout(binding = 6, set = 0) readonly buffer TexturedMaterialBuffer {
-    TexturedMaterial[] texturedMaterials;
+layout(binding = 6, set = 0) readonly buffer MetalicRoughnessMaterialBuffer {
+    MetalicRoughnessMaterial[] MetalicRoughnessMaterials;
 };
 
-layout(binding = 7, set = 0) readonly buffer SolidColorMaterialBuffer {
-    SolidColorMaterial[] solidColorMaterials;
+layout(binding = 7, set = 0) readonly buffer SpecularGlossinessMaterialBuffer {
+    SpecularGlossinessMaterial[] solidColorMaterials;
 };
 
 layout(binding = 8, set = 0) uniform LightsBuffer {
@@ -34,21 +34,22 @@ layout(location = 1) rayPayloadEXT bool isOccluded;
 #include "shading.glsl"
 #include "tracing.glsl"
 
-void sampleMaterial(uint materialId, vec2 texCoords, float lod, out vec3 color, out float roughness, out float metalness)
+void sampleMaterial(uint materialId, vec2 texCoords, float lod, out vec3 color, out vec3 emissiveColor, out float roughness, out float metalness)
 {
     uint materialType;
     uint materialIndex = unpackMaterialId(materialId, materialType);
 
-    if (materialType == MaterialTypeTextured)
+    if (materialType == MaterialTypeMetalicRoughness)
     {
-        const TexturedMaterial material = texturedMaterials[materialIndex];
-        color = textureLod(textures[material.ColorIdx], texCoords, lod).xyz;
-        roughness = textureLod(textures[material.RoughnessIdx], texCoords, lod).y;
-        metalness = textureLod(textures[material.MetalicIdx], texCoords, lod).z;
+        const MetalicRoughnessMaterial material = MetalicRoughnessMaterials[materialIndex];
+        emissiveColor = (textureLod(textures[material.EmissiveIdx], texCoords, lod).xyz + material.EmissiveColor) * material.EmissiveIntensity;
+        color = textureLod(textures[material.ColorIdx], texCoords, lod).xyz * material.Color;
+        roughness = textureLod(textures[material.RoughnessIdx], texCoords, lod).y * material.Roughness;
+        metalness = textureLod(textures[material.MetalicIdx], texCoords, lod).z * material.Metalness;
     }
     else
     {
-        const SolidColorMaterial material = solidColorMaterials[materialIndex];
+        const SpecularGlossinessMaterial material = solidColorMaterials[materialIndex];
         color = material.Color;
         roughness = DefaultRoughness;
         metalness = DefaultMetalness;
@@ -103,9 +104,9 @@ void main()
             
             payload.Position = offsetRayOrigin(payload.Position, payload.Normal);
 
-            vec3 color;
+            vec3 color, emissiveColor;
             float roughness, metalness;
-            sampleMaterial(payload.MaterialId, payload.TexCoords, payload.Lod, color, roughness, metalness);
+            sampleMaterial(payload.MaterialId, payload.TexCoords, payload.Lod, color, emissiveColor, roughness, metalness);
 
             const vec3 viewDir = ray.Direction;
             const vec3 V = -normalize(viewDir);
@@ -115,6 +116,8 @@ void main()
             float attenuation, lightDistance;
 
             sampleLight(lightDirection, lightColor, lightDistance, attenuation, payload.Position, rng);
+
+            totalLight += throughput * emissiveColor;
 
             // TODO: Scale down according to the probability
             if (!checkOccluded(lightDirection, payload.Position, lightDistance))
@@ -137,7 +140,7 @@ void main()
             ray.Direction = normalize(ray.Direction + offset * roughness);
         }
     }
-
+        
     vec3 prevColor = imageLoad(u_Image, ivec2(gl_LaunchIDEXT.xy)).rgb;
     totalLight = (totalLight * mainUniform.Exposure + prevColor * mainUniform.TotalSamples) / (mainUniform.TotalSamples + mainUniform.SampleCount);
 

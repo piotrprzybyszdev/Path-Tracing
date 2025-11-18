@@ -138,6 +138,8 @@ TextureType ToTextureType(aiTextureType type)
         return TextureType::Roughness;
     case aiTextureType_METALNESS:
         return TextureType::Metalic;
+    case aiTextureType_EMISSIVE:
+        return TextureType::Emisive;
     default:
         throw error(std::format("Unsupported Texture type {}", static_cast<uint8_t>(type)));
     }
@@ -178,11 +180,66 @@ uint32_t AddTexture(
     }
 }
 
-Shaders::TexturedMaterial LoadTexturedMaterial(
+struct EmissiveInfo
+{
+    glm::vec3 Color;
+    glm::uint TextureIdx;
+    float Intensity;
+};
+
+EmissiveInfo LoadEmissive(
     const std::filesystem::path &path, SceneBuilder &sceneBuilder, const aiMaterial *material
 )
 {
-    return Shaders::TexturedMaterial {
+    float intensity = 1.0f;
+    material->Get(AI_MATKEY_EMISSIVE_INTENSITY, intensity);
+
+    if (material->GetTextureCount(aiTextureType_EMISSIVE) > 0)
+        return EmissiveInfo {
+            .Color = glm::vec3(0.0f, 0.0f, 0.0f),
+            .TextureIdx = AddTexture(sceneBuilder, path.parent_path(), material, aiTextureType_EMISSIVE),
+            .Intensity = intensity,
+        };
+
+    aiColor3D color;
+    if (material->Get(AI_MATKEY_COLOR_EMISSIVE, color) == aiReturn::aiReturn_SUCCESS)
+        return EmissiveInfo {
+            .Color = TrivialCopyUnsafe<aiColor3D, glm::vec3>(color),
+            .TextureIdx = Scene::GetDefaultTextureIndex(TextureType::Emisive),
+            .Intensity = intensity,
+        };
+
+    return EmissiveInfo {
+        .Color = glm::vec3(0.0f, 0.0f, 0.0f),
+        .TextureIdx = Scene::GetDefaultTextureIndex(TextureType::Emisive),
+        .Intensity = 1.0f,
+    };
+}
+
+Shaders::MetalicRoughnessMaterial LoadMetalicRoughnessMaterial(
+    const std::filesystem::path &path, SceneBuilder &sceneBuilder, const aiMaterial *material
+)
+{
+    aiColor3D color = aiColor3D(1.0f, 1.0f, 1.0f);
+    float roughness = 0.5f, metalness = 0.0f;
+    aiReturn ret;
+
+    ret = material->Get(AI_MATKEY_BASE_COLOR, color);
+    assert(ret == aiReturn::aiReturn_SUCCESS);
+    ret = material->Get(AI_MATKEY_ROUGHNESS_FACTOR, roughness);
+    assert(ret == aiReturn::aiReturn_SUCCESS);
+    ret = material->Get(AI_MATKEY_METALLIC_FACTOR, metalness);
+    assert(ret == aiReturn::aiReturn_SUCCESS);
+
+    EmissiveInfo emissive = LoadEmissive(path, sceneBuilder, material);
+
+    return Shaders::MetalicRoughnessMaterial {
+        .EmissiveColor = emissive.Color,
+        .EmissiveIntensity = emissive.Intensity,
+        .Color = TrivialCopyUnsafe<aiColor3D, glm::vec3>(color),
+        .Roughness = roughness,
+        .Metalness = metalness,
+        .EmissiveIdx = emissive.TextureIdx,
         .ColorIdx = AddTexture(sceneBuilder, path.parent_path(), material, aiTextureType_BASE_COLOR),
         .NormalIdx = AddTexture(sceneBuilder, path.parent_path(), material, aiTextureType_NORMALS),
         .RoughnessIdx =
@@ -191,14 +248,11 @@ Shaders::TexturedMaterial LoadTexturedMaterial(
     };
 }
 
-Shaders::SolidColorMaterial LoadSolidColorMaterial(const aiMaterial *material)
+Shaders::SpecularGlossinessMaterial LoadSpecularGlossinessMaterial(
+    const std::filesystem::path &path, SceneBuilder &sceneBuilder, const aiMaterial *material
+)
 {
-    aiColor3D color;
-    material->Get(AI_MATKEY_BASE_COLOR, color);
-
-    return Shaders::SolidColorMaterial {
-        .Color = TrivialCopyUnsafe<aiColor3D, glm::vec3>(color),
-    };
+    throw error("TODO: Implement SpecularGlossinessMaterial");
 }
 
 std::vector<std::pair<uint32_t, MaterialType>> LoadMaterials(
@@ -214,16 +268,19 @@ std::vector<std::pair<uint32_t, MaterialType>> LoadMaterials(
         const std::string materialName =
             originalName.length != 0 ? originalName.C_Str() : std::format("Unnamed Material at index {}", i);
 
-        if (material->GetTextureCount(aiTextureType_BASE_COLOR) > 0)
+        float factor;
+        if (material->Get(AI_MATKEY_METALLIC_FACTOR, factor) == aiReturn::aiReturn_SUCCESS)
             materialInfoMap[i] = std::make_pair(
-                sceneBuilder.AddMaterial(materialName, LoadTexturedMaterial(path, sceneBuilder, material)),
-                MaterialType::Textured
+                sceneBuilder.AddMaterial(materialName, LoadMetalicRoughnessMaterial(path, sceneBuilder, material)),
+                MaterialType::MetalicRoughness
+            );
+        else if (material->Get(AI_MATKEY_GLOSSINESS_FACTOR, factor) == aiReturn::aiReturn_SUCCESS)
+            materialInfoMap[i] = std::make_pair(
+                sceneBuilder.AddMaterial(materialName, LoadSpecularGlossinessMaterial(path, sceneBuilder, material)),
+                MaterialType::SpecularGlossiness
             );
         else
-            materialInfoMap[i] = std::make_pair(
-                sceneBuilder.AddMaterial(materialName, LoadSolidColorMaterial(material)),
-                MaterialType::SolidColor
-            );
+            throw error("Unsupported material type");
 
         logger::debug("Added Material: {}", materialName);
     }
@@ -377,6 +434,13 @@ std::vector<uint32_t> LoadMeshes(
                     animatedVertices[idx].Bitangent =
                         TrivialCopy<aiVector3D, glm::vec3>(mesh->mBitangents[j]);
                 }
+                else
+                {
+                    vertices[idx].Tangent = TrivialCopy<aiVector3D, glm::vec3>(mesh->mNormals[j]);
+                    vertices[idx].Bitangent = TrivialCopy<aiVector3D, glm::vec3>(mesh->mNormals[j]);
+                    vertices[idx].Tangent.x *= -1;
+                    vertices[idx].Bitangent.y *= -1;
+                }
             }
             else
             {
@@ -388,6 +452,13 @@ std::vector<uint32_t> LoadMeshes(
                 {
                     vertices[idx].Tangent = TrivialCopy<aiVector3D, glm::vec3>(mesh->mTangents[j]);
                     vertices[idx].Bitangent = TrivialCopy<aiVector3D, glm::vec3>(mesh->mBitangents[j]);
+                }
+                else
+                {
+                    vertices[idx].Tangent = TrivialCopy<aiVector3D, glm::vec3>(mesh->mNormals[j]);
+                    vertices[idx].Bitangent = TrivialCopy<aiVector3D, glm::vec3>(mesh->mNormals[j]);
+                    vertices[idx].Tangent.x *= -1;
+                    vertices[idx].Bitangent.y *= -1;
                 }
             }
         }

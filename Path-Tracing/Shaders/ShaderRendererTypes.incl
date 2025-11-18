@@ -49,6 +49,7 @@ const uint DefaultTextureColor              = 0xffffffffu;
 const uint DefaultTextureNormal             = 0xffff8080u;
 const uint DefaultTextureRoughness          = 0x80808080u;
 const uint DefaultTextureMetalness          = 0x00000000u;
+const uint DefaultTextureEmissive           = 0x00000000u;
 const float DefaultRoughness                = 0.5f;
 const float DefaultMetalness                = 0.0f;
 

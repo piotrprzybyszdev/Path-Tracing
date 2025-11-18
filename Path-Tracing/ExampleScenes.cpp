@@ -75,7 +75,7 @@ void CombinedSceneLoader::Load(SceneBuilder &sceneBuilder)
 }
 
 void CreateDefaultScene(SceneBuilder &sceneBuilder);
-void CreateTexturedCubesScene(SceneBuilder &sceneBuilder);
+void CreateMetalicRoughnessCubesScene(SceneBuilder &sceneBuilder);
 void CreateReuseMeshCubesScene(SceneBuilder &sceneBuilder);
 
 static SceneGroup &AddSceneGroup(std::map<std::string, SceneGroup> &scenes, const std::string &name)
@@ -170,8 +170,10 @@ static void AddHighQualityScenes(std::map<std::string, SceneGroup> &scenes)
 static void AddTestScenes(std::map<std::string, SceneGroup> &scenes)
 {
     SceneGroup &group = AddSceneGroup(scenes, "Test Scenes");
-    group.emplace("Textured Cubes", std::make_unique<CustomSceneLoader<CreateTexturedCubesScene>>());
-    group.emplace("Reuse Mesh", std::make_unique<CustomSceneLoader<CreateTexturedCubesScene>>());
+    group.emplace(
+        "MetalicRoughness Cubes", std::make_unique<CustomSceneLoader<CreateMetalicRoughnessCubesScene>>()
+    );
+    group.emplace("Reuse Mesh", std::make_unique<CustomSceneLoader<CreateMetalicRoughnessCubesScene>>());
     group.emplace("Default", std::make_unique<CustomSceneLoader<CreateDefaultScene>>());
 }
 
@@ -240,15 +242,43 @@ static std::array<uint32_t, 6> AddCube(SceneBuilder &sceneBuilder)
         vertexOffset += 4;
         indexOffset += 6;
     }
-    
+
     return geometryIndices;
 }
 
 void CreateDefaultScene(SceneBuilder &sceneBuilder)
 {
-    auto makeSolidColorMaterial = [](glm::vec3 color) { return Shaders::SolidColorMaterial { .Color = color }; };
-    auto makeTexturedMaterial = [&](std::span<const uint8_t>) {
-        return Shaders::TexturedMaterial {
+    auto makeMaterialFromColor = [](glm::vec3 color) {
+        return Shaders::MetalicRoughnessMaterial {
+            .Color = color,
+            .Roughness = 1.0f,
+            .Metalness = 1.0f,
+            .EmissiveIdx = Scene::GetDefaultTextureIndex(TextureType::Emisive),
+            .ColorIdx = Scene::GetDefaultTextureIndex(TextureType::Color),
+            .NormalIdx = Scene::GetDefaultTextureIndex(TextureType::Normal),
+            .RoughnessIdx = Scene::GetDefaultTextureIndex(TextureType::Roughness),
+            .MetalicIdx = Scene::GetDefaultTextureIndex(TextureType::Metalic),
+        };
+    };
+    auto makeMaterialFromEmissiveColor = [](glm::vec3 color) {
+        return Shaders::MetalicRoughnessMaterial {
+            .EmissiveColor = color,
+            .EmissiveIntensity = 1.0f,
+            .Roughness = 1.0f,
+            .Metalness = 1.0f,
+            .EmissiveIdx = Scene::GetDefaultTextureIndex(TextureType::Emisive),
+            .ColorIdx = Scene::GetDefaultTextureIndex(TextureType::Color),
+            .NormalIdx = Scene::GetDefaultTextureIndex(TextureType::Normal),
+            .RoughnessIdx = Scene::GetDefaultTextureIndex(TextureType::Roughness),
+            .MetalicIdx = Scene::GetDefaultTextureIndex(TextureType::Metalic),
+        };
+    };
+    auto makeMaterialFromTexture = [&](std::span<const uint8_t>) {
+        return Shaders::MetalicRoughnessMaterial {
+            .Color = glm::vec3(1.0f),
+            .Roughness = 1.0f,
+            .Metalness = 1.0f,
+            .EmissiveIdx = Scene::GetDefaultTextureIndex(TextureType::Emisive),
             .ColorIdx = sceneBuilder.AddTexture(
                 AssetImporter::GetTextureInfo(
                     Resources::g_PlaceholderTextureData, TextureType::Color, "Logo Texture"
@@ -261,13 +291,16 @@ void CreateDefaultScene(SceneBuilder &sceneBuilder)
     };
 
     uint32_t whiteMaterial =
-        sceneBuilder.AddMaterial("White Material", Shaders::SolidColorMaterial { .Color = glm::vec3(1.0f) });
+        sceneBuilder.AddMaterial("White Material", makeMaterialFromColor(glm::vec3(1.0f)));
     uint32_t greenMaterial =
-        sceneBuilder.AddMaterial("Green Material", makeSolidColorMaterial(glm::vec3(0.0f, 1.0f, 0.0f)));
+        sceneBuilder.AddMaterial("Green Material", makeMaterialFromColor(glm::vec3(0.0f, 1.0f, 0.0f)));
     uint32_t redMaterial =
-        sceneBuilder.AddMaterial("Red Material", makeSolidColorMaterial(glm::vec3(1.0f, 0.0f, 0.0f)));
-    uint32_t logoMaterial =
-        sceneBuilder.AddMaterial("Logo Material", makeTexturedMaterial(Resources::g_PlaceholderTextureData));
+        sceneBuilder.AddMaterial("Red Material", makeMaterialFromColor(glm::vec3(1.0f, 0.0f, 0.0f)));
+    uint32_t logoMaterial = sceneBuilder.AddMaterial(
+        "Logo Material", makeMaterialFromTexture(Resources::g_PlaceholderTextureData)
+    );
+    uint32_t lightMaterial =
+        sceneBuilder.AddMaterial("Light Material", makeMaterialFromEmissiveColor(glm::vec3(1.0f)));
 
     auto &vertices = sceneBuilder.GetVertices();
     vertices = {
@@ -310,26 +343,53 @@ void CreateDefaultScene(SceneBuilder &sceneBuilder)
     }
 
     std::array<MeshInfo, 5> meshes = { {
-        { 0, redMaterial, MaterialType::SolidColor, glm::mat4(1.0f) },
-        { 1, greenMaterial, MaterialType::SolidColor, glm::mat4(1.0f) },
-        { 2, logoMaterial, MaterialType::Textured, glm::mat4(1.0f) },
-        { 3, whiteMaterial, MaterialType::SolidColor, glm::mat4(1.0f) },
-        { 4, whiteMaterial, MaterialType::SolidColor, glm::mat4(1.0f) },
+        { 0, redMaterial, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
+        { 1, greenMaterial, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
+        { 2, logoMaterial, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
+        { 3, whiteMaterial, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
+        { 4, whiteMaterial, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
     } };
 
     std::array<uint32_t, 6> geometryIndices = AddCube(sceneBuilder);
 
     std::array<MeshInfo, 6> cubeMeshes = { {
-        { geometryIndices[0], whiteMaterial, MaterialType::SolidColor, glm::mat4(1.0f) },
-        { geometryIndices[1], whiteMaterial, MaterialType::SolidColor, glm::mat4(1.0f) },
-        { geometryIndices[2], whiteMaterial, MaterialType::SolidColor, glm::mat4(1.0f) },
-        { geometryIndices[3], whiteMaterial, MaterialType::SolidColor, glm::mat4(1.0f) },
-        { geometryIndices[4], whiteMaterial, MaterialType::SolidColor, glm::mat4(1.0f) },
-        { geometryIndices[5], whiteMaterial, MaterialType::SolidColor, glm::mat4(1.0f) },
+        { geometryIndices[0], whiteMaterial, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[1], whiteMaterial, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[2], whiteMaterial, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[3], whiteMaterial, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[4], whiteMaterial, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[5], whiteMaterial, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
     } };
+
+    const uint32_t lightVertexOffset = vertices.size();
+    const uint32_t lightIndexOffset = indices.size();
+
+    std::ranges::copy(
+        std::array<Shaders::Vertex, 4> {
+            Shaders::Vertex{ { 0.2f, 0.0f, 0.2f }, { 1.0f, 1.0f }, { 0.0f, -1.0f, 0.0f }, { 1, 0, 0 }, { 0, 0, 1 } },
+            Shaders::Vertex{ { -0.2f, 0.0f, 0.2f }, { 0.0f, 1.0f }, { 0.0f, -1.0f, 0.0f }, { 1, 0, 0 }, { 0, 0, 1 } },
+            Shaders::Vertex{ { -0.2f, 0.0f, -0.2f }, { 0.0f, 1.0f }, { 0.0f, -1.0f, 0.0f }, { 1, 0, 0 }, { 0, 0, 1 } },
+            Shaders::Vertex{ { 0.2f, 0.0f, -0.2f }, { 1.0f, 0.0f }, { 0.0f, -1.0f, 0.0f }, { 1, 0, 0 }, { 0, 0, 1 } },
+        },
+        std::back_inserter(vertices)
+    );
+    std::ranges::copy(std::array<uint32_t, 6> { 0, 1, 2, 2, 3, 0 }, std::back_inserter(indices));
+
+    const uint32_t lightGeometry =
+        sceneBuilder.AddGeometry({ lightVertexOffset, 4, lightIndexOffset, 6, true });
+
+    const std::array<MeshInfo, 1> lightMeshes = {
+        MeshInfo {
+            .GeometryIndex = lightGeometry,
+            .MaterialIndex = lightMaterial,
+            .ShaderMaterialType = MaterialType::MetalicRoughness,
+            .Transform = glm::mat4(1.0f),
+        },
+    };
 
     const uint32_t box = sceneBuilder.AddModel(meshes);
     const uint32_t cube = sceneBuilder.AddModel(cubeMeshes);
+    const uint32_t light = sceneBuilder.AddModel({ lightMeshes });
 
     const glm::mat4 boxTransform = glm::transpose(
         glm::translate(glm::scale(glm::mat4(1.0f), glm::vec3(2.0f)), glm::vec3(-1.9f, 0.5f, 0.0f))
@@ -337,7 +397,7 @@ void CreateDefaultScene(SceneBuilder &sceneBuilder)
 
     const uint32_t rootNode = sceneBuilder.AddSceneNode({ 0u, glm::mat4(1.0f), glm::mat4(1.0f) });
     const uint32_t boxNode = sceneBuilder.AddSceneNode({ rootNode, boxTransform, glm::mat4(1.0f) });
-    
+
     const uint32_t boxInstance = sceneBuilder.AddModelInstance(box, boxNode);
 
     const glm::mat4 leftCubeTransform = glm::transpose(
@@ -350,7 +410,7 @@ void CreateDefaultScene(SceneBuilder &sceneBuilder)
         )
     );
     const uint32_t leftCubeNode = sceneBuilder.AddSceneNode({ boxNode, leftCubeTransform, glm::mat4(1.0f) });
-    
+
     const glm::mat4 rightCubeTransform = glm::transpose(
         glm::scale(
             glm::rotate(
@@ -360,27 +420,19 @@ void CreateDefaultScene(SceneBuilder &sceneBuilder)
             glm::vec3(0.3f)
         )
     );
-    const uint32_t rightCubeNode = sceneBuilder.AddSceneNode({ boxNode, rightCubeTransform, glm::mat4(1.0f) });
+    const uint32_t rightCubeNode =
+        sceneBuilder.AddSceneNode({ boxNode, rightCubeTransform, glm::mat4(1.0f) });
 
     const uint32_t leftCubeInstance = sceneBuilder.AddModelInstance(cube, leftCubeNode);
     const uint32_t rightCubeInstance = sceneBuilder.AddModelInstance(cube, rightCubeNode);
 
     const glm::mat4 lightTransform =
-        glm::transpose(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.5f, 0.0f)));
+        glm::transpose(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.099f, 0.0f)));
     const uint32_t lightNode = sceneBuilder.AddSceneNode({ boxNode, lightTransform, glm::mat4(1.0f) });
-    sceneBuilder.AddLight(
-        {
-            .Color = glm::vec3(1.0f),
-            .Position = glm::vec3(0.0f),
-            .AttenuationConstant = 0.0f,
-            .AttenuationLinear = 0.0f,
-            .AttenuationQuadratic = 1.0f,
-        },
-        lightNode
-    );
+    sceneBuilder.AddModelInstance(light, lightNode);
 }
 
-void CreateTexturedCubesScene(SceneBuilder &sceneBuilder)
+void CreateMetalicRoughnessCubesScene(SceneBuilder &sceneBuilder)
 {
     const std::filesystem::path base = Application::GetConfig().AssetDirectoryPath / "textures";
     const std::array<std::string, 3> assetNames = { "Metal", "PavingStones", "Logs" };
@@ -403,7 +455,10 @@ void CreateTexturedCubesScene(SceneBuilder &sceneBuilder)
         const std::string &material = materials[i];
         sceneBuilder.AddMaterial(
             assetNames[i],
-            Shaders::TexturedMaterial {
+            Shaders::MetalicRoughnessMaterial {
+                .Color = glm::vec3(1.0f),
+                .Roughness = 1.0f,
+                .Metalness = 1.0f,
                 .ColorIdx = addTexture(materialPath, material + "_Color.jpg", TextureType::Color),
                 .NormalIdx = addTexture(materialPath, material + "_NormalGL.jpg", TextureType::Normal),
                 .RoughnessIdx = addTexture(materialPath, material + "_Roughness.jpg", TextureType::Roughness),
@@ -415,21 +470,21 @@ void CreateTexturedCubesScene(SceneBuilder &sceneBuilder)
     std::array<uint32_t, 6> geometryIndices = AddCube(sceneBuilder);
 
     std::array<MeshInfo, 6> m1 = { {
-        { geometryIndices[0], 0, MaterialType::Textured, glm::mat4(1.0f) },
-        { geometryIndices[1], 0, MaterialType::Textured, glm::mat4(1.0f) },
-        { geometryIndices[2], 1, MaterialType::Textured, glm::mat4(1.0f) },
-        { geometryIndices[3], 1, MaterialType::Textured, glm::mat4(1.0f) },
-        { geometryIndices[4], 2, MaterialType::Textured, glm::mat4(1.0f) },
-        { geometryIndices[5], 2, MaterialType::Textured, glm::mat4(1.0f) },
+        { geometryIndices[0], 0, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[1], 0, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[2], 1, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[3], 1, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[4], 2, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[5], 2, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
     } };
 
     std::array<MeshInfo, 6> m2 = { {
-        { geometryIndices[0], 0, MaterialType::Textured, glm::mat4(1.0f) },
-        { geometryIndices[1], 0, MaterialType::Textured, glm::mat4(1.0f) },
-        { geometryIndices[2], 0, MaterialType::Textured, glm::mat4(1.0f) },
-        { geometryIndices[3], 0, MaterialType::Textured, glm::mat4(1.0f) },
-        { geometryIndices[4], 0, MaterialType::Textured, glm::mat4(1.0f) },
-        { geometryIndices[5], 0, MaterialType::Textured, glm::mat4(1.0f) },
+        { geometryIndices[0], 0, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[1], 0, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[2], 0, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[3], 0, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[4], 0, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[5], 0, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
     } };
 
     const uint32_t cube1 = sceneBuilder.AddModel(m1);
@@ -437,9 +492,11 @@ void CreateTexturedCubesScene(SceneBuilder &sceneBuilder)
 
     const glm::mat4 cube1inst1transform = glm::transpose(glm::translate(glm::mat4(1.0f), glm::vec3(1.0f)));
     const glm::mat4 cube1inst2transform = glm::transpose(glm::translate(glm::mat4(1.0f), glm::vec3(-1.0f)));
-    const glm::mat4 cube2transform = glm::transpose(glm::scale(
-        glm::translate(glm::mat4(1.0f), glm::vec3(0.5f, -1.0f, -3.0f)), glm::vec3(2.0f, 1.0f, 0.3f)
-    ));
+    const glm::mat4 cube2transform = glm::transpose(
+        glm::scale(
+            glm::translate(glm::mat4(1.0f), glm::vec3(0.5f, -1.0f, -3.0f)), glm::vec3(2.0f, 1.0f, 0.3f)
+        )
+    );
 
     const uint32_t rootNode = sceneBuilder.AddSceneNode({ 0u, glm::mat4(1.0f), glm::mat4(1.0f) });
     const uint32_t cube1inst1node =
@@ -479,9 +536,9 @@ void CreateTexturedCubesScene(SceneBuilder &sceneBuilder)
 
     sceneBuilder.AddAnimation(Animation({ animNode }, 30.0f, 180.0f));
 
-    sceneBuilder.SetSkybox(
-        Skybox2D(AssetImporter::GetTextureInfo(base / "skybox" / "sky_42_2k.png", TextureType::Skybox, "Skybox"))
-    );
+    sceneBuilder.SetSkybox(Skybox2D(
+        AssetImporter::GetTextureInfo(base / "skybox" / "sky_42_2k.png", TextureType::Skybox, "Skybox")
+    ));
 }
 
 void CreateReuseMeshCubesScene(SceneBuilder &sceneBuilder)
@@ -507,7 +564,10 @@ void CreateReuseMeshCubesScene(SceneBuilder &sceneBuilder)
         const std::string &material = materials[i];
         sceneBuilder.AddMaterial(
             assetNames[i],
-            Shaders::TexturedMaterial {
+            Shaders::MetalicRoughnessMaterial {
+                .Color = glm::vec3(1.0f),
+                .Roughness = 1.0f,
+                .Metalness = 1.0f,
                 .ColorIdx = addTexture(materialPath, material + "_Color.jpg", TextureType::Color),
                 .NormalIdx = addTexture(materialPath, material + "_NormalGL.jpg", TextureType::Normal),
                 .RoughnessIdx = addTexture(materialPath, material + "_Roughness.jpg", TextureType::Roughness),
@@ -547,14 +607,14 @@ void CreateReuseMeshCubesScene(SceneBuilder &sceneBuilder)
     }
 
     std::array<MeshInfo, 6> m = { {
-        { 0, 1, MaterialType::Textured, glm::mat4(1.0f) },
-        { 0, 1, MaterialType::Textured,
+        { 0, 1, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
+        { 0, 1, MaterialType::MetalicRoughness,
           glm::transpose(glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f))) },
-        { 1, 1, MaterialType::Textured, glm::mat4(1.0f) },
-        { 1, 2, MaterialType::Textured,
+        { 1, 1, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
+        { 1, 2, MaterialType::MetalicRoughness,
           glm::transpose(glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(0.0f, 1.0f, 0.0f))) },
-        { 2, 2, MaterialType::Textured, glm::mat4(1.0f) },
-        { 2, 2, MaterialType::Textured,
+        { 2, 2, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
+        { 2, 2, MaterialType::MetalicRoughness,
           glm::transpose(glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(0.0f, 0.0f, 1.0f))) },
     } };
 

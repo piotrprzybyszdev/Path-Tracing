@@ -102,6 +102,8 @@ void Renderer::Init(const Swapchain *swapchain)
             AddTexture(Shaders::DefaultTextureRoughness, { 1, 1 }, "Default Roughness Texture");
         uint32_t metalicIndex =
             AddTexture(Shaders::DefaultTextureMetalness, { 1, 1 }, "Default Metalic Texture");
+        uint32_t emissiveIndex =
+            AddTexture(Shaders::DefaultTextureEmissive, { 1, 1 }, "Default Emissive Texture");
         uint32_t placeholderIndex = AddTexture(Resources::g_PlaceholderTextureData, "Placeholder Texture");
 
         s_TextureMap.resize(Shaders::SceneTextureOffset);
@@ -109,6 +111,7 @@ void Renderer::Init(const Swapchain *swapchain)
         s_TextureMap[Shaders::DefaultNormalTextureIndex] = normalIndex;
         s_TextureMap[Shaders::DefaultRoughnessTextureIndex] = roughnessIndex;
         s_TextureMap[Shaders::DefaultMetalicTextureIndex] = metalicIndex;
+        s_TextureMap[Shaders::DefaultEmissiveTextureIndex] = emissiveIndex;
         s_TextureMap[Shaders::PlaceholderTextureIndex] = placeholderIndex;
     }
 }
@@ -223,13 +226,13 @@ void Renderer::UpdateSceneData(bool updated)
         s_SceneData->AnimatedVertexMapBuffer =
             CreateDeviceBufferUnflushed(std::span(animatedVertexMap), "Animated Vertex Map Buffer");
 
-        const auto &texturedMaterials = s_SceneData->Handle->GetTexturedMaterials();
-        s_SceneData->TexturedMaterialBuffer =
-            CreateDeviceBufferUnflushed(texturedMaterials, "Textured Material Buffer");
+        const auto &metalicRoughnessMaterials = s_SceneData->Handle->GetMetalicRoughnessMaterials();
+        s_SceneData->MetalicRoughnessMaterialBuffer =
+            CreateDeviceBufferUnflushed(metalicRoughnessMaterials, "MetalicRoughness Material Buffer");
 
-        const auto &solidColorMaterials = s_SceneData->Handle->GetSolidColorMaterials();
-        s_SceneData->SolidColorMaterialBuffer =
-            CreateDeviceBufferUnflushed(solidColorMaterials, "Solid Color Material Buffer");
+        const auto &specularGlossinessMaterials = s_SceneData->Handle->GetSpecularGlossinessMaterials();
+        s_SceneData->SpecularGlossinessMaterialBuffer =
+            CreateDeviceBufferUnflushed(specularGlossinessMaterials, "SpecularGlossiness Material Buffer");
 
         // Ensure all scene buffers are flushed to device memory
         s_StagingBuffer->Flush();
@@ -300,13 +303,13 @@ void Renderer::UpdateSceneData(bool updated)
 
                 switch (mesh.ShaderMaterialType)
                 {
-                case MaterialType::Textured:
+                case MaterialType::MetalicRoughness:
                     entries[Shaders::PrimaryRayHitGroupIndex].HitGroupIndex =
-                        s_ActiveShaderConfig->PrimaryRayTexturedHitIndex;
+                        s_ActiveShaderConfig->PrimaryRayMetalicRoughnessHitIndex;
                     break;
-                case MaterialType::SolidColor:
+                case MaterialType::SpecularGlossiness:
                     entries[Shaders::PrimaryRayHitGroupIndex].HitGroupIndex =
-                        s_ActiveShaderConfig->PrimaryRaySolidColorHitIndex;
+                        s_ActiveShaderConfig->PrimaryRaySpecularGlossinessHitIndex;
                     break;
                 }
 
@@ -431,10 +434,10 @@ void Renderer::CreatePipelines()
 
     s_Shaders.Raygen = s_ShaderLibrary->AddShader("raygen.rgen", vk::ShaderStageFlagBits::eRaygenKHR);
     s_Shaders.Miss = s_ShaderLibrary->AddShader("miss.rmiss", vk::ShaderStageFlagBits::eMissKHR);
-    s_Shaders.TexturedClosestHit =
-        s_ShaderLibrary->AddShader("textured.rchit", vk::ShaderStageFlagBits::eClosestHitKHR);
-    s_Shaders.SolidColorClosestHit =
-        s_ShaderLibrary->AddShader("solidColor.rchit", vk::ShaderStageFlagBits::eClosestHitKHR);
+    s_Shaders.MetalicRoughnessClosestHit =
+        s_ShaderLibrary->AddShader("metalicRoughness.rchit", vk::ShaderStageFlagBits::eClosestHitKHR);
+    s_Shaders.SpecularGlossinessClosestHit =
+        s_ShaderLibrary->AddShader("specularGlossiness.rchit", vk::ShaderStageFlagBits::eClosestHitKHR);
     s_Shaders.AnyHit = s_ShaderLibrary->AddShader("anyhit.rahit", vk::ShaderStageFlagBits::eAnyHitKHR);
     s_Shaders.OcclusionMiss =
         s_ShaderLibrary->AddShader("occlusion.rmiss", vk::ShaderStageFlagBits::eMissKHR);
@@ -444,10 +447,10 @@ void Renderer::CreatePipelines()
         s_ShaderLibrary->AddShader("Debug/debugRaygen.rgen", vk::ShaderStageFlagBits::eRaygenKHR);
     s_Shaders.DebugMiss =
         s_ShaderLibrary->AddShader("Debug/debugMiss.rmiss", vk::ShaderStageFlagBits::eMissKHR);
-    s_Shaders.DebugTexturedClosestHit =
-        s_ShaderLibrary->AddShader("Debug/debugTextured.rchit", vk::ShaderStageFlagBits::eClosestHitKHR);
-    s_Shaders.DebugSolidColorClosestHit =
-        s_ShaderLibrary->AddShader("Debug/debugSolidColor.rchit", vk::ShaderStageFlagBits::eClosestHitKHR);
+    s_Shaders.DebugMetalicRoughnessClosestHit =
+        s_ShaderLibrary->AddShader("Debug/debugMetalicRoughness.rchit", vk::ShaderStageFlagBits::eClosestHitKHR);
+    s_Shaders.DebugSpecularGlossinessClosestHit =
+        s_ShaderLibrary->AddShader("Debug/debugSpecularGlossiness.rchit", vk::ShaderStageFlagBits::eClosestHitKHR);
 
     s_ShaderLibrary->CompileShaders();
 
@@ -457,10 +460,10 @@ void Renderer::CreatePipelines()
         s_PathTracingShaderConfig.RaygenGroupIndex = builder.AddGeneralGroup(s_Shaders.Raygen);
         s_PathTracingShaderConfig.PrimaryRayMissIndex = builder.AddGeneralGroup(s_Shaders.Miss);
         s_PathTracingShaderConfig.OcclusionRayMissIndex = builder.AddGeneralGroup(s_Shaders.OcclusionMiss);
-        s_PathTracingShaderConfig.PrimaryRayTexturedHitIndex =
-            builder.AddHitGroup(s_Shaders.TexturedClosestHit, s_Shaders.AnyHit);
-        s_PathTracingShaderConfig.PrimaryRaySolidColorHitIndex =
-            builder.AddHitGroup(s_Shaders.SolidColorClosestHit, ShaderLibrary::g_UnusedShaderId);
+        s_PathTracingShaderConfig.PrimaryRayMetalicRoughnessHitIndex =
+            builder.AddHitGroup(s_Shaders.MetalicRoughnessClosestHit, s_Shaders.AnyHit);
+        s_PathTracingShaderConfig.PrimaryRaySpecularGlossinessHitIndex =
+            builder.AddHitGroup(s_Shaders.SpecularGlossinessClosestHit, ShaderLibrary::g_UnusedShaderId);
         s_PathTracingShaderConfig.OcclusionRayHitIndex =
             builder.AddHitGroup(ShaderLibrary::g_UnusedShaderId, s_Shaders.AnyHit);
 
@@ -487,10 +490,10 @@ void Renderer::CreatePipelines()
         s_DebugRayTracingShaderConfig.RaygenGroupIndex = builder.AddGeneralGroup(s_Shaders.DebugRaygen);
         s_DebugRayTracingShaderConfig.PrimaryRayMissIndex = builder.AddGeneralGroup(s_Shaders.DebugMiss);
         s_DebugRayTracingShaderConfig.OcclusionRayMissIndex = builder.AddGeneralGroup(s_Shaders.OcclusionMiss);
-        s_DebugRayTracingShaderConfig.PrimaryRayTexturedHitIndex =
-            builder.AddHitGroup(s_Shaders.DebugTexturedClosestHit, s_Shaders.AnyHit);
-        s_DebugRayTracingShaderConfig.PrimaryRaySolidColorHitIndex =
-            builder.AddHitGroup(s_Shaders.DebugSolidColorClosestHit, ShaderLibrary::g_UnusedShaderId);
+        s_DebugRayTracingShaderConfig.PrimaryRayMetalicRoughnessHitIndex =
+            builder.AddHitGroup(s_Shaders.DebugMetalicRoughnessClosestHit, s_Shaders.AnyHit);
+        s_DebugRayTracingShaderConfig.PrimaryRaySpecularGlossinessHitIndex =
+            builder.AddHitGroup(s_Shaders.DebugSpecularGlossinessClosestHit, ShaderLibrary::g_UnusedShaderId);
         s_DebugRayTracingShaderConfig.OcclusionRayHitIndex =
             builder.AddHitGroup(ShaderLibrary::g_UnusedShaderId, s_Shaders.AnyHit);
 
@@ -862,10 +865,10 @@ void Renderer::RecreateDescriptorSet()
             );
             set->UpdateBuffer(4, frameIndex, s_SceneData->TransformBuffer);
             set->UpdateBuffer(5, frameIndex, res.GeometryBuffer);
-            if (s_SceneData->TexturedMaterialBuffer.GetHandle() != nullptr)
-                set->UpdateBuffer(6, frameIndex, s_SceneData->TexturedMaterialBuffer);
-            if (s_SceneData->SolidColorMaterialBuffer.GetHandle() != nullptr)
-                set->UpdateBuffer(7, frameIndex, s_SceneData->SolidColorMaterialBuffer);
+            if (s_SceneData->MetalicRoughnessMaterialBuffer.GetHandle() != nullptr)
+                set->UpdateBuffer(6, frameIndex, s_SceneData->MetalicRoughnessMaterialBuffer);
+            if (s_SceneData->SpecularGlossinessMaterialBuffer.GetHandle() != nullptr)
+                set->UpdateBuffer(7, frameIndex, s_SceneData->SpecularGlossinessMaterialBuffer);
             set->UpdateBuffer(8, frameIndex, res.LightUniformBuffer);
             if ((missFlags & Shaders::MissFlagsSkybox2D) != Shaders::MissFlagsNone)
                 set->UpdateImage(

@@ -66,16 +66,16 @@ private:
     {
         ShaderId Raygen = ShaderLibrary::g_UnusedShaderId;
         ShaderId Miss = ShaderLibrary::g_UnusedShaderId;
-        ShaderId TexturedClosestHit = ShaderLibrary::g_UnusedShaderId;
-        ShaderId SolidColorClosestHit = ShaderLibrary::g_UnusedShaderId;
+        ShaderId MetalicRoughnessClosestHit = ShaderLibrary::g_UnusedShaderId;
+        ShaderId SpecularGlossinessClosestHit = ShaderLibrary::g_UnusedShaderId;
         ShaderId AnyHit = ShaderLibrary::g_UnusedShaderId;
         ShaderId OcclusionMiss = ShaderLibrary::g_UnusedShaderId;
         ShaderId SkinningCompute = ShaderLibrary::g_UnusedShaderId;
 
         ShaderId DebugRaygen = ShaderLibrary::g_UnusedShaderId;
         ShaderId DebugMiss = ShaderLibrary::g_UnusedShaderId;
-        ShaderId DebugTexturedClosestHit = ShaderLibrary::g_UnusedShaderId;
-        ShaderId DebugSolidColorClosestHit = ShaderLibrary::g_UnusedShaderId;
+        ShaderId DebugMetalicRoughnessClosestHit = ShaderLibrary::g_UnusedShaderId;
+        ShaderId DebugSpecularGlossinessClosestHit = ShaderLibrary::g_UnusedShaderId;
     } s_Shaders;
 
     static struct ShaderConfig
@@ -83,8 +83,8 @@ private:
         uint32_t RaygenGroupIndex = -1;
         uint32_t PrimaryRayMissIndex = -1;
         uint32_t OcclusionRayMissIndex = -1;
-        uint32_t PrimaryRayTexturedHitIndex = -1;
-        uint32_t PrimaryRaySolidColorHitIndex = -1;
+        uint32_t PrimaryRayMetalicRoughnessHitIndex = -1;
+        uint32_t PrimaryRaySpecularGlossinessHitIndex = -1;
         uint32_t OcclusionRayHitIndex = -1;
         uint32_t HitGroupCount = 2;
     } s_PathTracingShaderConfig, s_DebugRayTracingShaderConfig;
@@ -135,8 +135,8 @@ private:
         Buffer AnimatedIndexBuffer;
         
         Buffer TransformBuffer;
-        Buffer TexturedMaterialBuffer;
-        Buffer SolidColorMaterialBuffer;
+        Buffer MetalicRoughnessMaterialBuffer;
+        Buffer SpecularGlossinessMaterialBuffer;
 
         Image Skybox;
 

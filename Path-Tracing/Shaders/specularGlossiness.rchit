@@ -6,7 +6,7 @@
 #include "ShaderRendererTypes.incl"
 #include "common.glsl"
 
-layout(binding = 3, set = 0) uniform sampler2D textures[];
+layout(binding = 0, set = 0) uniform accelerationStructureEXT u_TopLevelAS;
 
 layout(binding = 4, set = 0) readonly buffer TransformBuffer {
     mat3x4[] transforms;
@@ -16,8 +16,8 @@ layout(binding = 5, set = 0) readonly buffer GeometryBuffer {
     Geometry[] geometries;
 };
 
-layout(binding = 6, set = 0) readonly buffer MaterialBuffer {
-    TexturedMaterial[] materials;
+layout(binding = 7, set = 0) readonly buffer MaterialBuffer {
+    SpecularGlossinessMaterial[] materials;
 };
 
 layout(shaderRecordEXT, std430) buffer SBT {
@@ -34,7 +34,7 @@ Vertex transform(Vertex vertex, uint transformIndex)
     vertex.Position = vec4(vertex.Position, 1.0f) * transform;
     vertex.Tangent = normalize(vec4(vertex.Tangent, 0.0f) * transform);
     vertex.Bitangent = normalize(vec4(vertex.Bitangent, 0.0f) * transform);
-    vertex.Normal = normalize((vec4(vertex.Normal, 0.0f) * transpose(inverse(mat4(transform)))).xyz);  // TODO: Calculate inverse on the CPU
+    vertex.Normal = normalize((vec4(vertex.Normal, 0.0f) * transpose(inverse(mat4(transform)))).xyz);  // TODO: Disallow non-uniform scale
 
     return vertex;
 }
@@ -52,15 +52,12 @@ void main()
     // TODO: Calculate the LOD properly
     const float lod = 0.0f;
 
-    const TexturedMaterial material = materials[sbt.MaterialIndex];
-    const vec3 normal = textureLod(textures[material.NormalIdx], vertex.TexCoords, lod).xyz;
-
-    const mat3 TBN = mat3(vertex.Tangent, vertex.Bitangent, vertex.Normal);
-    const vec3 N = normalize(vertex.Normal + TBN * (2.0f * normal - 1.0f));
+    const SpecularGlossinessMaterial material = materials[sbt.MaterialIndex];
+    const vec3 N = normalize(vertex.Normal);
 
     payload.Position = vertex.Position;
     payload.Normal = N;
-    payload.MaterialId = packMaterialId(sbt.MaterialIndex, MaterialTypeTextured);
+    payload.MaterialId = packMaterialId(sbt.MaterialIndex, MaterialTypeSpecularGlossiness);
     payload.TexCoords = vertex.TexCoords;
     payload.HitDistance = gl_RayTmaxEXT;
     payload.Lod = lod;

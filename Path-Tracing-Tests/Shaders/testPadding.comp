@@ -10,8 +10,8 @@ layout(constant_id = 0) const uint s_Mode = 0;
 layout (local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 
 BUFFER_POINTER(VoidBuffer, bool);
-BUFFER_POINTER(SolidColorMaterialBuffer, SolidColorMaterial);
-BUFFER_POINTER(TexturedMaterialBuffer, TexturedMaterial);
+BUFFER_POINTER(SpecularGlossinessMaterialBuffer, SpecularGlossinessMaterial);
+BUFFER_POINTER(MetalicRoughnessMaterialBuffer, MetalicRoughnessMaterial);
 BUFFER_POINTER(DirectionalLightBuffer, DirectionalLight);
 BUFFER_POINTER(PointLightBuffer, PointLight);
 
@@ -20,18 +20,18 @@ layout(push_constant, std430) uniform PushConstantLayout {
     VoidBuffer pc_OutputBuffer;
 };
 
-void testSolidColorMaterial(uint index)
+void testSpecularGlossinessMaterial(uint index)
 {
-    SolidColorMaterialBuffer inputBuffer = SolidColorMaterialBuffer(pc_InputBuffer);
-    SolidColorMaterialBuffer outputBuffer = SolidColorMaterialBuffer(pc_OutputBuffer);
+    SpecularGlossinessMaterialBuffer inputBuffer = SpecularGlossinessMaterialBuffer(pc_InputBuffer);
+    SpecularGlossinessMaterialBuffer outputBuffer = SpecularGlossinessMaterialBuffer(pc_OutputBuffer);
 
     outputBuffer.v[index] = inputBuffer.v[index];
 }
 
-void testTexturedMaterial(uint index)
+void testMetalicRoughnessMaterial(uint index)
 {
-    TexturedMaterialBuffer inputBuffer = TexturedMaterialBuffer(pc_InputBuffer);
-    TexturedMaterialBuffer outputBuffer = TexturedMaterialBuffer(pc_OutputBuffer);
+    MetalicRoughnessMaterialBuffer inputBuffer = MetalicRoughnessMaterialBuffer(pc_InputBuffer);
+    MetalicRoughnessMaterialBuffer outputBuffer = MetalicRoughnessMaterialBuffer(pc_OutputBuffer);
 
     outputBuffer.v[index] = inputBuffer.v[index];
 }
@@ -58,11 +58,11 @@ void main()
 
     switch (s_Mode)
     {
-    case PaddingTestModeSolidColorMaterial:
-        testSolidColorMaterial(index);
+    case PaddingTestModeSpecularGlossinessMaterial:
+        testSpecularGlossinessMaterial(index);
         break;
-    case PaddingTestModeTexturedMaterial:
-        testTexturedMaterial(index);
+    case PaddingTestModeMetalicRoughnessMaterial:
+        testMetalicRoughnessMaterial(index);
         break;
     case PaddingTestModeDirectionalLight:
         testDirectionalLight(index);

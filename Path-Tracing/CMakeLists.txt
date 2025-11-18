@@ -2,7 +2,7 @@ include(${CMAKE_SOURCE_DIR}/cmake/ConfigureVulkan.cmake)
 include(${CMAKE_SOURCE_DIR}/cmake/Utils.cmake)
 
 set(SHADER_HEADER_FILES Shaders/ShaderTypes.incl Shaders/ShaderRendererTypes.incl Shaders/Debug/DebugShaderTypes.incl Shaders/common.glsl Shaders/shading.glsl Shaders/tracing.glsl Shaders/ray.glsl Shaders/Debug/debug.glsl)
-set(SHADER_SOURCE_FILES Shaders/raygen.rgen Shaders/Debug/debugRaygen.rgen Shaders/miss.rmiss Shaders/Debug/debugMiss.rmiss Shaders/textured.rchit Shaders/solidColor.rchit Shaders/Debug/debugTextured.rchit Shaders/Debug/debugSolidColor.rchit Shaders/anyhit.rahit Shaders/occlusion.rmiss Shaders/skinning.comp)
+set(SHADER_SOURCE_FILES Shaders/raygen.rgen Shaders/Debug/debugRaygen.rgen Shaders/miss.rmiss Shaders/Debug/debugMiss.rmiss Shaders/metalicRoughness.rchit Shaders/specularGlossiness.rchit Shaders/Debug/debugMetalicRoughness.rchit Shaders/Debug/debugSpecularGlossiness.rchit Shaders/anyhit.rahit Shaders/occlusion.rmiss Shaders/skinning.comp)
 
 create_directory_link(${CMAKE_CURRENT_SOURCE_DIR}/Shaders ${CMAKE_CURRENT_BINARY_DIR}/Shaders)
 

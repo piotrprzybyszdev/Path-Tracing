@@ -20,7 +20,7 @@ layout(binding = 5, set = 0) readonly buffer GeometryBuffer {
 };
 
 layout(binding = 7, set = 0) readonly buffer MaterialBuffer {
-	SolidColorMaterial[] materials;
+	SpecularGlossinessMaterial[] materials;
 };
 
 layout(binding = 8, set = 0) uniform LightsBuffer {
@@ -64,7 +64,7 @@ void main()
 	const Vertex originalVertex = getInterpolatedVertex(vertices, indices, gl_PrimitiveID * 3, barycentricCoords);
 	const Vertex vertex = transform(originalVertex, sbt.TransformIndex);
 
-	const SolidColorMaterial material = materials[sbt.MaterialIndex];
+	const SpecularGlossinessMaterial material = materials[sbt.MaterialIndex];
 	const vec3 color = material.Color;
 	const float roughness = DefaultRoughness;
 	const float metalness = DefaultMetalness;

@@ -8,9 +8,9 @@ using namespace PathTracingTests;
 
 using PaddingTestPipelineConfig = PathTracing::PipelineConfig<1>;
 
-TEST(PaddingTest, SolidColorMaterial)
+TEST(PaddingTest, SpecularGlossinessMaterial)
 {
-    using Input = PathTracing::Shaders::SolidColorMaterial;
+    using Input = PathTracing::Shaders::SpecularGlossinessMaterial;
     using Output = Input;
 
     std::array<Input, 2> input = {
@@ -18,7 +18,7 @@ TEST(PaddingTest, SolidColorMaterial)
         Input { .Color = glm::vec3(4.0f, 5.0f, 6.0f) },
     };
 
-    PaddingTestPipelineConfig config = { Shaders::PaddingTestModeSolidColorMaterial };
+    PaddingTestPipelineConfig config = { Shaders::PaddingTestModeSpecularGlossinessMaterial };
 
     TestRenderer::WriteInput<Input>(input);
     TestRenderer::ExecutePipeline("testPadding.comp", config, input.size());
@@ -32,17 +32,21 @@ TEST(PaddingTest, SolidColorMaterial)
     }
 }
 
-TEST(PaddingTest, TexturedMaterial)
+TEST(PaddingTest, MetalicRoughnessMaterial)
 {
-    using Input = PathTracing::Shaders::TexturedMaterial;
+    using Input = PathTracing::Shaders::MetalicRoughnessMaterial;
     using Output = Input;
 
     std::array<Input, 2> input = {
-        Input { .ColorIdx = 1, .NormalIdx = 2, .RoughnessIdx = 3, .MetalicIdx = 4 },
-        Input { .ColorIdx = 5, .NormalIdx = 6, .RoughnessIdx = 7, .MetalicIdx = 8 },
+        Input { .EmissiveColor = glm::vec3(1.1f, 2.2f, 3.3f), .EmissiveIntensity = 4.4f, 
+                .Color = glm::vec3(1.0f, 2.0f, 3.0f), .Roughness = 4.0f, .Metalness = 5.0f,
+                .EmissiveIdx = 10, .ColorIdx = 1, .NormalIdx = 2, .RoughnessIdx = 3, .MetalicIdx = 4 },
+        Input { .EmissiveColor = glm::vec3(5.5f, 6.6f, 7.7f), .EmissiveIntensity = 8.8f, 
+                .Color = glm::vec3(5.0f, 6.0f, 7.0f), .Roughness = 8.0f, .Metalness = 9.0f,
+                .EmissiveIdx = 9, .ColorIdx = 5, .NormalIdx = 6, .RoughnessIdx = 7, .MetalicIdx = 8 },
     };
 
-    PaddingTestPipelineConfig config = { Shaders::PaddingTestModeTexturedMaterial };
+    PaddingTestPipelineConfig config = { Shaders::PaddingTestModeMetalicRoughnessMaterial };
 
     TestRenderer::WriteInput<Input>(input);
     TestRenderer::ExecutePipeline("testPadding.comp", config, input.size());
@@ -52,7 +56,9 @@ TEST(PaddingTest, TexturedMaterial)
     {
         auto &inputElement = input[i];
         auto &outputElement = output[i];
-        EXPECT_EQ(inputElement.ColorIdx, outputElement.ColorIdx);
+        EXPECT_EQ(inputElement.Color, outputElement.Color);
+        EXPECT_EQ(inputElement.Roughness, outputElement.Roughness);
+        EXPECT_EQ(inputElement.Metalness, outputElement.Metalness);
         EXPECT_EQ(inputElement.NormalIdx, outputElement.NormalIdx);
         EXPECT_EQ(inputElement.RoughnessIdx, outputElement.RoughnessIdx);
         EXPECT_EQ(inputElement.MetalicIdx, outputElement.MetalicIdx);

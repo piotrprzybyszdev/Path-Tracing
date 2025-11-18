@@ -18,8 +18,9 @@ const uint DefaultColorTextureIndex                 = 0;
 const uint DefaultNormalTextureIndex                = 1;
 const uint DefaultRoughnessTextureIndex             = 2;
 const uint DefaultMetalicTextureIndex               = 3;
-const uint PlaceholderTextureIndex                  = 4;
-const uint SceneTextureOffset                       = 5;
+const uint DefaultEmissiveTextureIndex              = 4;
+const uint PlaceholderTextureIndex                  = 5;
+const uint SceneTextureOffset                       = 6;
 
 const uint MaxTextureCount                          = 128u;
 const uint MaxLightCount                            = 64u;
@@ -53,18 +54,26 @@ struct AnimatedVertex
     float BoneWeights[MaxBonesPerVertex];
 };
 
-struct SolidColorMaterial
+struct MetalicRoughnessMaterial
 {
+    vec3 EmissiveColor;
+    float EmissiveIntensity;
     vec3 Color;
+    float Roughness;
+    float Metalness;
     float pad0;
-};
-
-struct TexturedMaterial
-{
+    float pad1;
+    uint EmissiveIdx;
     uint ColorIdx;
     uint NormalIdx;
     uint RoughnessIdx;
     uint MetalicIdx;
+};
+
+struct SpecularGlossinessMaterial
+{
+    vec3 Color;
+    float pad0;
 };
 
 struct DirectionalLight

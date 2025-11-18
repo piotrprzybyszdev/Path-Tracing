@@ -508,6 +508,7 @@ vk::Format TextureUploader::SelectTextureFormat(TextureType type)
     // TODO: Consider compressed texture formats
     switch (type)
     {
+    case TextureType::Emisive:
     case TextureType::Color:
     case TextureType::Skybox:
         return vk::Format::eR8G8B8A8Srgb;
@@ -522,6 +523,7 @@ bool TextureUploader::IsScalingSupported(TextureType type) const
 {
     switch (type)
     {
+    case TextureType::Emisive:
     case TextureType::Color:
     case TextureType::Skybox:
         return m_ColorTextureScalingSupported;
@@ -536,6 +538,7 @@ const Image &TextureUploader::GetTemporaryImage(TextureType type) const
 {
     switch (type)
     {
+    case TextureType::Emisive:
     case TextureType::Color:
     case TextureType::Skybox:
         return m_TemporaryColorImage;
@@ -550,6 +553,7 @@ vk::Format TextureUploader::GetTextureDataFormat(TextureType type)
 {
     switch (type)
     {
+    case TextureType::Emisive:
     case TextureType::Color:
     case TextureType::Skybox:
         return vk::Format::eR8G8B8A8Srgb;

@@ -20,6 +20,7 @@ namespace PathTracing
 
 enum class TextureType : uint8_t
 {
+    Emisive,
     Color,
     Normal,
     Roughness,
@@ -53,8 +54,8 @@ struct Geometry
 
 enum class MaterialType : uint8_t
 {
-    Textured,
-    SolidColor,
+    MetalicRoughness,
+    SpecularGlossiness,
 };
 
 struct MeshInfo
@@ -138,8 +139,8 @@ public:
         std::vector<Shaders::Vertex> &&vertices, std::vector<Shaders::AnimatedVertex> &&animatedVertices,
         std::vector<uint32_t> &&indices, std::vector<uint32_t> &&animatedIndices,
         std::vector<glm::mat3x4> &&transforms, std::vector<Geometry> &&geometries,
-        std::vector<Shaders::TexturedMaterial> &&texturedMaterials, std::vector<TextureInfo> &&textures,
-        std::vector<Shaders::SolidColorMaterial> &&solidColorMaterials, std::vector<Model> &&models,
+        std::vector<Shaders::MetalicRoughnessMaterial> &&MetalicRoughnessMaterials, std::vector<TextureInfo> &&textures,
+        std::vector<Shaders::SpecularGlossinessMaterial> &&solidColorMaterials, std::vector<Model> &&models,
         std::vector<ModelInstance> &&modelInstances, std::vector<Bone> &&bones, SceneGraph &&sceneGraph,
         std::vector<LightInfo> &&lightInfos, std::vector<Shaders::PointLight> &&pointLights,
         Shaders::DirectionalLight &&directionalLight, SkyboxVariant &&skybox,
@@ -154,8 +155,8 @@ public:
     [[nodiscard]] std::span<const uint32_t> GetAnimatedIndices() const;
     [[nodiscard]] std::span<const glm::mat3x4> GetTransforms() const;
     [[nodiscard]] std::span<const Geometry> GetGeometries() const;
-    [[nodiscard]] std::span<const Shaders::TexturedMaterial> GetTexturedMaterials() const;
-    [[nodiscard]] std::span<const Shaders::SolidColorMaterial> GetSolidColorMaterials() const;
+    [[nodiscard]] std::span<const Shaders::MetalicRoughnessMaterial> GetMetalicRoughnessMaterials() const;
+    [[nodiscard]] std::span<const Shaders::SpecularGlossinessMaterial> GetSpecularGlossinessMaterials() const;
     [[nodiscard]] std::span<const TextureInfo> GetTextures() const;
 
     [[nodiscard]] std::span<const Model> GetModels() const;
@@ -191,8 +192,8 @@ private:
 
     std::vector<Geometry> m_Geometries;
 
-    std::vector<Shaders::TexturedMaterial> m_TexturedMaterials;
-    std::vector<Shaders::SolidColorMaterial> m_SolidColorMaterials;
+    std::vector<Shaders::MetalicRoughnessMaterial> m_MetalicRoughnessMaterials;
+    std::vector<Shaders::SpecularGlossinessMaterial> m_SpecularGlossinessMaterials;
 
     std::vector<TextureInfo> m_Textures;
 
@@ -230,8 +231,8 @@ public:
     uint32_t AddModelInstance(uint32_t modelIndex, uint32_t sceneNodeIndex);
 
     uint32_t AddTexture(TextureInfo &&texture);
-    uint32_t AddMaterial(std::string name, Shaders::TexturedMaterial material);
-    uint32_t AddMaterial(std::string name, Shaders::SolidColorMaterial material);
+    uint32_t AddMaterial(std::string name, Shaders::MetalicRoughnessMaterial material);
+    uint32_t AddMaterial(std::string name, Shaders::SpecularGlossinessMaterial material);
 
     std::vector<Shaders::Vertex> &GetVertices();
     std::vector<uint32_t> &GetIndices();
@@ -266,11 +267,11 @@ private:
 
     std::vector<Geometry> m_Geometries;
 
-    std::vector<Shaders::TexturedMaterial> m_TexturedMaterials;
-    std::unordered_map<std::string, uint32_t> m_TexturedMaterialIndices;
+    std::vector<Shaders::MetalicRoughnessMaterial> m_MetalicRoughnessMaterials;
+    std::unordered_map<std::string, uint32_t> m_MetalicRoughnessMaterialIndices;
 
-    std::vector<Shaders::SolidColorMaterial> m_SolidColorMaterials;
-    std::unordered_map<std::string, uint32_t> m_SolidColorMaterialIndices;
+    std::vector<Shaders::SpecularGlossinessMaterial> m_SpecularGlossinessMaterials;
+    std::unordered_map<std::string, uint32_t> m_SpecularGlossinessMaterialIndices;
 
     std::vector<TextureInfo> m_Textures;
     std::unordered_map<std::string, uint32_t> m_TextureIndices;

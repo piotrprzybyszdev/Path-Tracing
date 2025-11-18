@@ -105,8 +105,8 @@ Vertex getInterpolatedVertex(VertexBuffer vertices, IndexBuffer indices, uint in
     );
 }
 
-const uint MaterialTypeTextured     = 0u;
-const uint MaterialTypeSolidColor   = 1u;
+const uint MaterialTypeMetalicRoughness     = 0u;
+const uint MaterialTypeSpecularGlossiness   = 1u;
 
 uint packMaterialId(uint materialIndex, uint materialType)
 {

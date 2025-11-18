@@ -2,22 +2,22 @@
 
 const float ambient = 0.05f;
 
-uint GetColorTextureIndex(uint HitGroupFlags, TexturedMaterial material)
+uint GetColorTextureIndex(uint HitGroupFlags, MetalicRoughnessMaterial material)
 {
     return (HitGroupFlags & HitGroupFlagsDisableColorTexture) == 0 ? material.ColorIdx : DefaultColorTextureIndex;
 }
 
-uint GetNormalTextureIndex(uint HitGroupFlags, TexturedMaterial material)
+uint GetNormalTextureIndex(uint HitGroupFlags, MetalicRoughnessMaterial material)
 {
     return (HitGroupFlags & HitGroupFlagsDisableNormalTexture) == 0 ? material.NormalIdx : DefaultNormalTextureIndex;
 }
 
-uint GetRoughnessTextureIndex(uint HitGroupFlags, TexturedMaterial material)
+uint GetRoughnessTextureIndex(uint HitGroupFlags, MetalicRoughnessMaterial material)
 {
     return (HitGroupFlags & HitGroupFlagsDisableRoughnessTexture) == 0 ? material.RoughnessIdx : DefaultRoughnessTextureIndex;
 }
 
-uint GetMetalicTextureIndex(uint HitGroupFlags, TexturedMaterial material)
+uint GetMetalicTextureIndex(uint HitGroupFlags, MetalicRoughnessMaterial material)
 {
     return (HitGroupFlags & HitGroupFlagsDisableMetalicTexture) == 0 ? material.MetalicIdx : DefaultMetalicTextureIndex;
 }
