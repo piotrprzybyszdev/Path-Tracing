@@ -2,6 +2,7 @@
 
 #include <vulkan/vulkan.hpp>
 
+#include <array>
 #include <memory>
 #include <mutex>
 #include <semaphore>
@@ -29,9 +30,10 @@ public:
     void UploadTextures(const std::shared_ptr<const Scene> &scene);
     void Cancel();
 
-    // Only call from main thread when the asynchronous upload is not running
+    // These use the Renderer's command buffer and staging buffer
     Image UploadFromRawContentBlocking(
-        std::span<const std::byte> data, vk::Extent2D extent, std::string &&name
+        std::span<const std::byte> data, TextureType type, TextureFormat format, vk::Extent2D extent,
+        std::string &&name
     );
     Image UploadSingleBlocking(TextureSourceVariant source, TextureType type, std::string &&name);
     Image UploadSkyboxBlocking(const Skybox2D &skybox);
@@ -48,11 +50,9 @@ private:
     CommandBuffer m_MipCommandBuffer;
 
     const bool m_UseTransferQueue;
-    const bool m_ColorTextureScalingSupported;
-    const bool m_OtherTextureScalingSupported;
 
-    Image m_TemporaryColorImage;  // for scaling down color textures
-    Image m_TemporaryOtherImage;  // for scaling down other textures
+    std::unordered_map<vk::Format, Image> m_ScalingImages;
+    std::unordered_map<vk::Format, vk::Extent2D> m_MaxTextureSize;
 
     std::jthread m_SubmitThread;
     ImageBuilder m_ImageBuilder;
@@ -71,13 +71,20 @@ private:
     std::vector<uint32_t> m_TextureIndices;
 
 private:
-    static inline constexpr vk::Extent2D MaxTextureSize = { 512u, 512u };
     static inline constexpr vk::Extent2D MaxTextureDataSize = { 4096u, 4096u };
     static inline constexpr size_t StagingBufferSize =
         4ull * MaxTextureDataSize.width * MaxTextureDataSize.height;
 
+    static inline constexpr std::array<vk::Format, 2> ScalingFormats = { vk::Format::eR8G8B8A8Unorm,
+                                                                         vk::Format::eR8G8B8A8Srgb };
+    static inline constexpr std::array<vk::Format, 7> SupportedFormats = {
+        vk::Format::eR8G8B8A8Unorm,     vk::Format::eR8G8B8A8Srgb,     vk::Format::eR32G32B32A32Sfloat,
+        vk::Format::eBc1RgbaUnormBlock, vk::Format::eBc1RgbaSrgbBlock, vk::Format::eBc3SrgbBlock,
+        vk::Format::eBc5UnormBlock
+    };
+
 private:
-    void SubmitBlocking(const Image &image, const Buffer &buffer, vk::Extent2D extent);
+    void DeterminteMaxTextureSizes(size_t textureCount);
 
     void StartLoaderThreads(const std::shared_ptr<const Scene> &scene);
     void StartSubmitThread(const std::shared_ptr<const Scene> &scene);
@@ -97,14 +104,7 @@ private:
         std::span<const Buffer> buffers
     );
 
-    bool CheckCanUpload(const TextureInfo &info);
-
-    bool IsScalingSupported(TextureType type) const;
-    const Image &GetTemporaryImage(TextureType type) const;
-
-    static vk::Format SelectTextureFormat(TextureType type);
-    static vk::Format GetTextureDataFormat(TextureType type);
-    static bool CheckBlitSupported(vk::Format format);
+    vk::Format GetImageFormat(TextureType type, TextureFormat format);
 };
 
 }

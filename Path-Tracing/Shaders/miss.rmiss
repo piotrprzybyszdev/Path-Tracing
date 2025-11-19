@@ -18,12 +18,12 @@ void main()
     if ((s_MissFlags & MissFlagsSkybox2D) != MissFlagsNone)
     {
         const vec3 dir = gl_WorldRayDirectionEXT;
-
+    
         const float longitude = atan(dir.z, dir.x);
         const float latitude  = asin(-dir.y);
-
+    
         const vec2 texCoords = vec2(longitude / 2.0f, latitude) / PI + 0.5f;
-
+    
         payload.Position = texture(skybox2D, texCoords).xyz;
     }
     else if ((s_MissFlags & MissFlagsSkyboxCube) != MissFlagsNone)

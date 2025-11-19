@@ -20,6 +20,16 @@ concept uploadable = std::is_trivially_copyable_v<T> && std::is_standard_layout_
 namespace
 {
 
+inline constexpr bool LtExtent(vk::Extent2D a, vk::Extent2D b)
+{
+    return a.width < b.width && a.height < b.height;
+}
+
+inline constexpr bool LteExtent(vk::Extent2D a, vk::Extent2D b)
+{
+    return a.width <= b.width && a.height <= b.width;
+}
+
 inline constexpr uint32_t AlignTo(uint32_t size, uint32_t alignment)
 {
     return (size + alignment - 1) & ~(alignment - 1);

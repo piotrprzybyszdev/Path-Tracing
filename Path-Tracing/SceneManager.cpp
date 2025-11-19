@@ -2,8 +2,8 @@
 
 #include "Core/Core.h"
 
-#include "AssetImporter.h"
 #include "ExampleScenes.h"
+#include "SceneImporter.h"
 #include "SceneManager.h"
 
 namespace PathTracing
@@ -41,7 +41,7 @@ void SceneManager::SetActiveScene(const std::filesystem::path &path)
         try
         {
             SceneBuilder sceneBuilder;
-            AssetImporter::AddFile(sceneBuilder, path);
+            SceneImporter::AddFile(sceneBuilder, path);
             s_ActiveScene = sceneBuilder.CreateSceneShared();
         }
         catch (const error &error)

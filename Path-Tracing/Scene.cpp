@@ -1,6 +1,5 @@
 #include <glm/ext/matrix_relational.hpp>
 
-#include <limits>
 #include <ranges>
 
 #include "Core/Core.h"
@@ -19,7 +18,7 @@ Scene::Scene(
     std::vector<ModelInstance> &&modelInstances, std::vector<Bone> &&bones, SceneGraph &&sceneGraph,
     std::vector<LightInfo> &&lightInfos, std::vector<Shaders::PointLight> &&pointLights,
     Shaders::DirectionalLight &&directionalLight, SkyboxVariant &&skybox,
-    const std::vector<CameraInfo> &cameraInfos
+    const std::vector<CameraInfo> &cameraInfos, bool hasAnimatedInstances
 )
     : m_Vertices(std::move(vertices)), m_AnimatedVertices(std::move(animatedVertices)),
       m_Indices(std::move(indices)), m_AnimatedIndices(std::move(animatedIndices)),
@@ -29,7 +28,8 @@ Scene::Scene(
       m_ModelInstances(std::move(modelInstances)), m_Bones(std::move(bones)),
       m_BoneTransforms(m_Bones.size()), m_Graph(std::move(sceneGraph)), m_LightInfos(std::move(lightInfos)),
       m_PointLights(std::move(pointLights)), m_DirectionalLight(std::move(directionalLight)),
-      m_Skybox(std::move(skybox)), m_ActiveCameraId(g_InputCameraId)
+      m_Skybox(std::move(skybox)), m_ActiveCameraId(g_InputCameraId),
+      m_HasAnimatedInstances(hasAnimatedInstances)
 {
     auto nodes = m_Graph.GetSceneNodes();
 
@@ -46,10 +46,7 @@ Scene::Scene(
 
 bool Scene::Update(float timeStep)
 {
-    bool updated = m_HasCameraChanged;
-    m_HasCameraChanged = false;
-
-    updated |= m_Graph.Update(timeStep);
+    m_Graph.Update(timeStep);
 
     auto nodes = m_Graph.GetSceneNodes();
 
@@ -63,8 +60,12 @@ bool Scene::Update(float timeStep)
         m_PointLights[i].Position = glm::vec4(m_LightInfos[i].Position, 1.0f) *
                                     nodes[m_LightInfos[i].SceneNodeIndex].CurrentTransform;
     
-    updated |= GetActiveCamera().OnUpdate(timeStep);
+    bool updated = m_HasAnimatedInstances;
+    
+    updated |= m_HasCameraChanged;
+    m_HasCameraChanged = false;
 
+    updated |= GetActiveCamera().OnUpdate(timeStep);
     return updated;
 }
 
@@ -120,34 +121,40 @@ uint32_t SceneBuilder::AddTexture(TextureInfo &&texture)
     return textureIndex;
 }
 
-uint32_t SceneBuilder::AddMaterial(std::string name, Shaders::MetalicRoughnessMaterial material)
+Shaders::MaterialId SceneBuilder::AddMaterial(std::string name, Shaders::MetalicRoughnessMaterial material)
 {
-    if (m_MetalicRoughnessMaterialIndices.contains(name))
-        return m_MetalicRoughnessMaterialIndices[name];
+    if (m_MetalicRoughnessMaterialIds.contains(name))
+        return m_MetalicRoughnessMaterialIds[name];
 
     assert(m_MetalicRoughnessMaterials.size() < Shaders::MaxMaterialCount);
     m_MetalicRoughnessMaterials.push_back(material);
 
-    m_MetalicRoughnessMaterialIndices[std::move(name)] = m_MetalicRoughnessMaterials.size() - 1;
-
+    Shaders::MaterialId materialId = Shaders::CreateMaterialId(
+        m_MetalicRoughnessMaterials.size() - 1, Shaders::MaterialTypeMetalicRoughness
+    );
+    
+    m_MetalicRoughnessMaterialIds[std::move(name)] = materialId;
     logger::trace("Added textured material {} to Scene", name);
 
-    return m_MetalicRoughnessMaterials.size() - 1;
+    return materialId;
 }
 
-uint32_t SceneBuilder::AddMaterial(std::string name, Shaders::SpecularGlossinessMaterial material)
+Shaders::MaterialId SceneBuilder::AddMaterial(std::string name, Shaders::SpecularGlossinessMaterial material)
 {
-    if (m_SpecularGlossinessMaterialIndices.contains(name))
-        return m_SpecularGlossinessMaterialIndices[name];
+    if (m_SpecularGlossinessMaterialIds.contains(name))
+        return m_SpecularGlossinessMaterialIds[name];
 
     assert(m_SpecularGlossinessMaterials.size() < Shaders::MaxMaterialCount);
     m_SpecularGlossinessMaterials.push_back(material);
 
-    m_SpecularGlossinessMaterialIndices[std::move(name)] = m_SpecularGlossinessMaterials.size() - 1;
-
+    Shaders::MaterialId materialId = Shaders::CreateMaterialId(
+        m_SpecularGlossinessMaterials.size() - 1, Shaders::MaterialTypeSpecularGlossiness
+    );
+    
+    m_SpecularGlossinessMaterialIds[std::move(name)] = materialId;
     logger::trace("Added solid color material {} to Scene", name);
 
-    return m_SpecularGlossinessMaterials.size() - 1;
+    return materialId;
 }
 
 std::vector<Shaders::Vertex> &SceneBuilder::GetVertices()
@@ -213,10 +220,26 @@ void SceneBuilder::AddCamera(CameraInfo &&camera)
 
 std::shared_ptr<Scene> SceneBuilder::CreateSceneShared()
 {
+    std::vector<bool> isAnimated(m_SceneNodes.size(), false);
+    for (const Animation &animation: m_Animations)
+        for (const AnimationNode &node : animation.Nodes)
+            isAnimated[node.SceneNodeIndex] = true;
+
+    for (int i = 0; i < m_SceneNodes.size(); i++)
+        if (isAnimated[m_SceneNodes[i].Parent])
+            isAnimated[i] = true;
+
+    bool hasAnimatedInstances = !m_Bones.empty();
+    for (auto [sceneNodeIndex, _] : m_LightInfos)
+        hasAnimatedInstances |= isAnimated[sceneNodeIndex];
+
     std::vector<ModelInstance> modelInstances;
     modelInstances.reserve(m_ModelInstanceInfos.size());
-    for (const auto &info : m_ModelInstanceInfos)
-        modelInstances.emplace_back(info.first, info.second, m_SceneNodes[info.second].Transform);
+    for (auto [modelIndex, sceneNodeIndex] : m_ModelInstanceInfos)
+    {
+        modelInstances.emplace_back(modelIndex, sceneNodeIndex, m_SceneNodes[sceneNodeIndex].Transform);
+        hasAnimatedInstances |= isAnimated[sceneNodeIndex];
+    }
 
     auto scene = std::make_shared<Scene>(
         std::move(m_Vertices), std::move(m_AnimatedVertices), std::move(m_Indices),
@@ -225,7 +248,7 @@ std::shared_ptr<Scene> SceneBuilder::CreateSceneShared()
         std::move(m_Models), std::move(modelInstances), std::move(m_Bones),
         SceneGraph(std::move(m_SceneNodes), std::move(m_IsRelativeTransform), std::move(m_Animations)),
         std::move(m_LightInfos), std::move(m_PointLights), std::move(m_DirectionalLight), std::move(m_Skybox),
-        std::move(m_CameraInfos)
+        std::move(m_CameraInfos), hasAnimatedInstances
     );
 
     m_MeshOffset = 0;
@@ -236,9 +259,9 @@ std::shared_ptr<Scene> SceneBuilder::CreateSceneShared()
     m_Transforms = { glm::mat3x4(1.0f) };
     m_Geometries.clear();
     m_MetalicRoughnessMaterials.clear();
-    m_MetalicRoughnessMaterialIndices.clear();
+    m_MetalicRoughnessMaterialIds.clear();
     m_SpecularGlossinessMaterials.clear();
-    m_SpecularGlossinessMaterialIndices.clear();
+    m_SpecularGlossinessMaterialIds.clear();
     m_Textures.clear();
     m_TextureIndices.clear();
     m_Models.clear();
@@ -409,6 +432,8 @@ uint32_t Scene::GetDefaultTextureIndex(TextureType type)
         return Shaders::DefaultMetalicTextureIndex;
     case TextureType::Emisive:
         return Shaders::DefaultEmissiveTextureIndex;
+    case TextureType::Specular:
+        return Shaders::DefaultColorTextureIndex;
     default:
         throw error(std::format("Unsupported Texture type {}", static_cast<uint8_t>(type)));
     }

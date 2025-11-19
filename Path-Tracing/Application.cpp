@@ -7,7 +7,6 @@
 #include <ranges>
 #include <string_view>
 
-#include "Core/Camera.h"
 #include "Core/Config.h"
 #include "Core/Core.h"
 #include "Core/Input.h"
@@ -17,7 +16,7 @@
 #include "Renderer/Swapchain.h"
 
 #include "Application.h"
-#include "AssetImporter.h"
+#include "SceneImporter.h"
 #include "SceneManager.h"
 #include "UserInterface.h"
 #include "Window.h"
@@ -203,7 +202,7 @@ void Application::Init(int argc, const char *argv[])
     );
     s_State = State::HasUserInterface;
 
-    AssetImporter::Init();
+    SceneImporter::Init();
     SceneManager::Init();
 
     Renderer::Init(s_Swapchain.get());
@@ -221,7 +220,7 @@ void Application::Shutdown()
         [[fallthrough]];
     case State::HasUserInterface:
         SceneManager::Shutdown();
-        AssetImporter::Shutdown();
+        SceneImporter::Shutdown();
         UserInterface::Shutdown();
         [[fallthrough]];
     case State::HasSwapchain:

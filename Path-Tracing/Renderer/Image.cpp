@@ -16,6 +16,53 @@ static uint32_t ComputeMipLevels(vk::Extent2D extent)
     return std::floor(std::log2(std::max(extent.width, extent.height))) + 1;
 }
 
+size_t Image::GetTextureMemoryRequirement(vk::Extent2D extent, vk::Format format)
+{
+    const vk::ImageUsageFlags usageFlags = vk::ImageUsageFlagBits::eTransferSrc |
+                                           vk::ImageUsageFlagBits::eTransferDst |
+                                           vk::ImageUsageFlagBits::eSampled;
+
+    VkImageCreateInfo createInfo = vk::ImageCreateInfo(
+        vk::ImageCreateFlags(), vk::ImageType::e2D, format, vk::Extent3D(extent, 1), ComputeMipLevels(extent),
+        1, vk::SampleCountFlagBits::e1, vk::ImageTiling::eOptimal, usageFlags
+    );
+
+    VmaAllocationCreateInfo allocinfo = {
+        .usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
+    };
+
+    vk::Image image = DeviceContext::GetLogical().createImage(createInfo);
+    const size_t size = DeviceContext::GetLogical().getImageMemoryRequirements(image).size;
+    DeviceContext::GetLogical().destroyImage(image);
+
+    return size;
+}
+
+size_t Image::GetImageMemoryBudget()
+{
+    const vk::ImageUsageFlags usageFlags = vk::ImageUsageFlagBits::eTransferSrc |
+                                           vk::ImageUsageFlagBits::eTransferDst |
+                                           vk::ImageUsageFlagBits::eSampled;
+
+    vk::Extent2D extent(1024u, 1024u);
+    VkImageCreateInfo createInfo = vk::ImageCreateInfo(
+        vk::ImageCreateFlags(), vk::ImageType::e2D, vk::Format::eR8G8B8A8Unorm, vk::Extent3D(extent, 1),
+        ComputeMipLevels(extent), 1, vk::SampleCountFlagBits::e1, vk::ImageTiling::eOptimal, usageFlags
+    );
+
+    VmaAllocationCreateInfo allocInfo = {
+        .usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
+    };
+
+    uint32_t memoryTypeIndex;
+    VkResult result = vmaFindMemoryTypeIndexForImageInfo(DeviceContext::GetAllocator(), &createInfo, &allocInfo, &memoryTypeIndex);
+    assert(result == VK_SUCCESS);
+
+    const auto properties = DeviceContext::GetPhysical().getMemoryProperties();
+    const uint32_t heapIndex = properties.memoryTypes[memoryTypeIndex].heapIndex;
+    return properties.memoryHeaps[heapIndex].size;
+}
+
 Image::Image(
     vk::Format format, vk::Extent2D extent, vk::ImageUsageFlags usageFlags, uint32_t layers,
     uint32_t mipLevels, bool isCube, const std::string &name
@@ -32,13 +79,13 @@ Image::Image(
         vk::SampleCountFlagBits::e1, vk::ImageTiling::eOptimal, usageFlags
     );
 
-    VmaAllocationCreateInfo allocinfo = {
+    VmaAllocationCreateInfo allocInfo = {
         .usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
     };
 
     VkImage image = nullptr;
     VkResult result = vmaCreateImage(
-        DeviceContext::GetAllocator(), &createInfo, &allocinfo, &image, &m_Allocation, nullptr
+        DeviceContext::GetAllocator(), &createInfo, &allocInfo, &image, &m_Allocation, nullptr
     );
     assert(result == VkResult::VK_SUCCESS);
     m_Handle = image;
@@ -119,115 +166,92 @@ vk::Format Image::GetFormat() const
     return m_Format;
 }
 
+uint32_t Image::GetMipLevels() const
+{
+    return m_MipLevels;
+}
+
 uint32_t Image::GetMip(vk::Extent2D extent) const
 {
-    return m_MipLevels - ComputeMipLevels(extent);
+    return m_MipLevels - std::ceil(std::log2(std::max(extent.width, extent.height))) - 1;
+}
+
+vk::Extent2D Image::GetMipExtent(vk::Extent2D extent, uint32_t mip)
+{
+    return vk::Extent2D(extent.width / std::pow(2, mip), extent.height / std::pow(2, mip));
+}
+
+vk::DeviceSize Image::GetSize(vk::Extent2D extent, vk::Format format)
+{
+    size_t texels = static_cast<size_t>(extent.width) * extent.height;
+    size_t texelsPerBlock =
+        vk::blockExtent(format)[0] * vk::blockExtent(format)[1] * vk::blockExtent(format)[2];
+    return std::ceil(static_cast<float>(texels) / texelsPerBlock) * vk::blockSize(format);
+}
+
+vk::Extent2D Image::GetMipExtent(uint32_t mip) const
+{
+    assert(mip < m_MipLevels);
+    return GetMipExtent(m_Extent, mip);
+}
+
+size_t Image::GetMipSize(uint32_t mip) const
+{
+    return GetSize(GetMipExtent(mip), m_Format);
+}
+
+void Image::CopyMipTo(vk::CommandBuffer commandBuffer, const Image &image, uint32_t mip) const
+{
+    assert(m_Layers == 1);
+    vk::Offset3D offset(0, 0, 0);
+
+    assert(GetMipExtent(mip) >= image.GetExtent());
+
+    vk::ImageCopy region(
+        GetMipLayer(mip), offset, image.GetMipLayer(0), offset, vk::Extent3D(image.GetExtent(), 1)
+    );
+
+    Transition(
+        commandBuffer, image.GetHandle(), vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
+        0, 1
+    );
+
+    commandBuffer.copyImage(
+        m_Handle, vk::ImageLayout::eTransferSrcOptimal, image.GetHandle(),
+        vk::ImageLayout::eTransferDstOptimal, region
+    );
 }
 
 void Image::UploadFromBuffer(
-    vk::CommandBuffer commandBuffer, const Buffer &buffer, vk::Extent2D extent, uint32_t mip, uint32_t layer,
-    uint32_t layerCount
+    vk::CommandBuffer commandBuffer, const Buffer &buffer, vk::DeviceSize offset, vk::Extent2D extent,
+    uint32_t baseMip, uint32_t mips
 ) const
 {
-    TransitionMip(
-        commandBuffer, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, mip, layer,
-        layerCount
+    Transition(
+        commandBuffer, m_Handle, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, baseMip,
+        mips
     );
 
-    commandBuffer.copyBufferToImage(
-        buffer.GetHandle(), m_Handle, vk::ImageLayout::eTransferDstOptimal,
-        { vk::BufferImageCopy(
-            0, 0, 0, GetMipLayer(mip, layer, layerCount), vk::Offset3D(0, 0, 0), vk::Extent3D(extent, 1)
-        ) }
-    );
-}
-
-/* unused mips ... | baseMip | ... | destMip | unused mips ... */
-void Image::Scale(
-    vk::CommandBuffer mipBuffer, vk::CommandBuffer transferBuffer, const Buffer &buffer, vk::Extent2D extent,
-    uint32_t destMip
-) const
-{
-    const uint32_t baseMip = GetMip(extent);
-
-    UploadFromBuffer(transferBuffer, buffer, extent, baseMip);
-
-    TransitionWithQueueChange(
-        transferBuffer, mipBuffer, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferDstOptimal,
-        vk::PipelineStageFlagBits2::eTransfer, vk::PipelineStageFlagBits2::eAllCommands,
-        vk::AccessFlagBits2::eTransferWrite, vk::AccessFlagBits2::eNone,
-        DeviceContext::GetTransferQueue().FamilyIndex, DeviceContext::GetMipQueue().FamilyIndex
-    );
-
-    GenerateMips(mipBuffer, vk::ImageLayout::eTransferSrcOptimal, baseMip, destMip);
-}
-
-void Image::UploadStaging(
-    vk::CommandBuffer mipBuffer, vk::CommandBuffer transferBuffer, const Buffer &buffer,
-    const Image &temporary, vk::Extent2D extent, vk::ImageLayout layout
-) const
-{
-    UploadStaging(mipBuffer, transferBuffer, buffer, temporary, extent, layout, 0, m_Layers);
-}
-
-void Image::UploadStaging(
-    vk::CommandBuffer mipBuffer, vk::CommandBuffer transferBuffer, const Buffer &buffer,
-    const Image &temporary, vk::Extent2D extent, vk::ImageLayout layout, uint32_t layer, uint32_t layerCount
-) const
-{
-    assert(buffer.GetSize() >= GetByteSize(m_Extent, m_Format, layerCount));
-    auto blitFromTemporary = [this, mipBuffer, &temporary](
-                                 vk::Extent2D extent, uint32_t mip, uint32_t layer, uint32_t layerCount
-                             ) {
-        TransitionMip(
-            mipBuffer, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, 0, layer, layerCount
-        );
-
-        vk::ImageBlit2 imageBlit(
-            temporary.GetMipLayer(mip, layer, layerCount), temporary.GetMipLevelArea(extent),
-            GetMipLayer(0, layer, layerCount), GetMipLevelArea()
-        );
-
-        vk::BlitImageInfo2 blitInfo(
-            temporary.GetHandle(), vk::ImageLayout::eTransferSrcOptimal, m_Handle,
-            vk::ImageLayout::eTransferDstOptimal, imageBlit, vk::Filter::eLinear
-        );
-
-        mipBuffer.blitImage2(blitInfo);
-    };
-
-    if (extent != m_Extent)
+    vk::Extent2D mipExtent = extent;
+    for (uint32_t mip = baseMip; mip < baseMip + mips; mip++)
     {
-        assert(layerCount == 1);
-        assert(temporary.GetHandle() != nullptr);
-        assert(temporary.GetExtent() >= extent);
-
-        const uint32_t destMip = temporary.GetMip(m_Extent) - 1;
-        const vk::Extent2D destExtent(m_Extent.width * 2, m_Extent.height * 2);
-        temporary.Scale(mipBuffer, transferBuffer, buffer, extent, destMip);
-
-        blitFromTemporary(destExtent, destMip, layer, layerCount);
-    }
-    else if (temporary.GetHandle() != nullptr && temporary.m_Format != m_Format)
-    {
-        assert(temporary.m_Layers >= layer + layerCount);
-
-        temporary.UploadFromBuffer(transferBuffer, buffer, extent, 0, layer, layerCount);
-
-        TransitionWithQueueChange(
-            transferBuffer, mipBuffer, vk::ImageLayout::eTransferDstOptimal,
-            vk::ImageLayout::eTransferSrcOptimal, vk::PipelineStageFlagBits2::eTransfer,
-            vk::PipelineStageFlagBits2::eAllCommands, vk::AccessFlagBits2::eTransferWrite,
-            vk::AccessFlagBits2::eNone, DeviceContext::GetTransferQueue().FamilyIndex,
-            DeviceContext::GetMipQueue().FamilyIndex
+        commandBuffer.copyBufferToImage(
+            buffer.GetHandle(), m_Handle, vk::ImageLayout::eTransferDstOptimal,
+            { vk::BufferImageCopy(
+                offset, 0, 0, GetMipLayer(mip), vk::Offset3D(0, 0, 0),
+                vk::Extent3D(mipExtent, 1)
+            ) }
         );
 
-        blitFromTemporary(m_Extent, 0, layer, layerCount);
+        offset += Image::GetSize(mipExtent, m_Format);
+        mipExtent.width /= 2;
+        mipExtent.height /= 2;
     }
-    else
-        UploadFromBuffer(transferBuffer, buffer, extent, 0, layer, layerCount);
 
-    GenerateFullMips(mipBuffer, layout, layer, layerCount);
+    Transition(
+        commandBuffer, m_Handle, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferDstOptimal,
+        baseMip, mips
+    );
 }
 
 void Image::GenerateFullMips(
@@ -361,8 +385,8 @@ void Image::TransitionMip(
 
 void Image::TransitionWithQueueChange(
     vk::CommandBuffer bufferFrom, vk::CommandBuffer bufferTo, vk::ImageLayout layoutFrom,
-    vk::ImageLayout layoutTo, vk::PipelineStageFlagBits2 stageFrom, vk::PipelineStageFlagBits2 stageTo,
-    vk::AccessFlagBits2 accessFrom, vk::AccessFlagBits2 accessTo, uint32_t queueFamilyIndexFrom,
+    vk::ImageLayout layoutTo, vk::PipelineStageFlags2 stageFrom, vk::PipelineStageFlags2 stageTo,
+    vk::AccessFlags2 accessFrom, vk::AccessFlags2 accessTo, uint32_t queueFamilyIndexFrom,
     uint32_t queueFamilyIndexTo
 ) const
 {
@@ -430,11 +454,6 @@ std::array<vk::Offset3D, 2> Image::GetMipLevelArea(uint32_t level) const
 vk::ImageSubresourceLayers Image::GetMipLayer(uint32_t level, uint32_t layer, uint32_t layerCount) const
 {
     return { vk::ImageAspectFlagBits::eColor, level, layer, layerCount };
-}
-
-vk::DeviceSize Image::GetByteSize(vk::Extent2D extent, vk::Format format, uint32_t layers)
-{
-    return static_cast<vk::DeviceSize>(layers) * extent.width * extent.height * vk::blockSize(format);
 }
 
 bool Image::IsDevice() const

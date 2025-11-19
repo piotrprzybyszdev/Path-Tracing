@@ -14,11 +14,11 @@ layout(binding = 2, set = 0) uniform MainBlock {
 layout(binding = 3, set = 0) uniform sampler2D textures[];
 
 layout(binding = 6, set = 0) readonly buffer MetalicRoughnessMaterialBuffer {
-    MetalicRoughnessMaterial[] MetalicRoughnessMaterials;
+    MetalicRoughnessMaterial[] metalicRoughnessMaterials;
 };
 
 layout(binding = 7, set = 0) readonly buffer SpecularGlossinessMaterialBuffer {
-    SpecularGlossinessMaterial[] solidColorMaterials;
+    SpecularGlossinessMaterial[] specularGlossinessMaterials;
 };
 
 layout(binding = 8, set = 0) uniform LightsBuffer {
@@ -31,30 +31,9 @@ layout(location = 0) rayPayloadEXT Payload payload;
 layout(location = 1) rayPayloadEXT bool isOccluded;
 
 #include "ray.glsl"
+#include "sampling.glsl"
 #include "shading.glsl"
 #include "tracing.glsl"
-
-void sampleMaterial(uint materialId, vec2 texCoords, float lod, out vec3 color, out vec3 emissiveColor, out float roughness, out float metalness)
-{
-    uint materialType;
-    uint materialIndex = unpackMaterialId(materialId, materialType);
-
-    if (materialType == MaterialTypeMetalicRoughness)
-    {
-        const MetalicRoughnessMaterial material = MetalicRoughnessMaterials[materialIndex];
-        emissiveColor = (textureLod(textures[material.EmissiveIdx], texCoords, lod).xyz + material.EmissiveColor) * material.EmissiveIntensity;
-        color = textureLod(textures[material.ColorIdx], texCoords, lod).xyz * material.Color;
-        roughness = textureLod(textures[material.RoughnessIdx], texCoords, lod).y * material.Roughness;
-        metalness = textureLod(textures[material.MetalicIdx], texCoords, lod).z * material.Metalness;
-    }
-    else
-    {
-        const SpecularGlossinessMaterial material = solidColorMaterials[materialIndex];
-        color = material.Color;
-        roughness = DefaultRoughness;
-        metalness = DefaultMetalness;
-    }
-}
 
 bool sampleLight(out vec3 lightDirection, out vec3 lightColor, out float lightDistance, out float attenuation, vec3 position, inout uint rngState)
 {
@@ -104,9 +83,7 @@ void main()
             
             payload.Position = offsetRayOrigin(payload.Position, payload.Normal);
 
-            vec3 color, emissiveColor;
-            float roughness, metalness;
-            sampleMaterial(payload.MaterialId, payload.TexCoords, payload.Lod, color, emissiveColor, roughness, metalness);
+            MaterialSample material = SampleMaterial(payload.MaterialId, payload.TexCoords, payload.Lod, 0);
 
             const vec3 viewDir = ray.Direction;
             const vec3 V = -normalize(viewDir);
@@ -117,30 +94,26 @@ void main()
 
             sampleLight(lightDirection, lightColor, lightDistance, attenuation, payload.Position, rng);
 
-            totalLight += throughput * emissiveColor;
+            totalLight += throughput * material.EmissiveColor;
 
             // TODO: Scale down according to the probability
             if (!checkOccluded(lightDirection, payload.Position, lightDistance))
-                totalLight += throughput * computeLightContribution(lightDirection, lightColor, attenuation, payload.Position, V, N, color, roughness, metalness);
+                totalLight += throughput * computeLightContribution(lightDirection, lightColor, attenuation, payload.Position, V, N, material.Color, material.Roughness, material.Metalness);
 
-            throughput *= color;
+            throughput *= material.Color;
 
             // TODO: Russian rulette termination
 
             ray.Origin = payload.Position;
-            ray.Direction = reflect(ray.Direction, N);
 
             // TODO: Sample proper BRDF
             vec3 offset = getRandomUnitSphere(rng);
-            if (offset == vec3(0.0f))
-                offset = N;
-
-            if (dot(N, offset) < 0)
+            if (dot(offset, N) < 0)
                 offset *= -1;
-            ray.Direction = normalize(ray.Direction + offset * roughness);
+            ray.Direction = offset;
         }
     }
-        
+    
     vec3 prevColor = imageLoad(u_Image, ivec2(gl_LaunchIDEXT.xy)).rgb;
     totalLight = (totalLight * mainUniform.Exposure + prevColor * mainUniform.TotalSamples) / (mainUniform.TotalSamples + mainUniform.SampleCount);
 

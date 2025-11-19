@@ -14,8 +14,8 @@ TEST(PaddingTest, SpecularGlossinessMaterial)
     using Output = Input;
 
     std::array<Input, 2> input = {
-        Input { .Color = glm::vec3(1.0f, 2.0f, 3.0f) },
-        Input { .Color = glm::vec3(4.0f, 5.0f, 6.0f) },
+        Input { .EmissiveIdx = 0, .DiffuseIdx = 1, .NormalIdx = 2, .GlossSpecularIdx = 3 },
+        Input { .EmissiveIdx = 4, .DiffuseIdx = 5, .NormalIdx = 6, .GlossSpecularIdx = 7 },
     };
 
     PaddingTestPipelineConfig config = { Shaders::PaddingTestModeSpecularGlossinessMaterial };
@@ -28,7 +28,10 @@ TEST(PaddingTest, SpecularGlossinessMaterial)
     {
         auto &inputElement = input[i];
         auto &outputElement = output[i];
-        EXPECT_EQ(inputElement.Color, outputElement.Color);
+        EXPECT_EQ(inputElement.EmissiveIdx, outputElement.EmissiveIdx);
+        EXPECT_EQ(inputElement.DiffuseIdx, outputElement.DiffuseIdx);
+        EXPECT_EQ(inputElement.NormalIdx, outputElement.NormalIdx);
+        EXPECT_EQ(inputElement.GlossSpecularIdx, outputElement.GlossSpecularIdx);
     }
 }
 

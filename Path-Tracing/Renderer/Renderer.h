@@ -74,8 +74,7 @@ private:
 
         ShaderId DebugRaygen = ShaderLibrary::g_UnusedShaderId;
         ShaderId DebugMiss = ShaderLibrary::g_UnusedShaderId;
-        ShaderId DebugMetalicRoughnessClosestHit = ShaderLibrary::g_UnusedShaderId;
-        ShaderId DebugSpecularGlossinessClosestHit = ShaderLibrary::g_UnusedShaderId;
+        ShaderId DebugClosestHit = ShaderLibrary::g_UnusedShaderId;
     } s_Shaders;
 
     static struct ShaderConfig
@@ -144,9 +143,6 @@ private:
         uint32_t AnimatedGeometriesOffset = 0;
         std::vector<Shaders::Geometry> Geometries;
 
-        std::vector<Image> Textures;
-        std::vector<uint32_t> TextureMap;
-
         std::unique_ptr<ShaderBindingTable> SceneShaderBindingTable = nullptr;
     };
 
@@ -172,8 +168,10 @@ private:
     static Buffer CreateDeviceBufferUnflushed(BufferContent content, std::string &&name);
     static Buffer CreateDeviceBuffer(BufferContent content, std::string &&name);
 
-    static uint32_t AddTexture(uint32_t data, vk::Extent2D extent, std::string &&name);
-    static uint32_t AddTexture(std::span<const uint8_t> data, std::string &&name);
+    static uint32_t AddTexture(
+        uint32_t data, TextureType type, TextureFormat format, vk::Extent2D extent, std::string &&name
+    );
+    static uint32_t AddTexture(std::span<const uint8_t> data, TextureType type, std::string &&name);
 
     static void UpdatePipelineSpecializations();
     static void CreatePipelines();

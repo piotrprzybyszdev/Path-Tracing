@@ -14,6 +14,13 @@ namespace PathTracing
 class Image
 {
 public:
+    static vk::Extent2D GetMipExtent(vk::Extent2D extent, uint32_t mip);
+    static vk::DeviceSize GetSize(vk::Extent2D extent, vk::Format format);
+
+    static size_t GetTextureMemoryRequirement(vk::Extent2D extent, vk::Format format);
+    static size_t GetImageMemoryBudget();
+
+public:
     Image() = default;
     Image(
         vk::Format format, vk::Extent2D extent, vk::ImageUsageFlags usageFlags, uint32_t layers,
@@ -37,21 +44,28 @@ public:
     [[nodiscard]] vk::Image GetHandle() const;
     [[nodiscard]] vk::ImageView GetView() const;
     [[nodiscard]] vk::Format GetFormat() const;
+    [[nodiscard]] uint32_t GetMipLevels() const;
 
-    /* Commands from the transfer buffer should be executed before mip buffer */
-    /* If they are the same buffer they can be submitted at once because of barriers*/
-    void UploadStaging(
-        vk::CommandBuffer mipBuffer, vk::CommandBuffer transferBuffer, const Buffer &buffer,
-        const Image &temporary, vk::Extent2D extent, vk::ImageLayout layout
-    ) const;
-    void UploadStaging(
-        vk::CommandBuffer mipBuffer, vk::CommandBuffer transferBuffer, const Buffer &buffer,
-        const Image &temporary, vk::Extent2D extent, vk::ImageLayout layout, uint32_t layer,
-        uint32_t layerCount
+    [[nodiscard]] vk::Extent2D GetMipExtent(uint32_t mip) const;
+    [[nodiscard]] uint32_t GetMip(vk::Extent2D extent) const;
+    [[nodiscard]] size_t GetMipSize(uint32_t mip) const;
+
+    void CopyMipTo(vk::CommandBuffer commandBuffer, const Image &image, uint32_t mip) const;
+
+    void UploadFromBuffer(
+        vk::CommandBuffer commandBuffer, const Buffer &buffer, vk::DeviceSize offset, vk::Extent2D extent,
+        uint32_t baseMip, uint32_t mips
     ) const;
 
     void SetDebugName(const std::string &name) const;
 
+    void GenerateFullMips(
+        vk::CommandBuffer commandBuffer, vk::ImageLayout layout, uint32_t layer = 0, uint32_t layerCount = 1
+    ) const;
+    void GenerateMips(
+        vk::CommandBuffer commandBuffer, vk::ImageLayout layout, uint32_t fromMip, uint32_t toMip,
+        uint32_t layer = 0, uint32_t layerCount = 1
+    ) const;
     void Transition(
         vk::CommandBuffer buffer, vk::ImageLayout layoutFrom, vk::ImageLayout layoutTo, uint32_t layer = 0,
         uint32_t layerCount = 1
@@ -62,16 +76,12 @@ public:
     ) const;
     void TransitionWithQueueChange(
         vk::CommandBuffer bufferFrom, vk::CommandBuffer bufferTo, vk::ImageLayout layoutFrom,
-        vk::ImageLayout layoutTo, vk::PipelineStageFlagBits2 stageFrom, vk::PipelineStageFlagBits2 stageTo,
-        vk::AccessFlagBits2 accessFrom, vk::AccessFlagBits2 accessTo, uint32_t queueFamilyIndexFrom,
+        vk::ImageLayout layoutTo, vk::PipelineStageFlags2 stageFrom, vk::PipelineStageFlags2 stageTo,
+        vk::AccessFlags2 accessFrom, vk::AccessFlags2 accessTo, uint32_t queueFamilyIndexFrom,
         uint32_t queueFamilyIndexTo
     ) const;
 
 public:
-    [[nodiscard]] static vk::DeviceSize GetByteSize(
-        vk::Extent2D extent, vk::Format format, uint32_t layers = 1
-    );
-
     static void Transition(
         vk::CommandBuffer buffer, vk::Image image, vk::ImageLayout layoutFrom, vk::ImageLayout layoutTo,
         vk::PipelineStageFlags2 stageFrom, vk::PipelineStageFlags2 stageTo, vk::AccessFlags2 accessFrom,
@@ -102,24 +112,6 @@ private:
     [[nodiscard]] std::array<vk::Offset3D, 2> GetMipLevelArea(uint32_t level = 0) const;
     [[nodiscard]] vk::ImageSubresourceLayers GetMipLayer(
         uint32_t level, uint32_t layer = 0, uint32_t layerCount = 1
-    ) const;
-
-    void UploadFromBuffer(
-        vk::CommandBuffer commandBuffer, const Buffer &buffer, vk::Extent2D extent, uint32_t mip,
-        uint32_t layer = 0, uint32_t layerCount = 1
-    ) const;
-
-    [[nodiscard]] uint32_t GetMip(vk::Extent2D extent) const;
-    void Scale(
-        vk::CommandBuffer mipBuffer, vk::CommandBuffer transferBuffer, const Buffer &buffer,
-        vk::Extent2D extent, uint32_t destMip
-    ) const;
-    void GenerateFullMips(
-        vk::CommandBuffer commandBuffer, vk::ImageLayout layout, uint32_t layer = 0, uint32_t layerCount = 1
-    ) const;
-    void GenerateMips(
-        vk::CommandBuffer commandBuffer, vk::ImageLayout layout, uint32_t fromMip, uint32_t toMip,
-        uint32_t layer = 0, uint32_t layerCount = 1
     ) const;
 
     static vk::AccessFlags2 GetAccessFlags(vk::ImageLayout layout);

@@ -7,6 +7,8 @@ set(SKYBOX_TEXTURE_ASSET "BASE;textures/skybox;https://drive.google.com/uc?id=1z
 set(KHRONOS_SCENES_ASSET "BASE;scenes/KhronosScenes;https://github.com/KhronosGroup/glTF-Sample-Assets/archive/refs/heads/main.zip")
 set(INTEL_SPONZA_MAIN_ASSET "INTEL_SPONZA_MAIN;scenes/IntelSponzaMain;https://cdrdv2.intel.com/v1/dl/getContent/830833")
 set(INTEL_SPONZA_CURTAINS_ASSET "INTEL_SPONZA_CURTAINS;scenes/IntelSponzaCurtains;https://cdrdv2.intel.com/v1/dl/getContent/726650")
+set(UE4_SUN_TEMPLE_ASSET "UE4_SUN_TEMPLE;scenes/UE4SunTemple;https://developer.nvidia.com/sun-temple")
+set(AMAZON_BISTRO_ASSET "AMAZON_BISTRO;scenes/AmazonBistro;https://developer.nvidia.com/bistro")
 
 get_cmake_property(ALL_CMAKE_VARIABLES VARIABLES)
 foreach (CMAKE_VARIABLE IN LISTS ALL_CMAKE_VARIABLES)

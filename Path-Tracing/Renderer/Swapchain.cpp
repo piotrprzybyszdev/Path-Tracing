@@ -114,7 +114,8 @@ void Swapchain::Recreate(vk::PresentModeKHR presentMode)
     for (auto &[name, extent] : extents)
         logger::debug("Surface {} extent: {}x{}", name, extent.width, extent.height);
 
-    if (m_Extent < surfaceCapabilities.minImageExtent || m_Extent > surfaceCapabilities.maxImageExtent)
+    if (Utils::LtExtent(m_Extent, surfaceCapabilities.minImageExtent) ||
+        Utils::LtExtent(surfaceCapabilities.maxImageExtent, m_Extent))
         m_Extent = surfaceCapabilities.currentExtent;
 
     logger::info("Swapchain resizing to: {}x{}", m_Extent.width, m_Extent.height);

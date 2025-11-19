@@ -48,6 +48,10 @@ namespace PathTracing
 #define CONFIG_MAX_SHADER_COMPILATION_BATCH_SIZE 16
 #endif
 
+#ifndef CONFIG_MAX_TEXTURE_MEMORY_BUDGET_ABSOLUTE_MIB
+#define CONFIG_MAX_TEXTURE_MEMORY_BUDGET_ABSOLUTE_MIB 1024
+#endif
+
 #endif
 
 #ifdef CONFIG_TRACE
@@ -72,6 +76,10 @@ namespace PathTracing
 
 #ifndef CONFIG_MAX_SHADER_COMPILATION_BATCH_SIZE
 #define CONFIG_MAX_SHADER_COMPILATION_BATCH_SIZE 16
+#endif
+
+#ifndef CONFIG_MAX_TEXTURE_MEMORY_BUDGET_VRAM_ABSOLUTE_MIB
+#define CONFIG_MAX_TEXTURE_MEMORY_BUDGET_VRAM_ABSOLUTE_MIB 1024
 #endif
 
 #endif
@@ -131,6 +139,8 @@ struct Config
     std::filesystem::path ShaderCacheExtension;
 
     uint64_t MaxStagingBufferSize = 64_MiB;
+    uint64_t MaxTextureMemoryBudgetAbsolute = std::numeric_limits<uint64_t>::max();
+    uint32_t MaxTextureMemoryBudgetVramPercent = 80;
 };
 
 class PrintHelpException : public std::exception

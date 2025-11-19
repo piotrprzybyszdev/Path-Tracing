@@ -1,7 +1,9 @@
+#include <vulkan/vulkan_format_traits.hpp>
+
 #include "Core/Core.h"
 
 #include "Application.h"
-#include "AssetImporter.h"
+#include "TextureImporter.h"
 
 #include "Renderer.h"
 #include "TextureUploader.h"
@@ -24,6 +26,14 @@ uint32_t GetStagingStagingBufferPerThreadCount()
     return std::min(Application::GetConfig().MaxBuffersPerLoaderThread, desiredStagingBufferCount);
 }
 
+size_t GetTextureBudget()
+{
+    const size_t totalMemory = Image::GetImageMemoryBudget();
+    const size_t desiredMemoryBudget =
+        totalMemory * Application::GetConfig().MaxTextureMemoryBudgetVramPercent / 100;
+    return std::min(desiredMemoryBudget, Application::GetConfig().MaxTextureMemoryBudgetAbsolute);
+}
+
 }
 
 TextureUploader::TextureUploader(std::vector<Image> &textures, std::mutex &descriptorSetMutex)
@@ -32,9 +42,7 @@ TextureUploader::TextureUploader(std::vector<Image> &textures, std::mutex &descr
       m_StagingBufferCount(GetStagingStagingBufferPerThreadCount() * m_LoaderThreadCount),
       m_FreeBuffersSemaphore(m_StagingBufferCount), m_DataBuffersSemaphore(0),
       m_TransferCommandBuffer(DeviceContext::GetTransferQueue()),
-      m_MipCommandBuffer(DeviceContext::GetMipQueue()), m_UseTransferQueue(DeviceContext::HasTransferQueue()),
-      m_ColorTextureScalingSupported(CheckBlitSupported(GetTextureDataFormat(TextureType::Color))),
-      m_OtherTextureScalingSupported(CheckBlitSupported(GetTextureDataFormat(TextureType::Normal)))
+      m_MipCommandBuffer(DeviceContext::GetMipQueue()), m_UseTransferQueue(DeviceContext::HasTransferQueue())
 {
     if (!DeviceContext::HasMipQueue())
         logger::warn("Secondary graphics queue wasn't found - Texture loading will be asynchronous, but it "
@@ -42,22 +50,6 @@ TextureUploader::TextureUploader(std::vector<Image> &textures, std::mutex &descr
 
     if (!m_UseTransferQueue)
         logger::warn("Dedicated transfer queue for texture upload not found - using graphics queue instead");
-
-    if (!m_ColorTextureScalingSupported)
-        logger::warn(
-            "Blit operation is not supported on {} format. Color textures with size above {}x{} are not "
-            "supported",
-            vk::to_string(GetTextureDataFormat(TextureType::Color)), MaxTextureSize.width,
-            MaxTextureSize.height
-        );
-
-    if (!m_OtherTextureScalingSupported)
-        logger::warn(
-            "Blit operation is not supported on {} format. Textures with size above {}x{} are not "
-            "supported",
-            vk::to_string(GetTextureDataFormat(TextureType::Normal)), MaxTextureSize.width,
-            MaxTextureSize.height
-        );
 
     m_LoaderThreads.resize(m_LoaderThreadCount);
     m_FreeBuffers.reserve(m_StagingBufferCount);
@@ -70,21 +62,24 @@ TextureUploader::TextureUploader(std::vector<Image> &textures, std::mutex &descr
         );
 
     m_ImageBuilder = ImageBuilder()
-                         .SetFormat(GetTextureDataFormat(TextureType::Color))
                          .SetUsageFlags(
                              vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst |
                              vk::ImageUsageFlagBits::eSampled
                          )
                          .EnableMips();
 
-    m_TemporaryColorImage =
-        m_ImageBuilder.CreateImage(MaxTextureDataSize, "Texture Uploader Color Staging Image");
+    for (vk::Format format : ScalingFormats)
+    {
+        const auto blitFlags = vk::FormatFeatureFlagBits::eBlitSrc | vk::FormatFeatureFlagBits::eBlitDst;
+        if ((DeviceContext::GetPhysical().getFormatProperties(format).optimalTilingFeatures & blitFlags) !=
+            blitFlags)
+            continue;
 
-    m_ImageBuilder.SetFormat(GetTextureDataFormat(TextureType::Normal));
-    m_TemporaryOtherImage =
-        m_ImageBuilder.CreateImage(MaxTextureDataSize, "Texture Uploader Other Staging Image");
+        m_ScalingImages[format] = m_ImageBuilder.SetFormat(format).CreateImage(
+            MaxTextureDataSize, std::format("Scaling Image {}", vk::to_string(format))
+        );
+    }
 
-    logger::info("Max Texture Size: {}x{}", MaxTextureSize.width, MaxTextureSize.height);
     logger::info("Max Texture Data Size: {}x{}", MaxTextureDataSize.width, MaxTextureDataSize.height);
 }
 
@@ -96,13 +91,15 @@ TextureUploader::~TextureUploader()
 void TextureUploader::UploadTexturesBlocking(const Scene &scene)
 {
     auto textures = scene.GetTextures();
+    if (textures.empty())
+        return;
+
+    DeterminteMaxTextureSizes(textures.size());
+
     for (uint32_t i = 0; i < textures.size(); i++)
     {
         const Buffer &buffer = m_FreeBuffers.front();
         const TextureInfo &textureInfo = textures[i];
-
-        if (!CheckCanUpload(textureInfo))
-            continue;
 
         UploadToBuffer(textureInfo, buffer);
 
@@ -122,7 +119,12 @@ void TextureUploader::UploadTextures(const std::shared_ptr<const Scene> &scene)
 {
     Cancel();
 
-    Application::AddBackgroundTask(BackgroundTaskType::TextureUpload, scene->GetTextures().size());
+    auto textures = scene->GetTextures();
+    if (textures.empty())
+        return;
+
+    DeterminteMaxTextureSizes(textures.size());
+    Application::AddBackgroundTask(BackgroundTaskType::TextureUpload, textures.size());
     StartLoaderThreads(scene);
     StartSubmitThread(scene);
 }
@@ -157,13 +159,12 @@ void TextureUploader::Cancel()
 }
 
 Image TextureUploader::UploadFromRawContentBlocking(
-    std::span<const std::byte> content, vk::Extent2D extent, std::string &&name
+    std::span<const std::byte> content, TextureType type, TextureFormat format, vk::Extent2D extent,
+    std::string &&name
 )
 {
-    vk::Format format = vk::Format::eR8G8B8A8Unorm;
-
     Image image = ImageBuilder()
-                      .SetFormat(format)
+                      .SetFormat(GetImageFormat(type, format))
                       .SetUsageFlags(
                           vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst |
                           vk::ImageUsageFlagBits::eTransferSrc
@@ -171,16 +172,10 @@ Image TextureUploader::UploadFromRawContentBlocking(
                       .EnableMips()
                       .CreateImage(extent, name);
 
-    const Buffer &buffer = m_FreeBuffers.front();
-
-    buffer.Upload(content);
-
-    assert(m_TemporaryOtherImage.GetFormat() == vk::Format::eR8G8B8A8Unorm);
+    std::array<BufferContent, 1> contents = { content };
+    Renderer::s_StagingBuffer->UploadToImage(contents, image, vk::ImageLayout::eTransferDstOptimal);
     Renderer::s_MainCommandBuffer->Begin();
-    image.UploadStaging(
-        Renderer::s_MainCommandBuffer->Buffer, Renderer::s_MainCommandBuffer->Buffer, buffer,
-        m_TemporaryOtherImage, extent, vk::ImageLayout::eShaderReadOnlyOptimal
-    );
+    image.GenerateFullMips(Renderer::s_MainCommandBuffer->Buffer, vk::ImageLayout::eShaderReadOnlyOptimal);
     Renderer::s_MainCommandBuffer->SubmitBlocking();
 
     return image;
@@ -188,15 +183,17 @@ Image TextureUploader::UploadFromRawContentBlocking(
 
 Image TextureUploader::UploadSingleBlocking(TextureSourceVariant source, TextureType type, std::string &&name)
 {
-    TextureInfo info = AssetImporter::GetTextureInfo(std::move(source), type, std::move(name));
+    TextureInfo info = TextureImporter::GetTextureInfo(std::move(source), type, std::move(name));
+    assert(info.Levels == 1);
 
-    std::byte *content = AssetImporter::LoadTextureData(info);
+    TextureData data = TextureImporter::LoadTextureData(info);
     vk::Extent2D extent(info.Width, info.Height);
-    size_t contentSize = static_cast<size_t>(info.Width) * info.Height * info.Channels;
 
-    Image image = UploadFromRawContentBlocking(std::span(content, contentSize), extent, std::move(info.Name));
+    Image image = UploadFromRawContentBlocking(
+        data, type, info.Format, extent, std::move(info.Name)
+    );
 
-    AssetImporter::ReleaseTextureData(content);
+    TextureImporter::ReleaseTextureData(info, data);
 
     return image;
 }
@@ -206,9 +203,9 @@ Image TextureUploader::UploadSkyboxBlocking(const Skybox2D &skybox)
     vk::Extent2D extent(skybox.Content.Width, skybox.Content.Height);
 
     assert(std::has_single_bit(extent.width) && std::has_single_bit(extent.height));
-    assert(skybox.Content.Type == TextureType::Skybox || skybox.Content.Type == TextureType::SkyboxHDR);
+    assert(skybox.Content.Type == TextureType::Skybox);
 
-    vk::Format format = SelectTextureFormat(skybox.Content.Type);
+    vk::Format format = GetImageFormat(skybox.Content.Type, skybox.Content.Format);
 
     auto image = ImageBuilder()
                      .SetFormat(format)
@@ -219,14 +216,14 @@ Image TextureUploader::UploadSkyboxBlocking(const Skybox2D &skybox)
                      .CreateImage(extent, "Skybox 2D");
 
     const TextureInfo &textureInfo = skybox.Content;
+    assert(textureInfo.Levels == 1);
 
-    std::byte *data = AssetImporter::LoadTextureData(textureInfo);
-    const size_t dataSize = Image::GetByteSize(extent, GetTextureDataFormat(textureInfo.Type));
+    TextureData data = TextureImporter::LoadTextureData(textureInfo);
 
-    std::array<BufferContent, 1> contents = { std::span(data, dataSize) };
+    std::array<BufferContent, 1> contents = { data };
 
     Renderer::s_StagingBuffer->UploadToImage(contents, image);
-    AssetImporter::ReleaseTextureData(data);
+    TextureImporter::ReleaseTextureData(textureInfo, data);
 
     return image;
 }
@@ -237,12 +234,11 @@ Image TextureUploader::UploadSkyboxBlocking(const SkyboxCube &skybox)
                                                         &skybox.Down,  &skybox.Left, &skybox.Right };
 
     TextureType type = textureInfos[0]->Type;
-    assert(type == TextureType::Skybox || type == TextureType::SkyboxHDR);
-    vk::Format format = SelectTextureFormat(type);
-    vk::Extent2D extent(textureInfos[0]->Width, textureInfos[0]->Height);
+    assert(type == TextureType::Skybox);
+    vk::Format format = GetImageFormat(textureInfos[0]->Type, textureInfos[0]->Format);
 
+    vk::Extent2D extent(textureInfos[0]->Width, textureInfos[0]->Height);
     assert(std::has_single_bit(extent.width) && std::has_single_bit(extent.height));
-    assert(format == GetTextureDataFormat(type));
 
     auto image = ImageBuilder()
                      .SetFormat(format)
@@ -253,36 +249,24 @@ Image TextureUploader::UploadSkyboxBlocking(const SkyboxCube &skybox)
                      .EnableCube()
                      .CreateImage(extent, "Skybox Cube");
 
-    std::array<std::byte *, 6> data = {};
+    std::array<TextureData, 6> data = {};
     std::array<BufferContent, 6> contents = {};
 
     for (int i = 0; i < textureInfos.size(); i++)
     {
         assert(textureInfos[i]->Width == extent.width && textureInfos[i]->Height == extent.height);
         assert(textureInfos[i]->Type == type);
-
-        const size_t dataSize = Image::GetByteSize(extent, GetTextureDataFormat(textureInfos[i]->Type));
-
-        data[i] = AssetImporter::LoadTextureData(*textureInfos[i]);
-        contents[i] = std::span(data[i], dataSize);
+        assert(textureInfos[i]->Levels == 0);
+        data[i] = TextureImporter::LoadTextureData(*textureInfos[i]);
+        contents[i] = data[i];
     }
 
     Renderer::s_StagingBuffer->UploadToImage(contents, image);
 
     for (int i = 0; i < contents.size(); i++)
-        AssetImporter::ReleaseTextureData(data[i]);
+        TextureImporter::ReleaseTextureData(*textureInfos[i], data[i]);
 
     return image;
-}
-
-void TextureUploader::SubmitBlocking(const Image &image, const Buffer &buffer, vk::Extent2D extent)
-{
-    Renderer::s_MainCommandBuffer->Begin();
-    image.UploadStaging(
-        Renderer::s_MainCommandBuffer->Buffer, Renderer::s_MainCommandBuffer->Buffer, buffer, Image(), extent,
-        vk::ImageLayout::eShaderReadOnlyOptimal
-    );
-    Renderer::s_MainCommandBuffer->SubmitBlocking();
 }
 
 void TextureUploader::StartLoaderThreads(const std::shared_ptr<const Scene> &scene)
@@ -295,13 +279,6 @@ void TextureUploader::StartLoaderThreads(const std::shared_ptr<const Scene> &sce
             {
                 const uint32_t textureIndex = m_TextureIndex++;
                 const TextureInfo &textureInfo = textures[textureIndex];
-
-                if (!CheckCanUpload(textureInfo))
-                {
-                    m_RejectedCount++;
-                    Application::IncrementBackgroundTaskDone(BackgroundTaskType::TextureUpload);
-                    continue;
-                }
 
                 m_FreeBuffersSemaphore.acquire();
                 if (stopToken.stop_requested())
@@ -377,7 +354,10 @@ void TextureUploader::StartSubmitThread(const std::shared_ptr<const Scene> &scen
                 std::lock_guard lock(m_DescriptorSetMutex);
                 for (uint32_t textureIndex : textureIndices)
                 {
-                    Renderer::UpdateTexture(Shaders::GetSceneTextureIndex(textureIndex));
+                    const uint32_t sceneTextureIndex = Shaders::GetSceneTextureIndex(textureIndex);
+                    if (m_Textures[sceneTextureIndex].GetHandle() == nullptr)  // Upload failed
+                        continue;
+                    Renderer::UpdateTexture(sceneTextureIndex);
                     logger::debug("Uploaded Texture: {}", textures[textureIndex].Name);
                 }
             }
@@ -406,16 +386,16 @@ void TextureUploader::UploadToBuffer(
     const TextureInfo &textureInfo, const Buffer &buffer, vk::DeviceSize offset
 )
 {
-    std::byte *data = AssetImporter::LoadTextureData(textureInfo);
+    TextureData data = TextureImporter::LoadTextureData(textureInfo);
 
     const vk::Extent2D extent(textureInfo.Width, textureInfo.Height);
-    const size_t dataSize = Image::GetByteSize(extent, GetTextureDataFormat(textureInfo.Type));
 
-    assert(extent <= MaxTextureDataSize);
-    assert(dataSize <= buffer.GetSize());
+    assert(Utils::LteExtent(extent, MaxTextureDataSize));
+    assert(data.size() <= buffer.GetSize());
 
-    buffer.Upload(std::span(data, dataSize), offset);
-    AssetImporter::ReleaseTextureData(data);
+    buffer.Upload(data);
+
+    TextureImporter::ReleaseTextureData(textureInfo, data);
 }
 
 void TextureUploader::UploadTexture(
@@ -423,28 +403,90 @@ void TextureUploader::UploadTexture(
     uint32_t textureIndex, const Buffer &buffer
 )
 {
-    assert(std::has_single_bit(texture.Width) && std::has_single_bit(texture.Height));
-
-    const vk::Format format = SelectTextureFormat(texture.Type);
+    const vk::Format format = GetImageFormat(texture.Type, texture.Format);
     m_ImageBuilder.SetFormat(format);
-    m_ImageBuilder.EnableMips(CheckBlitSupported(format));
 
-    const uint32_t scale =
-        std::max(1u, std::max(texture.Width / MaxTextureSize.width, texture.Height / MaxTextureSize.height));
+    const vk::Extent2D maxExtent = m_MaxTextureSize.at(format);
+    const uint32_t scale = std::max(
+        std::ceil(static_cast<float>(texture.Width) / maxExtent.width),
+        std::ceil(static_cast<float>(texture.Height) / maxExtent.height)
+    );
     const uint32_t width = std::max(texture.Width / scale, 1u);
     const uint32_t height = std::max(texture.Height / scale, 1u);
+
+    const vk::Extent2D originalExtent(texture.Width, texture.Height);
     const vk::Extent2D extent(width, height);
 
     Image image = m_ImageBuilder.CreateImage(extent, texture.Name);
+    if (Utils::LteExtent(originalExtent, maxExtent))
+    {
+        image.UploadFromBuffer(transferBuffer, buffer, 0, originalExtent, 0, texture.Levels);
 
-    image.UploadStaging(
-        mipBuffer, transferBuffer, buffer, GetTemporaryImage(texture.Type),
-        vk::Extent2D(texture.Width, texture.Height), vk::ImageLayout::eShaderReadOnlyOptimal
-    );
+        if (texture.Levels != image.GetMipLevels())
+        {
+            if (!m_ScalingImages.contains(format))
+            {
+                logger::error(
+                    "Could not upload texture {} because it requires generating mip maps and "
+                    "it's format doesn't support the blit operation",
+                    texture.Name
+                );
+                m_RejectedCount++;
+                Application::IncrementBackgroundTaskDone(BackgroundTaskType::TextureUpload);
+                return;
+            }
+
+            image.GenerateFullMips(mipBuffer, vk::ImageLayout::eTransferDstOptimal);
+        }
+    }
+    else
+    {
+        if (texture.Levels == 1)
+        {
+            if (!m_ScalingImages.contains(format))
+            {
+                logger::error(
+                    "Could not upload texture {} it requires scaling since "
+                    "it's size ({}x{}) is greater than the max texture size ({}x{}) "
+                    "it's format ({}) doesn't support the blit operation",
+                    texture.Name, originalExtent.width, originalExtent.height, maxExtent.width,
+                    maxExtent.height, vk::to_string(format)
+                );
+                m_RejectedCount++;
+                Application::IncrementBackgroundTaskDone(BackgroundTaskType::TextureUpload);
+                return;
+            }
+
+            const Image &temporary = m_ScalingImages.at(format);
+            const uint32_t fromMip = temporary.GetMip(originalExtent), toMip = temporary.GetMip(extent);
+            temporary.UploadFromBuffer(transferBuffer, buffer, 0, originalExtent, fromMip, 1);
+            temporary.TransitionWithQueueChange(
+                transferBuffer, mipBuffer, vk::ImageLayout::eTransferDstOptimal,
+                vk::ImageLayout::eTransferDstOptimal, vk::PipelineStageFlagBits2::eAllCommands,
+                vk::PipelineStageFlagBits2::eAllCommands, vk::AccessFlagBits2::eNone, vk::AccessFlagBits2::eNone,
+                DeviceContext::GetTransferQueue().FamilyIndex, DeviceContext::GetMipQueue().FamilyIndex
+            );
+            temporary.GenerateMips(mipBuffer, vk::ImageLayout::eTransferSrcOptimal, fromMip, toMip);
+
+            temporary.CopyMipTo(mipBuffer, image, toMip);
+            image.GenerateFullMips(mipBuffer, vk::ImageLayout::eTransferDstOptimal);
+        }
+        else
+        {
+            assert(texture.Levels >= image.GetMipLevels());
+            vk::DeviceSize offset = 0;
+            for (uint32_t mip = 0; mip < texture.Levels - image.GetMipLevels(); mip++)
+                offset += Image::GetSize(Image::GetMipExtent(originalExtent, mip), image.GetFormat());
+
+            image.UploadFromBuffer(
+                transferBuffer, buffer, offset, image.GetExtent(), 0, image.GetMipLevels()
+            );
+        }
+    }
 
     // Release barrier
     image.TransitionWithQueueChange(
-        mipBuffer, nullptr, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
+        mipBuffer, nullptr, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
         vk::PipelineStageFlagBits2::eAllCommands, vk::PipelineStageFlagBits2::eAllCommands,
         vk::AccessFlagBits2::eNone, vk::AccessFlagBits2::eNone, DeviceContext::GetMipQueue().FamilyIndex,
         DeviceContext::GetGraphicsQueue().FamilyIndex
@@ -488,86 +530,46 @@ void TextureUploader::UploadBuffersWithTransfer(
     }
 }
 
-bool TextureUploader::CheckCanUpload(const TextureInfo &info)
+void TextureUploader::DeterminteMaxTextureSizes(size_t textureCount)
 {
-    if (!IsScalingSupported(info.Type) && vk::Extent2D(info.Width, info.Height) > MaxTextureSize)
-    {
-        logger::error(
-            "Cannot load texture {} because Texture Scaling is not supported and the texture size {}x{} is "
-            "larger than the MaxTextureSize {}x{}",
-            info.Name, info.Width, info.Height, MaxTextureSize.width, MaxTextureSize.height
-        );
-        return false;
-    }
+    const size_t textureBudget = GetTextureBudget();
+    const size_t perTextureBudget = textureBudget / textureCount;
 
-    return true;
+    for (vk::Format format : SupportedFormats)
+    {
+        vk::Extent2D maxExtent = MaxTextureDataSize;
+        while (Image::GetTextureMemoryRequirement(maxExtent, format) > perTextureBudget)
+        {
+            maxExtent.height /= 2;
+            maxExtent.width /= 2;
+        }
+        m_MaxTextureSize[format] = maxExtent;
+    }
 }
 
-vk::Format TextureUploader::SelectTextureFormat(TextureType type)
+vk::Format TextureUploader::GetImageFormat(TextureType type, TextureFormat format)
 {
-    // TODO: Consider compressed texture formats
-    switch (type)
+    // We assume that color textures are in srgb space
+    // We assume all other textures to be in linear space
+    auto isColorTexture = [](TextureType type) {
+        return type == TextureType::Color || type == TextureType::Emisive || type == TextureType::Skybox;
+    };
+
+    switch (format)
     {
-    case TextureType::Emisive:
-    case TextureType::Color:
-    case TextureType::Skybox:
-        return vk::Format::eR8G8B8A8Srgb;
-    case TextureType::SkyboxHDR:
+    case TextureFormat::RGBAU8:
+        return isColorTexture(type) ? vk::Format::eR8G8B8A8Srgb : vk::Format::eR8G8B8A8Unorm;
+    case TextureFormat::RGBAF32:
         return vk::Format::eR32G32B32A32Sfloat;
+    case TextureFormat::BC1:
+        return isColorTexture(type) ? vk::Format::eBc1RgbaSrgbBlock : vk::Format::eBc1RgbaUnormBlock;
+    case TextureFormat::BC3:
+        return vk::Format::eBc3SrgbBlock;
+    case TextureFormat::BC5:
+        return vk::Format::eBc5UnormBlock;
     default:
-        return vk::Format::eR8G8B8A8Unorm;
+        throw error("Unsupported texture format");
     }
-}
-
-bool TextureUploader::IsScalingSupported(TextureType type) const
-{
-    switch (type)
-    {
-    case TextureType::Emisive:
-    case TextureType::Color:
-    case TextureType::Skybox:
-        return m_ColorTextureScalingSupported;
-    case TextureType::SkyboxHDR:
-        throw error("HDR texture scaling is not supported");
-    default:
-        return m_OtherTextureScalingSupported;
-    }
-}
-
-const Image &TextureUploader::GetTemporaryImage(TextureType type) const
-{
-    switch (type)
-    {
-    case TextureType::Emisive:
-    case TextureType::Color:
-    case TextureType::Skybox:
-        return m_TemporaryColorImage;
-    case TextureType::SkyboxHDR:
-        throw error("HDR texture scaling is not supported");
-    default:
-        return m_TemporaryOtherImage;
-    }
-}
-
-vk::Format TextureUploader::GetTextureDataFormat(TextureType type)
-{
-    switch (type)
-    {
-    case TextureType::Emisive:
-    case TextureType::Color:
-    case TextureType::Skybox:
-        return vk::Format::eR8G8B8A8Srgb;
-    case TextureType::SkyboxHDR:
-        return vk::Format::eR32G32B32A32Sfloat;
-    default:
-        return vk::Format::eR8G8B8A8Unorm;
-    }
-}
-
-bool TextureUploader::CheckBlitSupported(vk::Format format)
-{
-    const auto flags = vk::FormatFeatureFlagBits::eBlitSrc | vk::FormatFeatureFlagBits::eBlitDst;
-    return (DeviceContext::GetFormatProperties(format).formatProperties.bufferFeatures & flags) != flags;
 }
 
 }

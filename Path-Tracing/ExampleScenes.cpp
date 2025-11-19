@@ -9,9 +9,10 @@
 #include "Core/Core.h"
 
 #include "Application.h"
-#include "AssetImporter.h"
 #include "ExampleScenes.h"
 #include "Resources.h"
+#include "SceneImporter.h"
+#include "TextureImporter.h"
 
 namespace PathTracing::ExampleScenes
 {
@@ -29,28 +30,33 @@ class CombinedSceneLoader : public SceneLoader
 public:
     ~CombinedSceneLoader() override = default;
 
+    void AddTextureMapping(TextureMapping mapping);
     void AddFile(const std::filesystem::path &path);
-    void AddSkybox2D(const std::filesystem::path &path, bool isHDR);
+    void AddSkybox2D(const std::filesystem::path &path);
 
     [[nodiscard]] bool HasContent() const;
     void Load(SceneBuilder &sceneBuilder) override;
 
 private:
+    TextureMapping m_TextureMapping;
     std::vector<std::filesystem::path> m_FilePaths;
     std::filesystem::path m_SkyboxPath;
-    bool m_IsSkyboxHDR = false;
     bool m_HasSkybox = false;
 };
+
+void CombinedSceneLoader::AddTextureMapping(TextureMapping mapping)
+{
+    m_TextureMapping = mapping;
+}
 
 void CombinedSceneLoader::AddFile(const std::filesystem::path &path)
 {
     m_FilePaths.push_back(path);
 }
 
-void CombinedSceneLoader::AddSkybox2D(const std::filesystem::path &path, bool isHDR)
+void CombinedSceneLoader::AddSkybox2D(const std::filesystem::path &path)
 {
     m_SkyboxPath = path;
-    m_IsSkyboxHDR = isHDR;
     m_HasSkybox = true;
 }
 
@@ -62,14 +68,13 @@ bool CombinedSceneLoader::HasContent() const
 void CombinedSceneLoader::Load(SceneBuilder &sceneBuilder)
 {
     for (const auto &path : m_FilePaths)
-        AssetImporter::AddFile(sceneBuilder, path);
+        SceneImporter::AddFile(sceneBuilder, path, m_TextureMapping);
 
     if (!m_HasSkybox)
         return;
 
-    TextureType type = m_IsSkyboxHDR ? TextureType::SkyboxHDR : TextureType::Skybox;
-    TextureInfo info = AssetImporter::GetTextureInfo(
-        Application::GetConfig().AssetDirectoryPath / "scenes" / m_SkyboxPath, type, "Skybox"
+    TextureInfo info = TextureImporter::GetTextureInfo(
+        Application::GetConfig().AssetDirectoryPath / "scenes" / m_SkyboxPath, TextureType::Skybox, "Skybox"
     );
     sceneBuilder.SetSkybox(Skybox2D(info));
 }
@@ -114,7 +119,7 @@ struct SceneDescription
     std::vector<std::filesystem::path> ComponentPaths;
     std::filesystem::path SkyboxPath;
     bool HasSkybox = false;
-    bool IsSkyboxHDR;
+    TextureMapping TextureMapping;
 
     [[nodiscard]] std::unique_ptr<CombinedSceneLoader> ToLoader() const;
 };
@@ -122,6 +127,8 @@ struct SceneDescription
 std::unique_ptr<CombinedSceneLoader> SceneDescription::ToLoader() const
 {
     auto loader = std::make_unique<CombinedSceneLoader>();
+    loader->AddTextureMapping(TextureMapping);
+
     for (const auto &path : ComponentPaths)
     {
         if (std::filesystem::exists(path))
@@ -131,7 +138,7 @@ std::unique_ptr<CombinedSceneLoader> SceneDescription::ToLoader() const
     }
 
     if (HasSkybox && std::filesystem::exists(SkyboxPath))
-        loader->AddSkybox2D(SkyboxPath, IsSkyboxHDR);
+        loader->AddSkybox2D(SkyboxPath);
     else
         logger::warn("Skybox file not found: {}", SkyboxPath.string());
 
@@ -161,10 +168,50 @@ static void AddHighQualityScenes(std::map<std::string, SceneGroup> &scenes)
         },
         .SkyboxPath = base / "IntelSponzaMain" / "main_sponza" / "textures" / "kloppenheim_05_4k.hdr",
         .HasSkybox = true,
-        .IsSkyboxHDR = true,
+    };
+
+    /* NOTE:
+     * Scenes from NVIDIA Orca collection have specular textures
+     * that get picked up by assimp as the exponent in the phong lighting model
+     * However, they make no sense as such
+     * You might think that they must be the specular color textures
+     * It would make sense since they are BC1 encoded
+     * However, the red channel seems to always be 0
+     * You might think that they are the specular/glossiness textures with
+     * specular encoded as a scalar intensity instead of a 3-component color
+     * However, the values still don't make sense
+     * The values do make sense however when the they are interpreted as roughness/metalness
+     * 
+     * Hence - The need for the below mapping
+     */
+    static const MetalicRoughnessTextureMapping NVIDIAOrcaTextureMapping = {
+        .ColorTexture = TextureType::Color,
+        .NormalTexture = TextureType::Normal,
+        .RoughnessTexture = TextureType::Specular,
+        .MetalicTexture = TextureType::Specular,
+    };
+
+    SceneDescription ue4SunTempleDescription = {
+        .ComponentPaths = { base / "UE4SunTemple" / "SunTemple_v4" / "SunTemple" / "SunTemple.fbx" },
+        .SkyboxPath = { base / "UE4SunTemple" / "SunTemple_v4" / "SunTemple" / "SunTemple_Skybox.hdr" },
+        .HasSkybox = true,
+        .TextureMapping = NVIDIAOrcaTextureMapping,
+    };
+
+    SceneDescription amazonBistroDescription = {
+        .ComponentPaths = {
+            base / "AmazonBistro" / "Bistro_v5_2" / "BistroExterior.fbx",
+            base / "AmazonBistro" / "Bistro_v5_2" / "BistroInterior.fbx",
+            base / "AmazonBistro" / "Bistro_v5_2" / "BistroInterior_Wine.fbx",
+        },
+        .SkyboxPath = base / "AmazonBistro" / "Bistro_v5_2" / "san_giuseppe_bridge_4k.hdr",
+        .HasSkybox = true,
+        .TextureMapping = NVIDIAOrcaTextureMapping,
     };
 
     AddSceneByDescription(group, "Intel Sponza", std::move(intelSponzaDescription));
+    AddSceneByDescription(group, "UE4 Sun Temple", std::move(ue4SunTempleDescription));
+    AddSceneByDescription(group, "Amazon Bistro", std::move(amazonBistroDescription));
 }
 
 static void AddTestScenes(std::map<std::string, SceneGroup> &scenes)
@@ -280,7 +327,7 @@ void CreateDefaultScene(SceneBuilder &sceneBuilder)
             .Metalness = 1.0f,
             .EmissiveIdx = Scene::GetDefaultTextureIndex(TextureType::Emisive),
             .ColorIdx = sceneBuilder.AddTexture(
-                AssetImporter::GetTextureInfo(
+                TextureImporter::GetTextureInfo(
                     Resources::g_PlaceholderTextureData, TextureType::Color, "Logo Texture"
                 )
             ),
@@ -290,16 +337,16 @@ void CreateDefaultScene(SceneBuilder &sceneBuilder)
         };
     };
 
-    uint32_t whiteMaterial =
+    Shaders::MaterialId whiteMaterial =
         sceneBuilder.AddMaterial("White Material", makeMaterialFromColor(glm::vec3(1.0f)));
-    uint32_t greenMaterial =
+    Shaders::MaterialId greenMaterial =
         sceneBuilder.AddMaterial("Green Material", makeMaterialFromColor(glm::vec3(0.0f, 1.0f, 0.0f)));
-    uint32_t redMaterial =
+    Shaders::MaterialId redMaterial =
         sceneBuilder.AddMaterial("Red Material", makeMaterialFromColor(glm::vec3(1.0f, 0.0f, 0.0f)));
-    uint32_t logoMaterial = sceneBuilder.AddMaterial(
+    Shaders::MaterialId logoMaterial = sceneBuilder.AddMaterial(
         "Logo Material", makeMaterialFromTexture(Resources::g_PlaceholderTextureData)
     );
-    uint32_t lightMaterial =
+    Shaders::MaterialId lightMaterial =
         sceneBuilder.AddMaterial("Light Material", makeMaterialFromEmissiveColor(glm::vec3(1.0f)));
 
     auto &vertices = sceneBuilder.GetVertices();
@@ -441,11 +488,12 @@ void CreateMetalicRoughnessCubesScene(SceneBuilder &sceneBuilder)
         "PavingStones142_1K-JPG",
         "Logs001_1K-JPG",
     };
+    std::array<Shaders::MaterialId, 3> materialIds = {};
 
     auto addTexture = [&](const std::filesystem::path &materialPath, const std::string &texture,
                           TextureType type) {
         return sceneBuilder.AddTexture(
-            AssetImporter::GetTextureInfo(materialPath / texture, type, std::string(texture))
+            TextureImporter::GetTextureInfo(materialPath / texture, type, std::string(texture))
         );
     };
 
@@ -453,7 +501,7 @@ void CreateMetalicRoughnessCubesScene(SceneBuilder &sceneBuilder)
     {
         const std::filesystem::path materialPath = base / assetNames[i];
         const std::string &material = materials[i];
-        sceneBuilder.AddMaterial(
+        materialIds[i] = sceneBuilder.AddMaterial(
             assetNames[i],
             Shaders::MetalicRoughnessMaterial {
                 .Color = glm::vec3(1.0f),
@@ -470,21 +518,21 @@ void CreateMetalicRoughnessCubesScene(SceneBuilder &sceneBuilder)
     std::array<uint32_t, 6> geometryIndices = AddCube(sceneBuilder);
 
     std::array<MeshInfo, 6> m1 = { {
-        { geometryIndices[0], 0, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
-        { geometryIndices[1], 0, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
-        { geometryIndices[2], 1, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
-        { geometryIndices[3], 1, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
-        { geometryIndices[4], 2, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
-        { geometryIndices[5], 2, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[0], materialIds[0], MaterialType::MetalicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[1], materialIds[0], MaterialType::MetalicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[2], materialIds[1], MaterialType::MetalicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[3], materialIds[1], MaterialType::MetalicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[4], materialIds[2], MaterialType::MetalicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[5], materialIds[2], MaterialType::MetalicRoughness, glm::mat4(1.0f) },
     } };
 
     std::array<MeshInfo, 6> m2 = { {
-        { geometryIndices[0], 0, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
-        { geometryIndices[1], 0, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
-        { geometryIndices[2], 0, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
-        { geometryIndices[3], 0, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
-        { geometryIndices[4], 0, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
-        { geometryIndices[5], 0, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[0], materialIds[0], MaterialType::MetalicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[1], materialIds[0], MaterialType::MetalicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[2], materialIds[0], MaterialType::MetalicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[3], materialIds[0], MaterialType::MetalicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[4], materialIds[0], MaterialType::MetalicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[5], materialIds[0], MaterialType::MetalicRoughness, glm::mat4(1.0f) },
     } };
 
     const uint32_t cube1 = sceneBuilder.AddModel(m1);
@@ -537,7 +585,7 @@ void CreateMetalicRoughnessCubesScene(SceneBuilder &sceneBuilder)
     sceneBuilder.AddAnimation(Animation({ animNode }, 30.0f, 180.0f));
 
     sceneBuilder.SetSkybox(Skybox2D(
-        AssetImporter::GetTextureInfo(base / "skybox" / "sky_42_2k.png", TextureType::Skybox, "Skybox")
+        TextureImporter::GetTextureInfo(base / "skybox" / "sky_42_2k.png", TextureType::Skybox, "Skybox")
     ));
 }
 
@@ -550,11 +598,12 @@ void CreateReuseMeshCubesScene(SceneBuilder &sceneBuilder)
         "PavingStones142_1K-JPG",
         "Logs001_1K-JPG",
     };
+    std::array<Shaders::MaterialId, 3> materialIds = {};
 
     auto addTexture = [&](const std::filesystem::path &materialPath, const std::string &texture,
                           TextureType type) {
         return sceneBuilder.AddTexture(
-            AssetImporter::GetTextureInfo(materialPath / texture, type, std::string(texture))
+            TextureImporter::GetTextureInfo(materialPath / texture, type, std::string(texture))
         );
     };
 
@@ -562,7 +611,7 @@ void CreateReuseMeshCubesScene(SceneBuilder &sceneBuilder)
     {
         const std::filesystem::path materialPath = base / assetNames[i];
         const std::string &material = materials[i];
-        sceneBuilder.AddMaterial(
+        materialIds[i] = sceneBuilder.AddMaterial(
             assetNames[i],
             Shaders::MetalicRoughnessMaterial {
                 .Color = glm::vec3(1.0f),
@@ -599,22 +648,23 @@ void CreateReuseMeshCubesScene(SceneBuilder &sceneBuilder)
         std::ranges::copy(std::vector<uint32_t> { 0, 1, 2, 2, 3, 0 }, std::back_inserter(indices));
 
     uint32_t vertexOffset = 0, indexOffset = 0;
+    std::array<uint32_t, 3> geometryIndices = {};
     for (uint32_t i = 0; i < 3; i++)
     {
-        sceneBuilder.AddGeometry({ vertexOffset, 4, indexOffset, 6, true });
+        geometryIndices[i] = sceneBuilder.AddGeometry({ vertexOffset, 4, indexOffset, 6, true });
         vertexOffset += 4;
         indexOffset += 6;
     }
 
     std::array<MeshInfo, 6> m = { {
-        { 0, 1, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
-        { 0, 1, MaterialType::MetalicRoughness,
+        { geometryIndices[0], materialIds[1], MaterialType::MetalicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[0], materialIds[1], MaterialType::MetalicRoughness,
           glm::transpose(glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f))) },
-        { 1, 1, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
-        { 1, 2, MaterialType::MetalicRoughness,
+        { geometryIndices[1], materialIds[1], MaterialType::MetalicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[1], materialIds[2], MaterialType::MetalicRoughness,
           glm::transpose(glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(0.0f, 1.0f, 0.0f))) },
-        { 2, 2, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
-        { 2, 2, MaterialType::MetalicRoughness,
+        { geometryIndices[2], materialIds[2], MaterialType::MetalicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[2], materialIds[2], MaterialType::MetalicRoughness,
           glm::transpose(glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(0.0f, 0.0f, 1.0f))) },
     } };
 
@@ -626,12 +676,12 @@ void CreateReuseMeshCubesScene(SceneBuilder &sceneBuilder)
 
     const auto skyboxPath = base / "skybox" / "sky_42_cubemap_(roblox)_2k";
     sceneBuilder.SetSkybox(SkyboxCube(
-        AssetImporter::GetTextureInfo(skyboxPath / "px.png", TextureType::Skybox, "Skybox px"),
-        AssetImporter::GetTextureInfo(skyboxPath / "nx.png", TextureType::Skybox, "Skybox nx"),
-        AssetImporter::GetTextureInfo(skyboxPath / "py.png", TextureType::Skybox, "Skybox py"),
-        AssetImporter::GetTextureInfo(skyboxPath / "ny.png", TextureType::Skybox, "Skybox ny"),
-        AssetImporter::GetTextureInfo(skyboxPath / "pz.png", TextureType::Skybox, "Skybox pz"),
-        AssetImporter::GetTextureInfo(skyboxPath / "nz.png", TextureType::Skybox, "Skybox nz")
+        TextureImporter::GetTextureInfo(skyboxPath / "px.png", TextureType::Skybox, "Skybox px"),
+        TextureImporter::GetTextureInfo(skyboxPath / "nx.png", TextureType::Skybox, "Skybox nx"),
+        TextureImporter::GetTextureInfo(skyboxPath / "py.png", TextureType::Skybox, "Skybox py"),
+        TextureImporter::GetTextureInfo(skyboxPath / "ny.png", TextureType::Skybox, "Skybox ny"),
+        TextureImporter::GetTextureInfo(skyboxPath / "pz.png", TextureType::Skybox, "Skybox pz"),
+        TextureImporter::GetTextureInfo(skyboxPath / "nz.png", TextureType::Skybox, "Skybox nz")
     ));
 }
 

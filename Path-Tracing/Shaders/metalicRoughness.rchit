@@ -52,7 +52,9 @@ void main()
     // TODO: Calculate the LOD properly
     const float lod = 0.0f;
 
-    const MetalicRoughnessMaterial material = materials[sbt.MaterialIndex];
+    uint materialType;
+    uint materialIndex = unpackMaterialId(sbt.MaterialId, materialType);
+    const MetalicRoughnessMaterial material = materials[materialIndex];
     const vec3 normal = textureLod(textures[material.NormalIdx], vertex.TexCoords, lod).xyz;
 
     const mat3 TBN = mat3(vertex.Tangent, vertex.Bitangent, vertex.Normal);
@@ -60,7 +62,7 @@ void main()
 
     payload.Position = vertex.Position;
     payload.Normal = N;
-    payload.MaterialId = packMaterialId(sbt.MaterialIndex, MaterialTypeMetalicRoughness);
+    payload.MaterialId = sbt.MaterialId;
     payload.TexCoords = vertex.TexCoords;
     payload.HitDistance = gl_RayTmaxEXT;
     payload.Lod = lod;

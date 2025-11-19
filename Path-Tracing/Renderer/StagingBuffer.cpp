@@ -62,7 +62,9 @@ void StagingBuffer::Flush()
     m_DestinationBuffers.clear();
 }
 
-void StagingBuffer::UploadToImage(std::span<const BufferContent> contents, const Image &image)
+void StagingBuffer::UploadToImage(
+    std::span<const BufferContent> contents, const Image &image, vk::ImageLayout layout
+)
 {
     assert(m_DestinationBuffers.empty());
     const vk::DeviceSize rowSize =
@@ -105,10 +107,7 @@ void StagingBuffer::UploadToImage(std::span<const BufferContent> contents, const
             uploadedRows += rowsToUpload;
 
             if (uploaded == content.Size)
-                image.Transition(
-                    m_CommandBuffer.Buffer, vk::ImageLayout::eTransferDstOptimal,
-                    vk::ImageLayout::eShaderReadOnlyOptimal
-                );
+                image.Transition(m_CommandBuffer.Buffer, vk::ImageLayout::eTransferDstOptimal, layout);
 
             m_CommandBuffer.SubmitBlocking();
         }

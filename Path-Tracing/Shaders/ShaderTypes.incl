@@ -8,7 +8,8 @@ namespace PathTracing::Shaders
 
 using namespace glm;
 
-using SpecializationConstant = uint;
+using SpecializationConstant    = uint;
+using MaterialId                = uint;
 
 #endif
 
@@ -22,7 +23,7 @@ const uint DefaultEmissiveTextureIndex              = 4;
 const uint PlaceholderTextureIndex                  = 5;
 const uint SceneTextureOffset                       = 6;
 
-const uint MaxTextureCount                          = 128u;
+const uint MaxTextureCount                          = 1024u;
 const uint MaxLightCount                            = 64u;
 const uint MaxBonesPerVertex                        = 4u;
 const uint MaxBones                                 = MaxUniformBufferSize / (3 * 4 * 4);
@@ -72,8 +73,12 @@ struct MetalicRoughnessMaterial
 
 struct SpecularGlossinessMaterial
 {
-    vec3 Color;
-    float pad0;
+    vec3 EmissiveColor;
+    float EmissiveIntensity;
+    uint EmissiveIdx;
+    uint DiffuseIdx;
+    uint NormalIdx;
+    uint GlossSpecularIdx;
 };
 
 struct DirectionalLight
@@ -99,6 +104,9 @@ struct PointLight
 const uint DirectionalLightStructAlignment  = 16u;
 const uint PointLightStructAlignment        = 16u;
 
+const uint MaterialTypeMetalicRoughness     = 0u;
+const uint MaterialTypeSpecularGlossiness   = 1u;
+
 
 #ifndef GL_core_profile
 
@@ -107,5 +115,19 @@ inline uint GetSceneTextureIndex(uint textureIndex)
     return SceneTextureOffset + textureIndex;
 }
 
+inline uint CreateMaterialId(uint materialIndex, uint materialType)
+{
+    return (materialIndex << 8) | materialType;
 }
+
+}
+
+#else
+
+uint unpackMaterialId(uint materialId, out uint materialType)
+{
+    materialType = materialId & 0x000000ffu;
+    return materialId >> 8;
+}
+
 #endif

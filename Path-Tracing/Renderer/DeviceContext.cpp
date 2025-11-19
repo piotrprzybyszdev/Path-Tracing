@@ -59,8 +59,7 @@ void DeviceContext::Init(vk::Instance instance, vk::SurfaceKHR surface)
         throw error("No suitable devices found");
 
     s_PhysicalDevice.Handle = *std::ranges::max_element(
-        suitableDevices,
-        [](vk::PhysicalDevice device1, vk::PhysicalDevice device2) {
+        suitableDevices, [](vk::PhysicalDevice device1, vk::PhysicalDevice device2) {
             auto properties1 = device1.getProperties();
             auto properties2 = device2.getProperties();
 
@@ -215,29 +214,10 @@ const vk::PhysicalDeviceRayTracingPipelinePropertiesKHR &DeviceContext::GetRayTr
     return s_PhysicalDevice.RayTracingPipelineProperties;
 }
 
-const vk::PhysicalDeviceAccelerationStructurePropertiesKHR &DeviceContext::GetAccelerationStructureProperties(
-)
+const vk::PhysicalDeviceAccelerationStructurePropertiesKHR &DeviceContext::
+    GetAccelerationStructureProperties()
 {
     return s_PhysicalDevice.AccelerationStructureProperties;
-}
-
-const vk::FormatProperties2 &DeviceContext::GetFormatProperties(vk::Format format)
-{
-    const size_t index = static_cast<size_t>(format);
-
-    if (s_PhysicalDevice.FormatProperties.size() <= index ||
-        s_PhysicalDevice.FormatProperties[index].second == false)
-    {
-        if (s_PhysicalDevice.FormatProperties.size() <= index)
-            s_PhysicalDevice.FormatProperties.resize(
-                index + 1, std::make_pair(vk::FormatProperties2(), false)
-            );
-
-        s_PhysicalDevice.FormatProperties[index] =
-            std::make_pair(s_PhysicalDevice.Handle.getFormatProperties2(format), true);
-    }
-
-    return s_PhysicalDevice.FormatProperties[index].first;
 }
 
 bool DeviceContext::CheckSuitable(

@@ -223,6 +223,14 @@ Config Config::Create(int argc, const char *argv[])
 #ifdef CONFIG_MAX_STAGING_BUFFER_SIZE_MIB
         .MaxStagingBufferSize = FromMiB(CONFIG_MAX_STAGING_BUFFER_SIZE_MIB),
 #endif
+
+#ifdef CONFIG_MAX_TEXTURE_MEMORY_BUDGET_ABSOLUTE_MIB
+        .MaxTextureMemoryBudgetAbsolute = FromMiB(CONFIG_MAX_TEXTURE_MEMORY_BUDGET_ABSOLUTE_MIB),
+#endif
+
+#ifdef CONFIG_MAX_TEXTURE_MEMORY_BUDGET_VRAM_PERCENT
+        .MaxTextureMemoryBudgetVramPercent = CONFIG_MAX_TEXTURE_MEMORY_BUDGET_VRAM_PERCENT,
+#endif
     };
 }
 

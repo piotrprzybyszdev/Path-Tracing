@@ -76,5 +76,5 @@ vec3 computeLightContribution(vec3 lightDir, vec3 lightColor, float attenuation,
 
 vec3 getRandomUnitSphere(inout uint rngState)
 {
-    return normalize(vec3(rand(rngState), rand(rngState), rand(rngState)));
+    return normalize(vec3(rand(rngState), rand(rngState), rand(rngState)) * 2.0f - 1.0f);
 }

@@ -2,6 +2,7 @@
 
 #include <glm/glm.hpp>
 
+#include <array>
 #include <filesystem>
 #include <span>
 #include <string>
@@ -25,8 +26,17 @@ enum class TextureType : uint8_t
     Normal,
     Roughness,
     Metalic,
+    Specular,
     Skybox,
-    SkyboxHDR,
+};
+
+enum class TextureFormat : uint8_t
+{
+    RGBAU8,
+    RGBAF32,
+    BC1,
+    BC3,
+    BC5,
 };
 
 using FileTextureSource = std::filesystem::path;
@@ -35,12 +45,18 @@ using TextureSourceVariant = std::variant<FileTextureSource, MemoryTextureSource
 
 struct TextureInfo
 {
+    using LoaderType = uint16_t;
+
     TextureType Type;
-    uint8_t Channels;
+    TextureFormat Format;
+    LoaderType Loader;
+    uint32_t Levels;
     uint32_t Width, Height;
     std::string Name;
     TextureSourceVariant Source;
 };
+
+using TextureData = std::span<std::byte>;
 
 struct Geometry
 {
@@ -144,7 +160,7 @@ public:
         std::vector<ModelInstance> &&modelInstances, std::vector<Bone> &&bones, SceneGraph &&sceneGraph,
         std::vector<LightInfo> &&lightInfos, std::vector<Shaders::PointLight> &&pointLights,
         Shaders::DirectionalLight &&directionalLight, SkyboxVariant &&skybox,
-        const std::vector<CameraInfo> &cameraInfos
+        const std::vector<CameraInfo> &cameraInfos, bool hasAnimatedInstances
     );
 
     bool Update(float timeStep);
@@ -205,6 +221,7 @@ private:
 
     SceneGraph m_Graph;
     bool m_HasSkeletalAnimations = false;
+    bool m_HasAnimatedInstances;
 
     std::vector<LightInfo> m_LightInfos;
     std::vector<Shaders::PointLight> m_PointLights;
@@ -231,8 +248,8 @@ public:
     uint32_t AddModelInstance(uint32_t modelIndex, uint32_t sceneNodeIndex);
 
     uint32_t AddTexture(TextureInfo &&texture);
-    uint32_t AddMaterial(std::string name, Shaders::MetalicRoughnessMaterial material);
-    uint32_t AddMaterial(std::string name, Shaders::SpecularGlossinessMaterial material);
+    Shaders::MaterialId AddMaterial(std::string name, Shaders::MetalicRoughnessMaterial material);
+    Shaders::MaterialId AddMaterial(std::string name, Shaders::SpecularGlossinessMaterial material);
 
     std::vector<Shaders::Vertex> &GetVertices();
     std::vector<uint32_t> &GetIndices();
@@ -268,10 +285,10 @@ private:
     std::vector<Geometry> m_Geometries;
 
     std::vector<Shaders::MetalicRoughnessMaterial> m_MetalicRoughnessMaterials;
-    std::unordered_map<std::string, uint32_t> m_MetalicRoughnessMaterialIndices;
+    std::unordered_map<std::string, uint32_t> m_MetalicRoughnessMaterialIds;
 
     std::vector<Shaders::SpecularGlossinessMaterial> m_SpecularGlossinessMaterials;
-    std::unordered_map<std::string, uint32_t> m_SpecularGlossinessMaterialIndices;
+    std::unordered_map<std::string, uint32_t> m_SpecularGlossinessMaterialIds;
 
     std::vector<TextureInfo> m_Textures;
     std::unordered_map<std::string, uint32_t> m_TextureIndices;

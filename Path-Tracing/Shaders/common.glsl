@@ -105,20 +105,6 @@ Vertex getInterpolatedVertex(VertexBuffer vertices, IndexBuffer indices, uint in
     );
 }
 
-const uint MaterialTypeMetalicRoughness     = 0u;
-const uint MaterialTypeSpecularGlossiness   = 1u;
-
-uint packMaterialId(uint materialIndex, uint materialType)
-{
-    return (materialIndex << 8) | materialType;
-}
-
-uint unpackMaterialId(uint materialId, out uint materialType)
-{
-    materialType = materialId & 0x000000ffu;
-    return materialId >> 8;
-}
-
 uint jenkinsHash(uint x)
 {
     x += x << 10;

@@ -3,7 +3,6 @@
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
 #include <glm/ext/matrix_relational.hpp>
-#include <stb_image.h>
 
 #include <stack>
 
@@ -11,173 +10,89 @@
 #include "Core/Core.h"
 
 #include "Application.h"
-#include "AssetImporter.h"
+#include "SceneImporter.h"
+#include "TextureImporter.h"
 
 namespace PathTracing
 {
 
-static void PremultiplyTextureData(const std::string &name, std::span<std::byte> data)
-{
-    // TODO: Remove when mip map generation is moved into a compute shader
-    // Color channels should be premultiplied by the alpha channel between generation of every mip level
-    // Doing full premultiplication only here would give wrong results
-    // Therefore here we only premultiply pixels that have alpha channel of 0
-    // This improves the mip maps around transparency edges and doesn't produce incorrect result
-
-    auto pixels = SpanCast<std::byte, glm::u8vec4>(data);
-    bool warned = false;
-
-    for (auto &pixel : pixels)
-    {
-        if (pixel.a == 0)
-        {
-            pixel.r = 0;
-            pixel.g = 0;
-            pixel.b = 0;
-        }
-        else if (pixel.a != 255 && !warned)
-        {
-            logger::debug(
-                "Texture {} has semi-transparent pixels. Generated mips may contain artifacts", name
-            );
-            warned = true;
-        }
-    }
-}
-
 static std::unique_ptr<Assimp::Importer> s_Importer = nullptr;
 
-void AssetImporter::Init()
+void SceneImporter::Init()
 {
     s_Importer = std::make_unique<Assimp::Importer>();
 }
 
-void AssetImporter::Shutdown()
+void SceneImporter::Shutdown()
 {
     s_Importer.reset();
-}
-
-std::byte *AssetImporter::LoadTextureData(const TextureInfo &info)
-{
-    std::byte *data;
-    int x, y, channels;
-
-    if (const FileTextureSource *source = std::get_if<FileTextureSource>(&info.Source))
-    {
-        const std::string pathString = source->string();
-
-        data = info.Type == TextureType::SkyboxHDR
-                   ? reinterpret_cast<std::byte *>(
-                         stbi_loadf(pathString.c_str(), &x, &y, &channels, STBI_rgb_alpha)
-                     )
-                   : reinterpret_cast<std::byte *>(
-                         stbi_load(pathString.c_str(), &x, &y, &channels, STBI_rgb_alpha)
-                     );
-    }
-    else if (const MemoryTextureSource *source = std::get_if<MemoryTextureSource>(&info.Source))
-    {
-        data = reinterpret_cast<std::byte *>(
-            stbi_load_from_memory(source->data(), source->size_bytes(), &x, &y, &channels, STBI_rgb_alpha)
-        );
-    }
-    else
-        throw error("Unhandled texture source type");
-
-    if (data == nullptr)
-        throw error(std::format("Could not load texture {}: {}", info.Name, stbi_failure_reason()));
-
-    assert(x == info.Width && y == info.Height && channels == info.Channels);
-    assert(channels != -1 && data != nullptr);
-
-    if (info.Type == TextureType::Color && channels == 4)
-        PremultiplyTextureData(info.Name, std::span(data, 4 * info.Width * info.Height));
-
-    return data;
-}
-
-void AssetImporter::ReleaseTextureData(std::byte *data)
-{
-    stbi_image_free(data);
-}
-
-TextureInfo AssetImporter::GetTextureInfo(TextureSourceVariant source, TextureType type, std::string &&name)
-{
-    int ret;
-    int x, y, channels;
-
-    if (const FileTextureSource *src = std::get_if<FileTextureSource>(&source))
-    {
-        std::string pathString = src->string();
-        ret = stbi_info(pathString.c_str(), &x, &y, &channels);
-    }
-    else if (const MemoryTextureSource *src = std::get_if<MemoryTextureSource>(&source))
-    {
-        ret = stbi_info_from_memory(src->data(), src->size_bytes(), &x, &y, &channels);
-    }
-    else
-        throw error("Unhandled texture source type");
-
-    if (ret == 0)
-        throw error(std::format("Could not load texture {}: {}", name, stbi_failure_reason()));
-
-    return TextureInfo(type, channels, x, y, std::move(name), std::move(source));
 }
 
 namespace
 {
 
-TextureType ToTextureType(aiTextureType type)
+std::span<const aiTextureType> GetTextureTypes(TextureType type)
 {
+    static std::array<aiTextureType, 2> colorTextureTypes = { aiTextureType_BASE_COLOR,
+                                                              aiTextureType_DIFFUSE };
+    static std::array<aiTextureType, 1> normalTextureTypes = { aiTextureType_NORMALS };
+    static std::array<aiTextureType, 1> roughnessTextureTypes = { aiTextureType_DIFFUSE_ROUGHNESS };
+    static std::array<aiTextureType, 1> metalicTextureTypes = { aiTextureType_METALNESS };
+    static std::array<aiTextureType, 1> emissiveTextureTypes = { aiTextureType_EMISSIVE };
+    static std::array<aiTextureType, 1> specularTextureTypes = { aiTextureType_SPECULAR };
+
     switch (type)
     {
-    case aiTextureType_BASE_COLOR:
-        return TextureType::Color;
-    case aiTextureType_NORMALS:
-        return TextureType::Normal;
-    case aiTextureType_DIFFUSE_ROUGHNESS:
-        return TextureType::Roughness;
-    case aiTextureType_METALNESS:
-        return TextureType::Metalic;
-    case aiTextureType_EMISSIVE:
-        return TextureType::Emisive;
+    case TextureType::Color:
+        return colorTextureTypes;
+    case TextureType::Normal:
+        return normalTextureTypes;
+    case TextureType::Roughness:
+        return roughnessTextureTypes;
+    case TextureType::Metalic:
+        return metalicTextureTypes;
+    case TextureType::Emisive:
+        return emissiveTextureTypes;
+    case TextureType::Specular:
+        return specularTextureTypes;
     default:
-        throw error(std::format("Unsupported Texture type {}", static_cast<uint8_t>(type)));
+        throw error(std::format("Unsupported texture type {}", static_cast<uint8_t>(type)));
     }
 }
 
 uint32_t AddTexture(
     SceneBuilder &sceneBuilder, const std::filesystem::path &base, const aiMaterial *material,
-    aiTextureType type
+    TextureType type, bool *isTransparent = nullptr
 )
 {
-    const uint32_t cnt = material->GetTextureCount(type);
-    const TextureType textureType = ToTextureType(type);
-
-    if (cnt == 0)
+    for (aiTextureType textureType : GetTextureTypes(type))
     {
-        logger::trace("Texture {} doesn't exist", aiTextureTypeToString(type));
-        return Scene::GetDefaultTextureIndex(textureType);
-    }
+        const uint32_t cnt = material->GetTextureCount(textureType);
+        if (cnt == 0)
+            continue;
 
-    aiString path;
-    {
         assert(cnt == 1);
-        aiReturn ret = material->GetTexture(type, 0, &path);
+
+        aiString path;
+        aiReturn ret = material->GetTexture(textureType, 0, &path);
         assert(ret == aiReturn_SUCCESS);
+        logger::trace("Adding texture {} at {}", aiTextureTypeToString(textureType), path.C_Str());
+        
+        std::filesystem::path texturePath = base / std::filesystem::path(path.C_Str());
+
+        try
+        {
+            TextureInfo info =
+                TextureImporter::GetTextureInfo(texturePath, type, path.C_Str(), isTransparent);
+            return sceneBuilder.AddTexture(std::move(info));
+        }
+        catch (const error &error)
+        {
+            return Scene::GetDefaultTextureIndex(type);
+        }
     }
 
-    logger::trace("Adding texture {} at {}", aiTextureTypeToString(type), path.C_Str());
-
-    std::filesystem::path texturePath = base / std::filesystem::path(path.C_Str());
-
-    try
-    {
-        return sceneBuilder.AddTexture(AssetImporter::GetTextureInfo(texturePath, textureType, path.C_Str()));
-    }
-    catch (const error &error)
-    {
-        return Scene::GetDefaultTextureIndex(textureType);
-    }
+    return Scene::GetDefaultTextureIndex(type);
 }
 
 struct EmissiveInfo
@@ -194,10 +109,13 @@ EmissiveInfo LoadEmissive(
     float intensity = 1.0f;
     material->Get(AI_MATKEY_EMISSIVE_INTENSITY, intensity);
 
-    if (material->GetTextureCount(aiTextureType_EMISSIVE) > 0)
+    const uint32_t defaultTextureIdx = Scene::GetDefaultTextureIndex(TextureType::Emisive);
+    const uint32_t textureIdx = AddTexture(sceneBuilder, path.parent_path(), material, TextureType::Emisive);
+    
+    if (textureIdx != defaultTextureIdx)
         return EmissiveInfo {
             .Color = glm::vec3(0.0f, 0.0f, 0.0f),
-            .TextureIdx = AddTexture(sceneBuilder, path.parent_path(), material, aiTextureType_EMISSIVE),
+            .TextureIdx = textureIdx,
             .Intensity = intensity,
         };
 
@@ -205,61 +123,103 @@ EmissiveInfo LoadEmissive(
     if (material->Get(AI_MATKEY_COLOR_EMISSIVE, color) == aiReturn::aiReturn_SUCCESS)
         return EmissiveInfo {
             .Color = TrivialCopyUnsafe<aiColor3D, glm::vec3>(color),
-            .TextureIdx = Scene::GetDefaultTextureIndex(TextureType::Emisive),
+            .TextureIdx = defaultTextureIdx,
             .Intensity = intensity,
         };
 
     return EmissiveInfo {
         .Color = glm::vec3(0.0f, 0.0f, 0.0f),
-        .TextureIdx = Scene::GetDefaultTextureIndex(TextureType::Emisive),
+        .TextureIdx = defaultTextureIdx,
         .Intensity = 1.0f,
     };
 }
 
-Shaders::MetalicRoughnessMaterial LoadMetalicRoughnessMaterial(
-    const std::filesystem::path &path, SceneBuilder &sceneBuilder, const aiMaterial *material
+struct MaterialInfo
+{
+    uint32_t MaterialIndex;
+    MaterialType Type;
+    bool IsOpaque;
+};
+
+MaterialInfo LoadMetalicRoughnessMaterial(
+    const std::filesystem::path &path, SceneBuilder &sceneBuilder, const aiMaterial *material,
+    const std::string &materialName, MetalicRoughnessTextureMapping mapping
 )
 {
     aiColor3D color = aiColor3D(1.0f, 1.0f, 1.0f);
-    float roughness = 0.5f, metalness = 0.0f;
-    aiReturn ret;
+    float roughness = 1.0f, metalness = 1.0f;
 
-    ret = material->Get(AI_MATKEY_BASE_COLOR, color);
-    assert(ret == aiReturn::aiReturn_SUCCESS);
-    ret = material->Get(AI_MATKEY_ROUGHNESS_FACTOR, roughness);
-    assert(ret == aiReturn::aiReturn_SUCCESS);
-    ret = material->Get(AI_MATKEY_METALLIC_FACTOR, metalness);
-    assert(ret == aiReturn::aiReturn_SUCCESS);
+    material->Get(AI_MATKEY_BASE_COLOR, color);
+    material->Get(AI_MATKEY_ROUGHNESS_FACTOR, roughness);
+    material->Get(AI_MATKEY_METALLIC_FACTOR, metalness);
 
     EmissiveInfo emissive = LoadEmissive(path, sceneBuilder, material);
 
-    return Shaders::MetalicRoughnessMaterial {
+    bool hasTransparency;
+    Shaders::MetalicRoughnessMaterial outMaterial = {
         .EmissiveColor = emissive.Color,
         .EmissiveIntensity = emissive.Intensity,
         .Color = TrivialCopyUnsafe<aiColor3D, glm::vec3>(color),
         .Roughness = roughness,
         .Metalness = metalness,
         .EmissiveIdx = emissive.TextureIdx,
-        .ColorIdx = AddTexture(sceneBuilder, path.parent_path(), material, aiTextureType_BASE_COLOR),
-        .NormalIdx = AddTexture(sceneBuilder, path.parent_path(), material, aiTextureType_NORMALS),
+        .ColorIdx = AddTexture(
+            sceneBuilder, path.parent_path(), material, mapping.ColorTexture, &hasTransparency
+        ),
+        .NormalIdx = AddTexture(sceneBuilder, path.parent_path(), material, mapping.NormalTexture),
         .RoughnessIdx =
-            AddTexture(sceneBuilder, path.parent_path(), material, aiTextureType_DIFFUSE_ROUGHNESS),
-        .MetalicIdx = AddTexture(sceneBuilder, path.parent_path(), material, aiTextureType_METALNESS),
+            AddTexture(sceneBuilder, path.parent_path(), material, mapping.RoughnessTexture),
+        .MetalicIdx = AddTexture(sceneBuilder, path.parent_path(), material, mapping.MetalicTexture),
+    };
+
+    return MaterialInfo {
+        .MaterialIndex = sceneBuilder.AddMaterial(materialName, outMaterial),
+        .Type = MaterialType::MetalicRoughness,
+        .IsOpaque = !hasTransparency,
     };
 }
 
-Shaders::SpecularGlossinessMaterial LoadSpecularGlossinessMaterial(
-    const std::filesystem::path &path, SceneBuilder &sceneBuilder, const aiMaterial *material
+// NOTE: Hasn't been tested on an actual specular-glossiness material
+MaterialInfo LoadSpecularGlossinessMaterial(
+    const std::filesystem::path &path, SceneBuilder &sceneBuilder, const aiMaterial *material,
+    const std::string &materialName
 )
 {
-    throw error("TODO: Implement SpecularGlossinessMaterial");
+    EmissiveInfo emissive = LoadEmissive(path, sceneBuilder, material);
+
+    bool hasTransparency;
+    Shaders::SpecularGlossinessMaterial outMaterial = {
+        .EmissiveColor = emissive.Color,
+        .EmissiveIntensity = emissive.Intensity,
+        .EmissiveIdx = emissive.TextureIdx,
+        .DiffuseIdx =
+            AddTexture(sceneBuilder, path.parent_path(), material, TextureType::Color, &hasTransparency),
+        .NormalIdx = AddTexture(sceneBuilder, path.parent_path(), material, TextureType::Normal),
+        .GlossSpecularIdx = AddTexture(sceneBuilder, path.parent_path(), material, TextureType::Specular),
+    };
+
+    return MaterialInfo {
+        .MaterialIndex = sceneBuilder.AddMaterial(materialName, outMaterial),
+        .Type = MaterialType::SpecularGlossiness,
+        .IsOpaque = !hasTransparency,
+    };
 }
 
-std::vector<std::pair<uint32_t, MaterialType>> LoadMaterials(
-    const std::filesystem::path &path, SceneBuilder &sceneBuilder, const aiScene *scene
+std::vector<MaterialInfo> LoadMaterials(
+    const std::filesystem::path &path, SceneBuilder &sceneBuilder, const aiScene *scene,
+    TextureMapping textureMapping
 )
 {
-    std::vector<std::pair<uint32_t, MaterialType>> materialInfoMap(scene->mNumMaterials);
+    static const MetalicRoughnessTextureMapping defaultMetalicRoughnessMapping = {
+        .ColorTexture = TextureType::Color,
+        .NormalTexture = TextureType::Normal,
+        .RoughnessTexture = TextureType::Roughness,
+        .MetalicTexture = TextureType::Metalic,
+    };
+
+    const MetalicRoughnessTextureMapping *metalicRoughnessMapping = &defaultMetalicRoughnessMapping;
+
+    std::vector<MaterialInfo> materialInfoMap(scene->mNumMaterials);
 
     for (int i = 0; i < scene->mNumMaterials; i++)
     {
@@ -269,39 +229,35 @@ std::vector<std::pair<uint32_t, MaterialType>> LoadMaterials(
             originalName.length != 0 ? originalName.C_Str() : std::format("Unnamed Material at index {}", i);
 
         float factor;
-        if (material->Get(AI_MATKEY_METALLIC_FACTOR, factor) == aiReturn::aiReturn_SUCCESS)
-            materialInfoMap[i] = std::make_pair(
-                sceneBuilder.AddMaterial(materialName, LoadMetalicRoughnessMaterial(path, sceneBuilder, material)),
-                MaterialType::MetalicRoughness
+        MaterialType materialType =
+            material->Get(AI_MATKEY_METALLIC_FACTOR, factor) == aiReturn::aiReturn_SUCCESS
+                ? MaterialType::MetalicRoughness
+                : MaterialType::SpecularGlossiness;
+
+        if (const auto *mapping = std::get_if<MetalicRoughnessTextureMapping>(&textureMapping))
+        {
+            materialType = MaterialType::MetalicRoughness;
+            metalicRoughnessMapping = mapping;
+        }
+
+        switch (materialType)
+        {
+        case MaterialType::MetalicRoughness:
+            materialInfoMap[i] = LoadMetalicRoughnessMaterial(
+                path, sceneBuilder, material, materialName, *metalicRoughnessMapping
             );
-        else if (material->Get(AI_MATKEY_GLOSSINESS_FACTOR, factor) == aiReturn::aiReturn_SUCCESS)
-            materialInfoMap[i] = std::make_pair(
-                sceneBuilder.AddMaterial(materialName, LoadSpecularGlossinessMaterial(path, sceneBuilder, material)),
-                MaterialType::SpecularGlossiness
-            );
-        else
+            break;
+        case MaterialType::SpecularGlossiness:
+            materialInfoMap[i] = LoadSpecularGlossinessMaterial(path, sceneBuilder, material, materialName);
+            break;
+        default:
             throw error("Unsupported material type");
+        }
 
         logger::debug("Added Material: {}", materialName);
     }
 
     return materialInfoMap;
-}
-
-bool CheckOpaque(const std::filesystem::path &path, const aiMaterial *material)
-{
-    // TODO: Handle other opaque flags from input file
-    if (material->GetTextureCount(aiTextureType_BASE_COLOR) == 0)
-        return true;
-
-    aiString colorTexturePath;
-    aiReturn ret = material->GetTexture(aiTextureType_BASE_COLOR, 0, &colorTexturePath);
-    assert(ret == aiReturn::aiReturn_SUCCESS);
-    std::string fullPath = (path.parent_path() / std::filesystem::path(colorTexturePath.C_Str())).string();
-    int channels;
-    int result = stbi_info(fullPath.c_str(), nullptr, nullptr, &channels);
-    assert(result == 1);
-    return channels == 3;
 }
 
 // Some meshes might differ only in material, but have the same geometry
@@ -360,6 +316,7 @@ void LoadBones(
 std::vector<uint32_t> LoadMeshes(
     SceneBuilder &sceneBuilder, const std::filesystem::path &path, const aiScene *scene,
     const std::unordered_map<const aiNode *, uint32_t> &sceneNodeIndices,
+    const std::vector<MaterialInfo> &materialInfoMap,
     std::unordered_set<const aiNode *> &armatures
 )
 {
@@ -475,7 +432,7 @@ std::vector<uint32_t> LoadMeshes(
         if (CheckAnimated(mesh))
             LoadBones(sceneBuilder, scene, animatedVertices, vo, mesh, sceneNodeIndices, armatures);
 
-        bool isOpaque = CheckOpaque(path, scene->mMaterials[mesh->mMaterialIndex]);
+        bool isOpaque = materialInfoMap[mesh->mMaterialIndex].IsOpaque;
 
         if (!CheckAnimated(mesh))
             meshToGeometry[i] =
@@ -583,7 +540,7 @@ void LoadModels(
     SceneBuilder &sceneBuilder, const aiScene *scene,
     std::unordered_map<const aiNode *, uint32_t> sceneNodeIndices,
     std::unordered_set<const aiNode *> dynamicNodes, std::unordered_set<const aiNode *> armatures,
-    std::vector<const aiNode *> nodes, const std::vector<std::pair<uint32_t, MaterialType>> &materialInfoMap,
+    std::vector<const aiNode *> nodes, const std::vector<MaterialInfo> &materialInfoMap,
     const std::vector<uint32_t> &meshToGeometry
 )
 {
@@ -638,7 +595,7 @@ void LoadModels(
                 continue;
             }
 
-            auto [materialIndex, materialType] = materialInfoMap[mesh->mMaterialIndex];
+            auto [materialIndex, materialType, _] = materialInfoMap[mesh->mMaterialIndex];
 
             modelToMeshInfos[modelIndex].emplace_back(
                 meshToGeometry[meshIndex], materialIndex, materialType, totalTransform
@@ -685,7 +642,7 @@ void LoadModels(
 
             if (CheckAnimated(mesh))
             {
-                auto [materialIndex, materialType] = materialInfoMap[mesh->mMaterialIndex];
+                auto [materialIndex, materialType, _] = materialInfoMap[mesh->mMaterialIndex];
 
                 modelToAnimatedMeshInfos[animatedModelIndex].emplace_back(
                     meshToGeometry[meshIndex], materialIndex, materialType, glm::mat4(1.0f)
@@ -800,7 +757,10 @@ void LoadLights(
             light->mType == aiLightSourceType::aiLightSource_POINT ||
             light->mType == aiLightSourceType::aiLightSource_DIRECTIONAL
         );
-        assert(light->mColorAmbient == light->mColorDiffuse && light->mColorDiffuse == light->mColorSpecular);
+        assert(
+            (light->mColorAmbient == light->mColorDiffuse || light->mColorAmbient.IsBlack()) &&
+            light->mColorDiffuse == light->mColorSpecular
+        );
 
         logger::debug("Light {} ({})", light->mName.C_Str(), static_cast<uint32_t>(light->mType));
         logger::debug(
@@ -909,7 +869,9 @@ private:
 
 }
 
-SceneBuilder &AssetImporter::AddFile(SceneBuilder &sceneBuilder, const std::filesystem::path &path)
+SceneBuilder &SceneImporter::AddFile(
+    SceneBuilder &sceneBuilder, const std::filesystem::path &path, TextureMapping textureMapping
+)
 {
     // Import by assimp will be half the entire task
     const uint32_t assimpTasks = 100;
@@ -956,10 +918,11 @@ SceneBuilder &AssetImporter::AddFile(SceneBuilder &sceneBuilder, const std::file
     std::vector<const aiNode *> nodes;
     std::unordered_map<const aiNode *, uint32_t> sceneNodeIndices =
         LoadSceneNodes(sceneBuilder, scene, nodes);
-    std::vector<std::pair<uint32_t, MaterialType>> materialInfoMap = LoadMaterials(path, sceneBuilder, scene);
+    std::vector<MaterialInfo> materialInfoMap = LoadMaterials(path, sceneBuilder, scene, textureMapping);
 
     std::unordered_set<const aiNode *> armatures;
-    std::vector<uint32_t> meshToGeometry = LoadMeshes(sceneBuilder, path, scene, sceneNodeIndices, armatures);
+    std::vector<uint32_t> meshToGeometry =
+        LoadMeshes(sceneBuilder, path, scene, sceneNodeIndices, materialInfoMap, armatures);
     std::unordered_set<const aiNode *> dynamicNodes = FindDynamicNodes(scene);
 
     LoadModels(

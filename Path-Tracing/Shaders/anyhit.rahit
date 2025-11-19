@@ -12,8 +12,12 @@ layout(binding = 5, set = 0) readonly buffer GeometryBuffer {
     Geometry[] geometries;
 };
 
-layout(binding = 6, set = 0) readonly buffer MaterialBuffer {
-    MetalicRoughnessMaterial[] materials;
+layout(binding = 6, set = 0) readonly buffer MetalicRoughnessMaterialBuffer {
+    MetalicRoughnessMaterial[] metalicRoughnessMaterials;
+};
+
+layout(binding = 7, set = 0) readonly buffer SpecularGlossinessMaterialBuffer {
+    SpecularGlossinessMaterial[] specularGlossinessMaterials;
 };
 
 layout(shaderRecordEXT, std430) buffer SBT {
@@ -40,8 +44,13 @@ void main()
 
     const Vertex vertex = getInterpolatedVertex(vertices, indices, gl_PrimitiveID * 3, barycentricCoords);
 
-    const MetalicRoughnessMaterial material = materials[sbt.MaterialIndex];
-    const float alpha = texture(textures[material.ColorIdx], vertex.TexCoords).a;
+    uint materialType;
+    uint materialIndex = unpackMaterialId(sbt.MaterialId, materialType);
+
+    const uint colorTextureIdx = materialType == MaterialTypeMetalicRoughness ?
+        metalicRoughnessMaterials[materialIndex].ColorIdx : specularGlossinessMaterials[materialIndex].DiffuseIdx;
+
+    const float alpha = texture(textures[colorTextureIdx], vertex.TexCoords).a;
 
     if (alpha < 0.9f)
         ignoreIntersectionEXT;

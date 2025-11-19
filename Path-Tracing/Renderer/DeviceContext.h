@@ -54,7 +54,6 @@ public:
 
     static const vk::PhysicalDeviceRayTracingPipelinePropertiesKHR &GetRayTracingPipelineProperties();
     static const vk::PhysicalDeviceAccelerationStructurePropertiesKHR &GetAccelerationStructureProperties();
-    static const vk::FormatProperties2 &GetFormatProperties(vk::Format format);
 
 private:
     static struct PhysicalDevice
@@ -65,7 +64,6 @@ private:
         std::vector<vk::QueueFamilyProperties2> QueueFamilyProperties;
         vk::PhysicalDeviceRayTracingPipelinePropertiesKHR RayTracingPipelineProperties;
         vk::PhysicalDeviceAccelerationStructurePropertiesKHR AccelerationStructureProperties;
-        std::vector<std::pair<vk::FormatProperties2, bool>> FormatProperties;
     } s_PhysicalDevice;
 
     static struct LogicalDevice

@@ -41,7 +41,7 @@ struct Geometry
 struct SBTBuffer
 {
     uint GeometryIndex;
-    uint MaterialIndex;
+    uint MaterialId;
     uint TransformIndex;
 };
 
@@ -50,6 +50,9 @@ const uint DefaultTextureNormal             = 0xffff8080u;
 const uint DefaultTextureRoughness          = 0x80808080u;
 const uint DefaultTextureMetalness          = 0x00000000u;
 const uint DefaultTextureEmissive           = 0x00000000u;
+const vec3 DefaultEmissiveColor             = vec3(1.0f, 1.0f, 1.0f);
+const vec3 DefaultColor                     = vec3(1.0f, 1.0f, 1.0f);
+const vec3 DefaultNormal                    = vec3(0.0f, 0.0f, 1.0f);
 const float DefaultRoughness                = 0.5f;
 const float DefaultMetalness                = 0.0f;
 

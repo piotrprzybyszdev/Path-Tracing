@@ -23,7 +23,10 @@ public:
     void AddContent(BufferContent content, vk::Buffer destinationBuffer);
     void Flush();
 
-    void UploadToImage(std::span<const BufferContent> contents, const Image &image);
+    void UploadToImage(
+        std::span<const BufferContent> contents, const Image &image,
+        vk::ImageLayout layout = vk::ImageLayout::eShaderReadOnlyOptimal
+    );
 
 private:
     const Buffer m_Buffer;

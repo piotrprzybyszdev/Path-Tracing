@@ -52,12 +52,14 @@ void main()
     // TODO: Calculate the LOD properly
     const float lod = 0.0f;
 
-    const SpecularGlossinessMaterial material = materials[sbt.MaterialIndex];
+    uint materialType;
+    uint materialIndex = unpackMaterialId(sbt.MaterialId, materialType);
+    const SpecularGlossinessMaterial material = materials[materialIndex];
     const vec3 N = normalize(vertex.Normal);
 
     payload.Position = vertex.Position;
     payload.Normal = N;
-    payload.MaterialId = packMaterialId(sbt.MaterialIndex, MaterialTypeSpecularGlossiness);
+    payload.MaterialId = sbt.MaterialId;
     payload.TexCoords = vertex.TexCoords;
     payload.HitDistance = gl_RayTmaxEXT;
     payload.Lod = lod;
