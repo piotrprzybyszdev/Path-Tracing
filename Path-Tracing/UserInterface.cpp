@@ -450,10 +450,10 @@ void SettingsTab::RenderContent()
 
     ImGui::Text("Bounces:");
     ImGui::SameLine();
-    hasChanged |= ImGui::SliderInt("##Bounces", &bounceCount, 1, 16, "%d");
+    hasChanged |= ImGui::SliderInt("##Bounces", &bounceCount, 1, 32, "%d");
     ImGui::Text("Samples:");
     ImGui::SameLine();
-    hasChanged |= ImGui::SliderInt("##Samples", &sampleCount, 1, 16, "%d");
+    hasChanged |= ImGui::SliderInt("##Samples", &sampleCount, 1, 32, "%d");
 
     if (s_DebuggingEnabled)
         ImGui::EndDisabled();

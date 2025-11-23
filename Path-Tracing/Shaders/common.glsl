@@ -4,6 +4,11 @@ const float PI = 3.14159265359f;
 
 const float MISS_HIT_DISTANCE = -1.0f;
 
+float luminance(vec3 rgb)
+{
+	return dot(rgb, vec3(0.2126f, 0.7152f, 0.0722f));
+}
+
 vec3 computeBarycentricCoords(vec3 attribs)
 {
     return vec3(1.0f - attribs.x - attribs.y, attribs.x, attribs.y);
@@ -137,4 +142,25 @@ uint xorshift(inout uint rngState)
 float rand(inout uint rngState)
 {
     return uintToFloat(xorshift(rngState));
+}
+
+vec4 getRotationToZAxis(vec3 v) {
+
+	// Handle special case when input is exact or near opposite of (0, 0, 1)
+	if (v.z < -0.99999f) return vec4(1.0f, 0.0f, 0.0f, 0.0f);
+
+	return normalize(vec4(v.y, -v.x, 0.0f, 1.0f + v.z));
+}
+
+// Returns the quaternion with inverted rotation
+vec4 invertRotation(vec4 q)
+{
+	return vec4(-q.x, -q.y, -q.z, q.w);
+}
+
+// Optimized point rotation using quaternion
+// Source: https://gamedev.stackexchange.com/questions/28395/rotating-vector3-by-a-quaternion
+vec3 rotatePoint(vec4 q, vec3 v) {
+	const vec3 qAxis = vec3(q.x, q.y, q.z);
+	return 2.0f * dot(qAxis, v) * qAxis + (q.w * q.w - dot(qAxis, qAxis)) * v + 2.0f * q.w * cross(qAxis, v);
 }

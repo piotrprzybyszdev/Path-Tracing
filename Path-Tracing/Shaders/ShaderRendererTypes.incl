@@ -73,16 +73,17 @@ const uint MissFlagsAll                     = 0x3u;
 
 struct Payload
 {
-    vec3 Position;
-    float HitDistance;
-    vec3 Normal;
-    float Lod;
+    vec3 Direction;
+    float Distance;
+    vec3 Emissive;
+    vec3 Bsdf;
+    float Pdf;
     vec2 TexCoords;
-    uint MaterialId;
+    uint RngState;
 };
 
 const uint MaxRecursionDepth                = 1u;
-const uint MaxPayloadSize                   = 44u;
+const uint MaxPayloadSize                   = 56u;
 const uint MaxHitAttributeSize              = 12u;
 
 const uint PrimaryRayHitGroupIndex          = 0u;
@@ -90,6 +91,10 @@ const uint PrimaryRayMissGroupIndex         = 0u;
 const uint OcclusionRayHitGroupIndex        = 1u;
 const uint OcclusionRayMissGroupIndex       = 1u;
 
+const uint BrdfTypeDiffuse                  = 0u;
+const uint BrdfTypeSpecular                 = 1u;
+
+const uint MinBounces                       = 4u;
 
 #ifndef GL_core_profile
 

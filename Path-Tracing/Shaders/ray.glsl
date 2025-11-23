@@ -6,9 +6,9 @@ struct Ray
     float tmax;
 };
 
-Ray constructPrimaryRay(uvec2 pixel, uvec2 resolution, Camera camera)
+Ray constructPrimaryRay(uvec2 pixel, uvec2 resolution, Camera camera, vec2 u)
 {
-    const vec2 pixelCenter = pixel + vec2(0.5);
+    const vec2 pixelCenter = pixel + u;
     const vec2 inUV = pixelCenter / resolution;
     vec2 d = inUV * 2.0 - 1.0;
 
@@ -20,6 +20,11 @@ Ray constructPrimaryRay(uvec2 pixel, uvec2 resolution, Camera camera)
     float tmax = 10000.0;
 
     return Ray(origin, tmin, direction, tmax);
+}
+
+Ray constructPrimaryRay(uvec2 pixel, uvec2 resolution, Camera camera)
+{
+    return constructPrimaryRay(pixel, resolution, camera, vec2(0.5f));
 }
 
 // TODO: Fix the `shadow terminator problem` properly

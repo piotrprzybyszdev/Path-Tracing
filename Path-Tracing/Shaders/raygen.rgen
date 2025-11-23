@@ -13,14 +13,6 @@ layout(binding = 2, set = 0) uniform MainBlock {
 
 layout(binding = 3, set = 0) uniform sampler2D textures[];
 
-layout(binding = 6, set = 0) readonly buffer MetalicRoughnessMaterialBuffer {
-    MetalicRoughnessMaterial[] metalicRoughnessMaterials;
-};
-
-layout(binding = 7, set = 0) readonly buffer SpecularGlossinessMaterialBuffer {
-    SpecularGlossinessMaterial[] specularGlossinessMaterials;
-};
-
 layout(binding = 8, set = 0) uniform LightsBuffer {
     uint u_LightCount;
     DirectionalLight u_DirectionalLight;
@@ -31,7 +23,6 @@ layout(location = 0) rayPayloadEXT Payload payload;
 layout(location = 1) rayPayloadEXT bool isOccluded;
 
 #include "ray.glsl"
-#include "sampling.glsl"
 #include "shading.glsl"
 #include "tracing.glsl"
 
@@ -49,73 +40,76 @@ bool sampleLight(out vec3 lightDirection, out vec3 lightColor, out float lightDi
     }
 
     const PointLight light = u_Lights[lightIndex];
-    lightDistance = distance(position, light.Position);
-    lightDirection = normalize(position - light.Position);
+
+    // Area-light sampling: sample a point on a small sphere around the original point light position.
+    // You can tune this radius to control apparent size of the area light.
+    const float AreaLightRadius = 0.01f;
+
+    // Sample direction on unit sphere (getRandomUnitSphere is defined in common.glsl)
+    vec3 sphereDir = getRandomUnitSphere(rngState);
+
+    vec3 sampledPosition = light.Position + sphereDir * AreaLightRadius;
+
+    lightDistance = distance(position, sampledPosition);
+    lightDirection = normalize(position - sampledPosition);
     lightColor = light.Color;
+
+    // Attenuation computed using the sampled distance from the surface point to the sampled light position.
     attenuation = 1.0f / (light.AttenuationConstant + lightDistance * light.AttenuationLinear + lightDistance * lightDistance * light.AttenuationQuadratic);
+    attenuation = clamp(attenuation, 0.0f, 1.0f);
+
     return false;
 }
 
 void main()
 {
-    uint rng = initRng(gl_LaunchIDEXT.xy, gl_LaunchSizeEXT.xy, mainUniform.TotalSamples);
+    uint rngState = initRng(gl_LaunchIDEXT.xy, gl_LaunchSizeEXT.xy, mainUniform.TotalSamples);
 
-    const Ray primaryRay = constructPrimaryRay(gl_LaunchIDEXT.xy, gl_LaunchSizeEXT.xy, mainUniform.MainCamera);
+    vec2 u = vec2(rand(rngState), rand(rngState));
+    const Ray primaryRay = constructPrimaryRay(gl_LaunchIDEXT.xy, gl_LaunchSizeEXT.xy, mainUniform.MainCamera, u);
 
-    vec3 totalLight = vec3(0.0f);
+    vec3 radiance = vec3(0.0f);
 
     for (int smpl = 0; smpl < mainUniform.SampleCount; smpl++)
     {
-        // NOTE: We are tracing the primary ray for every sample for no reason
-        // The result (as of now) is the same each trace
         vec3 throughput = vec3(1.0f);
         Ray ray = primaryRay;
 
         for (int bounce = 0; bounce < mainUniform.BounceCount; bounce++)
         {
+            payload.RngState = rngState;
             traceRayEXT(u_TopLevelAS, gl_RayFlagsNoneEXT, 0xff, PrimaryRayHitGroupIndex, 2, PrimaryRayMissGroupIndex, ray.Origin, ray.tmin, ray.Direction, ray.tmax, 0);
+            rngState = payload.RngState;
 
-            if (payload.HitDistance == MISS_HIT_DISTANCE)
+            if (payload.Distance == MISS_HIT_DISTANCE)
             {
-                totalLight += throughput * payload.Position;
+                // radiance += throughput * payload.Position;
                 break;
             }
             
-            payload.Position = offsetRayOrigin(payload.Position, payload.Normal);
+            // sampleLight(lightDirection, lightColor, lightDistance, attenuation, payload.Position, rngState);
 
-            MaterialSample material = SampleMaterial(payload.MaterialId, payload.TexCoords, payload.Lod, 0);
+            radiance += throughput * payload.Emissive;
 
-            const vec3 viewDir = ray.Direction;
-            const vec3 V = -normalize(viewDir);
-            const vec3 N = payload.Normal;
-            
-            vec3 lightDirection, lightColor;
-            float attenuation, lightDistance;
+		    throughput *= payload.Bsdf / max(payload.Pdf, 0.001f);
 
-            sampleLight(lightDirection, lightColor, lightDistance, attenuation, payload.Position, rng);
+            const float prob = max(throughput.r, max(throughput.g, throughput.b));
+            if (prob < 0.001f)
+                break;
 
-            totalLight += throughput * material.EmissiveColor;
+            if (prob < rand(rngState))
+                break;
 
-            // TODO: Scale down according to the probability
-            if (!checkOccluded(lightDirection, payload.Position, lightDistance))
-                totalLight += throughput * computeLightContribution(lightDirection, lightColor, attenuation, payload.Position, V, N, material.Color, material.Roughness, material.Metalness);
+            throughput /= prob;
 
-            throughput *= material.Color;
-
-            // TODO: Russian rulette termination
-
-            ray.Origin = payload.Position;
-
-            // TODO: Sample proper BRDF
-            vec3 offset = getRandomUnitSphere(rng);
-            if (dot(offset, N) < 0)
-                offset *= -1;
-            ray.Direction = offset;
+            const vec3 hitPosition = ray.Origin + ray.Direction * payload.Distance;
+            ray.Origin = hitPosition + payload.Direction * 0.001f;
+            ray.Direction = payload.Direction;
         }
     }
     
     vec3 prevColor = imageLoad(u_Image, ivec2(gl_LaunchIDEXT.xy)).rgb;
-    totalLight = (totalLight * mainUniform.Exposure + prevColor * mainUniform.TotalSamples) / (mainUniform.TotalSamples + mainUniform.SampleCount);
+    radiance = (radiance * mainUniform.Exposure + prevColor * mainUniform.TotalSamples) / (mainUniform.TotalSamples + mainUniform.SampleCount);
 
-    imageStore(u_Image, ivec2(gl_LaunchIDEXT.xy), vec4(totalLight, 1.0f));
+    imageStore(u_Image, ivec2(gl_LaunchIDEXT.xy), vec4(radiance, 1.0f));
 }

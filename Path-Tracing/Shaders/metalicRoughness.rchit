@@ -16,8 +16,12 @@ layout(binding = 5, set = 0) readonly buffer GeometryBuffer {
     Geometry[] geometries;
 };
 
-layout(binding = 6, set = 0) readonly buffer MaterialBuffer {
-    MetalicRoughnessMaterial[] materials;
+layout(binding = 6, set = 0) readonly buffer MetalicRoughnessMaterialBuffer {
+    MetalicRoughnessMaterial[] metalicRoughnessMaterials;
+};
+
+layout(binding = 7, set = 0) readonly buffer SpecularGlossinessMaterialBuffer {
+    SpecularGlossinessMaterial[] specularGlossinessMaterials;
 };
 
 layout(shaderRecordEXT, std430) buffer SBT {
@@ -26,6 +30,8 @@ layout(shaderRecordEXT, std430) buffer SBT {
 
 layout(location = 0) rayPayloadInEXT Payload payload;
 hitAttributeEXT vec3 attribs;
+
+#include "sampling.glsl"
 
 Vertex transform(Vertex vertex, uint transformIndex)
 {
@@ -37,6 +43,50 @@ Vertex transform(Vertex vertex, uint transformIndex)
     vertex.Normal = normalize((vec4(vertex.Normal, 0.0f) * transpose(inverse(mat4(transform)))).xyz);  // TODO: Calculate inverse on the CPU
 
     return vertex;
+}
+
+vec2 SampleUniformDiskConcentric(vec2 u, out float theta)
+{
+    vec2 offset = 2.0f * u - 1.0f;
+    if (offset == vec2(0.0f))
+        return vec2(0.0f);
+
+    if (abs(offset.x) > abs(offset.y))
+    {
+        theta = PI / 4 * (offset.y / offset.x);
+        return offset.x * vec2(cos(theta), sin(theta));
+    }
+    else
+    {
+        theta = PI / 2 - PI / 4 * (offset.x / offset.y);
+        return offset.y * vec2(cos(theta), sin(theta));
+    }
+}
+
+vec3 SampleCosineHemisphere(vec2 u, out float pdf)
+{
+    float theta;
+    vec2 d = SampleUniformDiskConcentric(u, theta);
+    float z = sqrt(1 - d.x * d.x - d.y * d.y);
+    pdf = abs(cos(theta)) / PI;
+    return vec3(d, z);
+}
+
+struct BSDFSample
+{
+    vec3 Direction;
+    float Pdf;
+    vec3 Color;
+};
+
+BSDFSample SampleDiffuseBRDF(vec2 u, vec3 color)
+{
+    BSDFSample ret;
+
+    ret.Direction = SampleCosineHemisphere(u, ret.Pdf);
+    ret.Color = color / PI;
+
+    return ret;
 }
 
 void main()
@@ -52,18 +102,20 @@ void main()
     // TODO: Calculate the LOD properly
     const float lod = 0.0f;
 
-    uint materialType;
-    uint materialIndex = unpackMaterialId(sbt.MaterialId, materialType);
-    const MetalicRoughnessMaterial material = materials[materialIndex];
-    const vec3 normal = textureLod(textures[material.NormalIdx], vertex.TexCoords, lod).xyz;
+    MaterialSample material = SampleMaterial(sbt.MaterialId, vertex.TexCoords, lod, 0);
+    const vec3 normal = material.Normal;
 
     const mat3 TBN = mat3(vertex.Tangent, vertex.Bitangent, vertex.Normal);
     const vec3 N = normalize(vertex.Normal + TBN * (2.0f * normal - 1.0f));
 
-    payload.Position = vertex.Position;
-    payload.Normal = N;
-    payload.MaterialId = sbt.MaterialId;
-    payload.TexCoords = vertex.TexCoords;
-    payload.HitDistance = gl_RayTmaxEXT;
-    payload.Lod = lod;
+    uint rngState = payload.RngState;
+    vec2 u = vec2(rand(rngState), rand(rngState));
+    BSDFSample bsdf = SampleDiffuseBRDF(u, material.Color);
+
+    payload.Distance = gl_RayTmaxEXT;
+    payload.Direction = normalize(TBN * bsdf.Direction);
+    payload.Bsdf = bsdf.Color;
+    payload.Pdf = bsdf.Pdf * abs(dot(N, payload.Direction));
+    payload.Emissive = material.EmissiveColor;
+    payload.RngState = rngState;
 }

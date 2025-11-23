@@ -48,19 +48,4 @@ void main()
 
     const Vertex originalVertex = getInterpolatedVertex(vertices, indices, gl_PrimitiveID * 3, barycentricCoords);
     const Vertex vertex = transform(originalVertex, sbt.TransformIndex);
-
-    // TODO: Calculate the LOD properly
-    const float lod = 0.0f;
-
-    uint materialType;
-    uint materialIndex = unpackMaterialId(sbt.MaterialId, materialType);
-    const SpecularGlossinessMaterial material = materials[materialIndex];
-    const vec3 N = normalize(vertex.Normal);
-
-    payload.Position = vertex.Position;
-    payload.Normal = N;
-    payload.MaterialId = sbt.MaterialId;
-    payload.TexCoords = vertex.TexCoords;
-    payload.HitDistance = gl_RayTmaxEXT;
-    payload.Lod = lod;
 }
