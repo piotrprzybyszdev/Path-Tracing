@@ -34,6 +34,7 @@ Shaders::SpecializationConstant s_HitGroupFlags = Shaders::HitGroupFlagsNone;
 std::span<const vk::PresentModeKHR> s_PresentModes = {};
 Renderer::Settings s_Settings = {};
 bool s_DebuggingEnabled = false;
+bool s_ShowingImportScene = false;
 
 std::unique_ptr<UIComponents> s_Components = nullptr;
 
@@ -255,6 +256,164 @@ void BackgroundTaskListContent::Render()
     }
 }
 
+class ImportSceneContent : public Content
+{
+public:
+    ~ImportSceneContent() override = default;
+
+    void Render() override;
+private:
+    std::vector<std::filesystem::path> m_ComponentPaths;
+    std::optional<std::filesystem::path> m_SkyboxPath;
+
+private:
+    bool RenderPathText(const std::filesystem::path &path, float width);
+    std::vector<std::filesystem::path> OpenFileDialog(bool multiple = false);
+};
+
+bool ImportSceneContent::RenderPathText(const std::filesystem::path &path, float width)
+{
+    const size_t maxLength = 40;
+    ImVec2 buttonSize(80, 20);
+
+    const std::string pathString = path.string();
+    const char *fmt = pathString.size() > maxLength ? "...%s" : "%s";
+    const size_t offset = pathString.size() > maxLength ? (pathString.size() - maxLength + 3) : 0;
+    ApplyLeftMargin();
+    ImGui::Text(fmt, pathString.c_str() + offset);
+    ImGui::SameLine();
+    AlignItemRight(width, buttonSize.x, 30);
+    ItemMarginTop(-2);
+    return ImGui::Button("Remove", buttonSize);
+}
+
+std::vector<std::filesystem::path> ImportSceneContent::OpenFileDialog(bool multiple)
+{
+    auto checkError = [](nfdresult_t result) {
+        if (result == nfdresult_t::NFD_ERROR)
+        {
+            logger::error("File dialog error: {}", NFD::GetError());
+            NFD::ClearError();
+        }
+        return result == nfdresult_t::NFD_OKAY;
+    };
+
+    if (multiple)
+    {
+        NFD::UniquePathSet paths;
+        if (checkError(NFD::OpenDialogMultiple(paths, (const nfdu8filteritem_t*)nullptr)))
+        {
+            nfdpathsetsize_t size;
+            nfdresult_t result = NFD::PathSet::Count(paths, size);
+            assert(result == nfdresult_t::NFD_OKAY);
+            
+            std::vector<std::filesystem::path> ret;
+            for (int i = 0; i < size; i++)
+            {
+                NFD::UniquePathSetPath path;
+                nfdresult_t result = NFD::PathSet::GetPath(paths, i, path);
+                assert(result == nfdresult_t::NFD_OKAY);
+                ret.push_back(path.get());
+            }
+
+            return ret;
+        }
+    }
+    else
+    {
+        NFD::UniquePath path;
+        if (checkError(NFD::OpenDialog(path)))
+            return { std::filesystem::path(path.get()) };
+    }
+
+    return {};
+}
+
+void ImportSceneContent::Render()
+{
+    ImVec2 size = ImGui::GetWindowSize();
+    ImVec2 buttonSize(100, 20);
+
+    ImGui::Dummy({ 0, 5 });
+    ApplyLeftMargin();
+    ImGui::Text("Skybox");
+    ImGui::Dummy({ 0, 3 });
+
+    if (m_SkyboxPath.has_value())
+    {
+        ApplyLeftMargin();
+        if (RenderPathText(m_SkyboxPath.value(), size.x))
+            m_SkyboxPath.reset();
+    }
+    else
+    {
+        CenterItemHorizontally(size.x, buttonSize.x);
+        if (ImGui::Button("Add Skybox", buttonSize))
+        {
+            auto result = OpenFileDialog();
+            if (!result.empty())
+            {
+                assert(result.size() == 1); 
+                m_SkyboxPath = result.front();
+            }
+        }
+    }
+    
+    ImGui::Dummy({ 0, 10 });
+    ApplyLeftMargin();
+    ImGui::Text("Components");
+    ImGui::Dummy({ 0, 3 });
+
+    int deleteIndex = -1;
+    AlignItemRight(size.x, size.x - 20, 10);
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, ImGui::GetStyle().Colors[ImGuiCol_WindowBg]);
+    ImGui::BeginListBox("##Components", ImVec2(size.x - 20, 300));
+    for (int i = 0; i < m_ComponentPaths.size(); i++)
+    {
+        ImGui::PushID(i);
+        ImGui::Dummy({ 0, 2 });
+        ApplyLeftMargin();
+        if (RenderPathText(m_ComponentPaths[i], size.x - 10))
+            deleteIndex = i;
+        ImGui::PopID();
+    }
+
+    if (deleteIndex != -1)
+        m_ComponentPaths.erase(m_ComponentPaths.begin() + deleteIndex);
+
+    ImGui::Dummy({ 0, 10 });
+    CenterItemHorizontally(size.x, buttonSize.x, -10.0f);
+    if (ImGui::Button("Add Component", buttonSize))
+    {
+        auto result = OpenFileDialog(true);
+        m_ComponentPaths.insert(m_ComponentPaths.begin(), result.begin(), result.end());
+    }
+    ImGui::EndListBox();
+    ImGui::PopStyleColor();
+
+    ImGui::Dummy({ 0, 5 });
+    const float margin = 20;
+    ImGui::SetCursorPosX(margin);
+    AlignItemBottom(size.y, buttonSize.y, margin);
+    if (ImGui::Button("Cancel", buttonSize))
+        s_ShowingImportScene = false;
+    AlignItemRight(size.x, buttonSize.x, margin);
+    AlignItemBottom(size.y, buttonSize.y, margin);
+    if (ImGui::Button("Import", buttonSize))
+    {
+        if (!m_ComponentPaths.empty())
+        {
+            auto loader = std::make_unique<CombinedSceneLoader>();
+            loader->AddComponents(m_ComponentPaths);
+            if (m_SkyboxPath.has_value())
+                loader->AddSkybox2D(m_SkyboxPath.value());
+
+            SceneManager::SetActiveScene(std::move(loader), "User Scene");
+        }
+        s_ShowingImportScene = false;
+    }
+}
+
 class SettingsTab : public Tab
 {
 public:
@@ -328,20 +487,9 @@ void SceneTab::RenderContent()
     ImGui::Dummy({ 3.0f, 0.0f });
     ImGui::SameLine();
     if (ImGui::Button("Import scene from file"))
-    {
-        NFD::UniquePath path;
-        nfdresult_t result = NFD::OpenDialog(path);
-        if (result == nfdresult_t::NFD_OKAY)
-            SceneManager::SetActiveScene(std::filesystem::path(path.get()));
-        else if (result == nfdresult_t::NFD_ERROR)
-        {
-            logger::error("File dialog error: {}", NFD::GetError());
-            NFD::ClearError();
-        }
-    }
-
-    ImGui::Dummy({ 0.0f, 3.0f });
-    ImGui::Dummy({ 3.0f, 0.0f });
+        s_ShowingImportScene = true;
+    ImGui::SameLine();
+    ImGui::Dummy({ 5.0f, 0.0f });
     ImGui::SameLine();
     if (ImGui::Button("Refresh discovered scenes"))
         SceneManager::DiscoverScenes();
@@ -569,8 +717,15 @@ struct UIComponents
     StatisticsTab Statistics;
     AboutTab About;
 
-    Widget<BackgroundTaskListContent, 1> BackgroundTaskList =
-        Widget<BackgroundTaskListContent, 1>("Background Tasks", { BackgroundTaskListContent() }, 5.0f, 0.0f);
+    FixedWindow<BackgroundTaskListContent, 1> BackgroundTasksWindow = FixedWindow(
+        ImVec2(300, 150), "Background tasks",
+        Widget<BackgroundTaskListContent, 1>("Background Tasks", { BackgroundTaskListContent() }, 5.0f, 0.0f)
+    );
+
+    FixedWindow<ImportSceneContent, 1> ImportSceneWindow = FixedWindow(
+        ImVec2(500, 500), "Import Scene",
+        Widget<ImportSceneContent, 1>("Import Scene", { ImportSceneContent() }, 5.0f, 0.0f)
+    );
 };
 
 void UserInterface::DefineUI()
@@ -602,18 +757,10 @@ void UserInterface::DefineUI()
 
     ImGui::End();
 
-    ImVec2 size = s_Io->DisplaySize;
-    ImVec2 pos = ImVec2(size.x - 320, size.y - 170);
-    ImGui::SetNextWindowPos(pos);
-    ImGui::SetNextWindowSize({ 300, 150 });
-    ImGui::Begin(
-        "Background tasks", nullptr,
-        ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove
-    );
+    s_Components->BackgroundTasksWindow.RenderBottomRight(s_Io->DisplaySize, ImVec2(20, 20));
 
-    s_Components->BackgroundTaskList.Render();
-
-    ImGui::End();
+    if (s_ShowingImportScene)
+        s_Components->ImportSceneWindow.RenderCenter(s_Io->DisplaySize);
 }
 
 }

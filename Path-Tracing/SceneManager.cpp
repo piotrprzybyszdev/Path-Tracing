@@ -1,11 +1,50 @@
 #include "Core/Core.h"
 
+#include "Application.h"
 #include "ExampleScenes.h"
-#include "SceneImporter.h"
 #include "SceneManager.h"
+#include "TextureImporter.h"
 
 namespace PathTracing
 {
+
+void CombinedSceneLoader::AddTextureMapping(TextureMapping mapping)
+{
+    m_TextureMapping = mapping;
+}
+
+void CombinedSceneLoader::AddComponent(const std::filesystem::path &path)
+{
+    m_ComponentPaths.push_back(path);
+}
+
+void CombinedSceneLoader::AddComponents(std::span<const std::filesystem::path> paths)
+{
+    for (const auto &path : paths)
+        m_ComponentPaths.push_back(path);
+}
+
+void CombinedSceneLoader::AddSkybox2D(const std::filesystem::path &path)
+{
+    m_SkyboxPath = path;
+}
+
+bool CombinedSceneLoader::HasContent() const
+{
+    return m_SkyboxPath.has_value() || !m_ComponentPaths.empty();
+}
+
+void CombinedSceneLoader::Load(SceneBuilder &sceneBuilder)
+{
+    for (const auto &path : m_ComponentPaths)
+        SceneImporter::AddFile(sceneBuilder, path, m_TextureMapping);
+
+    if (!m_SkyboxPath.has_value())
+        return;
+
+    TextureInfo info = TextureImporter::GetTextureInfo(m_SkyboxPath.value(), TextureType::Skybox, "Skybox");
+    sceneBuilder.SetSkybox(Skybox2D(info));
+}
 
 std::map<std::string, SceneGroup> SceneManager::s_SceneGroups = {};
 std::atomic<std::shared_ptr<Scene>> SceneManager::s_ActiveScene = nullptr;
@@ -31,20 +70,20 @@ void SceneManager::DiscoverScenes()
     ExampleScenes::AddScenes(s_SceneGroups);
 }
 
-void SceneManager::SetActiveScene(const std::filesystem::path &path)
+void SceneManager::SetActiveScene(std::unique_ptr<SceneLoader> loader, const std::string &sceneName)
 {
     WaitLoadFinish();
 
-    s_LoadingThread = std::jthread([path](std::stop_token stopToken) {
+    s_LoadingThread = std::jthread([loader = std::move(loader), sceneName](std::stop_token stopToken) {
         try
         {
             SceneBuilder sceneBuilder;
-            SceneImporter::AddFile(sceneBuilder, path);
+            loader->Load(sceneBuilder); 
             s_ActiveScene = sceneBuilder.CreateSceneShared();
         }
         catch (const error &error)
         {
-            logger::error("Scene {} could not be loaded", path.string());
+            logger::error("Scene `{}` could not be loaded", sceneName);
         }
     });
 }
@@ -64,7 +103,7 @@ void SceneManager::SetActiveScene(const std::string &groupName, const std::strin
         }
         catch (const error &error)
         {
-            logger::error("Scene {} could not be loaded", sceneName);
+            logger::error("Scene `{}` could not be loaded", sceneName);
         }
     });
 }

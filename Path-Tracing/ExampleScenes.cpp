@@ -25,60 +25,6 @@ public:
     void Load(SceneBuilder &sceneBuilder) override;
 };
 
-class CombinedSceneLoader : public SceneLoader
-{
-public:
-    ~CombinedSceneLoader() override = default;
-
-    void AddTextureMapping(TextureMapping mapping);
-    void AddFile(const std::filesystem::path &path);
-    void AddSkybox2D(const std::filesystem::path &path);
-
-    [[nodiscard]] bool HasContent() const;
-    void Load(SceneBuilder &sceneBuilder) override;
-
-private:
-    TextureMapping m_TextureMapping;
-    std::vector<std::filesystem::path> m_FilePaths;
-    std::filesystem::path m_SkyboxPath;
-    bool m_HasSkybox = false;
-};
-
-void CombinedSceneLoader::AddTextureMapping(TextureMapping mapping)
-{
-    m_TextureMapping = mapping;
-}
-
-void CombinedSceneLoader::AddFile(const std::filesystem::path &path)
-{
-    m_FilePaths.push_back(path);
-}
-
-void CombinedSceneLoader::AddSkybox2D(const std::filesystem::path &path)
-{
-    m_SkyboxPath = path;
-    m_HasSkybox = true;
-}
-
-bool CombinedSceneLoader::HasContent() const
-{
-    return m_HasSkybox || !m_FilePaths.empty();
-}
-
-void CombinedSceneLoader::Load(SceneBuilder &sceneBuilder)
-{
-    for (const auto &path : m_FilePaths)
-        SceneImporter::AddFile(sceneBuilder, path, m_TextureMapping);
-
-    if (!m_HasSkybox)
-        return;
-
-    TextureInfo info = TextureImporter::GetTextureInfo(
-        Application::GetConfig().AssetDirectoryPath / "scenes" / m_SkyboxPath, TextureType::Skybox, "Skybox"
-    );
-    sceneBuilder.SetSkybox(Skybox2D(info));
-}
-
 void CreateDefaultScene(SceneBuilder &sceneBuilder);
 void CreateMetalicRoughnessCubesScene(SceneBuilder &sceneBuilder);
 void CreateReuseMeshCubesScene(SceneBuilder &sceneBuilder);
@@ -103,7 +49,7 @@ static void AddKhronosScenes(std::map<std::string, SceneGroup> &scenes)
                 continue;
 
             auto loader = std::make_unique<CombinedSceneLoader>();
-            loader->AddFile(entry.path());
+            loader->AddComponent(entry.path());
 
             group.emplace(entry.path().stem().string(), std::move(loader));
         }
@@ -117,8 +63,7 @@ static void AddKhronosScenes(std::map<std::string, SceneGroup> &scenes)
 struct SceneDescription
 {
     std::vector<std::filesystem::path> ComponentPaths;
-    std::filesystem::path SkyboxPath;
-    bool HasSkybox = false;
+    std::optional<std::filesystem::path> SkyboxPath;
     TextureMapping TextureMapping;
 
     [[nodiscard]] std::unique_ptr<CombinedSceneLoader> ToLoader() const;
@@ -132,15 +77,18 @@ std::unique_ptr<CombinedSceneLoader> SceneDescription::ToLoader() const
     for (const auto &path : ComponentPaths)
     {
         if (std::filesystem::exists(path))
-            loader->AddFile(path);
+            loader->AddComponent(path);
         else
             logger::warn("Scene component not found: {}", path.string());
     }
 
-    if (HasSkybox && std::filesystem::exists(SkyboxPath))
-        loader->AddSkybox2D(SkyboxPath);
-    else
-        logger::warn("Skybox file not found: {}", SkyboxPath.string());
+    if (SkyboxPath.has_value())
+    {
+        if (std::filesystem::exists(SkyboxPath.value()))
+            loader->AddSkybox2D(SkyboxPath.value());
+        else
+            logger::warn("Skybox file not found: {}", SkyboxPath.value().string());
+    }
 
     return loader;
 }
@@ -167,7 +115,6 @@ static void AddHighQualityScenes(std::map<std::string, SceneGroup> &scenes)
             base / "IntelSponzaCurtains" / "pkg_a_curtains" / "NewSponza_Curtains_glTF.gltf",
         },
         .SkyboxPath = base / "IntelSponzaMain" / "main_sponza" / "textures" / "kloppenheim_05_4k.hdr",
-        .HasSkybox = true,
     };
 
     /* NOTE:
@@ -194,7 +141,6 @@ static void AddHighQualityScenes(std::map<std::string, SceneGroup> &scenes)
     SceneDescription ue4SunTempleDescription = {
         .ComponentPaths = { base / "UE4SunTemple" / "SunTemple_v4" / "SunTemple" / "SunTemple.fbx" },
         .SkyboxPath = { base / "UE4SunTemple" / "SunTemple_v4" / "SunTemple" / "SunTemple_Skybox.hdr" },
-        .HasSkybox = true,
         .TextureMapping = NVIDIAOrcaTextureMapping,
     };
 
@@ -205,7 +151,6 @@ static void AddHighQualityScenes(std::map<std::string, SceneGroup> &scenes)
             base / "AmazonBistro" / "Bistro_v5_2" / "BistroInterior_Wine.fbx",
         },
         .SkyboxPath = base / "AmazonBistro" / "Bistro_v5_2" / "san_giuseppe_bridge_4k.hdr",
-        .HasSkybox = true,
         .TextureMapping = NVIDIAOrcaTextureMapping,
     };
 

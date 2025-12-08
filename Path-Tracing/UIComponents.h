@@ -24,6 +24,17 @@ protected:
     void ApplyLeftMargin() const;
 };
 
+inline void Content::SetLeftMargin(float value)
+{
+    m_LeftMargin = value;
+}
+
+inline void Content::ApplyLeftMargin() const
+{
+    ImGui::Dummy({ m_LeftMargin, 0.0f });
+    ImGui::SameLine();
+}
+
 template<typename O, typename T> class Options : public Content
 {
 public:
@@ -241,6 +252,73 @@ template<typename T, size_t N> void Widget<T, N>::Render()
 template<typename T, size_t N> std::span<const T> Widget<T, N>::GetContents() const
 {
     return m_Contents;
+}
+
+template<typename T, size_t N> class FixedWindow
+{
+public:
+    FixedWindow(ImVec2 size, std::string &&name, Widget<T, N> &&widget);
+
+    void Render(ImVec2 pos);
+    void RenderBottomRight(ImVec2 size, ImVec2 margin);
+    void RenderCenter(ImVec2 size);
+
+private:
+    ImVec2 m_Size;
+    const std::string m_Name;
+    Widget<T, N> m_Widget;
+};
+
+template<typename T, size_t N>
+FixedWindow<T, N>::FixedWindow(ImVec2 size, std::string &&name, Widget<T, N> &&widget)
+    : m_Size(size), m_Name(std::move(name)), m_Widget(std::move(widget))
+{
+}
+
+template<typename T, size_t N> void FixedWindow<T, N>::Render(ImVec2 pos)
+{
+    ImGui::SetNextWindowPos(pos);
+    ImGui::SetNextWindowSize(m_Size);
+
+    ImGui::Begin(
+        m_Name.c_str(), nullptr,
+        ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove
+    );
+    
+    m_Widget.Render();
+
+    ImGui::End();
+}
+
+template<typename T, size_t N> void FixedWindow<T, N>::RenderBottomRight(ImVec2 size, ImVec2 margin)
+{
+    Render(ImVec2(size.x - m_Size.x - margin.x, size.y - m_Size.y - margin.y));
+}
+
+template<typename T, size_t N> void FixedWindow<T, N>::RenderCenter(ImVec2 size)
+{
+    Render(ImVec2((size.x - m_Size.x) / 2, (size.y - m_Size.y) / 2));
+}
+
+inline void AlignItemRight(float width, float itemWidth, float margin)
+{
+    ImGui::SetCursorPosX(width - itemWidth - margin);
+}
+
+inline void AlignItemBottom(float height, float itemHeight, float margin)
+{
+    ImGui::SetCursorPosY(height - itemHeight - margin);
+}
+
+inline void ItemMarginTop(float margin)
+{
+    float y = ImGui::GetCursorPosY();
+    ImGui::SetCursorPosY(y + margin);
+}
+
+inline void CenterItemHorizontally(float width, float itemWidth, float offset = 0.0f)
+{
+    ImGui::SetCursorPosX((width - itemWidth) / 2 + offset);
 }
 
 }

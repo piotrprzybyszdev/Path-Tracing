@@ -1,14 +1,15 @@
 #pragma once
 
-#include <atomic>
 #include <filesystem>
 #include <memory>
 #include <ranges>
 #include <map>
 #include <string>
+#include <span>
 #include <thread>
 
 #include "Scene.h"
+#include "SceneImporter.h"
 
 namespace PathTracing
 {
@@ -21,6 +22,25 @@ public:
     virtual void Load(SceneBuilder &sceneBuilder) = 0;
 };
 
+class CombinedSceneLoader : public SceneLoader
+{
+public:
+    ~CombinedSceneLoader() override = default;
+
+    void AddTextureMapping(TextureMapping mapping);
+    void AddComponent(const std::filesystem::path &path);
+    void AddComponents(std::span<const std::filesystem::path> paths);
+    void AddSkybox2D(const std::filesystem::path &path);
+
+    [[nodiscard]] bool HasContent() const;
+    void Load(SceneBuilder &sceneBuilder) override;
+
+private:
+    TextureMapping m_TextureMapping;
+    std::vector<std::filesystem::path> m_ComponentPaths;
+    std::optional<std::filesystem::path> m_SkyboxPath;
+};
+
 using SceneGroup = std::map<std::string, std::unique_ptr<SceneLoader>>;
 
 class SceneManager
@@ -30,7 +50,7 @@ public:
     static void Shutdown();
 
     static void DiscoverScenes();
-    static void SetActiveScene(const std::filesystem::path &path);
+    static void SetActiveScene(std::unique_ptr<SceneLoader> loader, const std::string &sceneName);
     static void SetActiveScene(const std::string &groupName, const std::string &sceneName);
     static std::shared_ptr<Scene> GetActiveScene();
 
