@@ -353,6 +353,9 @@ template<size_t N> inline void RaytracingPipeline::Update(const PipelineConfig<N
     vk::Pipeline removed = cache.Insert(config, m_Handle);
     DeviceContext::GetLogical().destroyPipeline(removed);
 
+    if (Application::GetConfig().ShaderPrecompilation == false)
+        return;
+
     uint32_t taskCount = 0;
     for (int i = 0; i < m_Shaders.size(); i++)
         if (needsCompilingVariants[i])
@@ -384,6 +387,9 @@ template<size_t N> inline void ComputePipeline::Update(const PipelineConfig<N> &
         m_Shader.UpdateSpecializations(m_MaxConfig);
         m_Handle = CreateVariantImmediate(config);
         m_IsHandleImmediate = true;
+
+        if (Application::GetConfig().ShaderPrecompilation == false)
+            return;
 
         Application::AddBackgroundTask(BackgroundTaskType::ShaderCompilation, m_Shader.GetVariantCount());
         m_CompileThread =

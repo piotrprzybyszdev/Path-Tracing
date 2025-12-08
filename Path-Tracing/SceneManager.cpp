@@ -104,6 +104,7 @@ void SceneManager::SetActiveScene(const std::string &groupName, const std::strin
         catch (const error &error)
         {
             logger::error("Scene `{}` could not be loaded", sceneName);
+            Application::ResetBackgroundTask(BackgroundTaskType::SceneImport);
         }
     });
 }

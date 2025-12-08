@@ -197,9 +197,6 @@ uint32_t ShaderInfo::GetVariantCount() const
 
 void ShaderInfo::CompileVariants(std::stop_token stopToken)
 {
-    if (Application::GetConfig().ShaderPrecompilation == false)
-        return;
-
     auto clearVariants = [this]() {
         for (auto pipeline : m_Variants | std::views::values)
             DeviceContext::GetLogical().destroyPipeline(pipeline);

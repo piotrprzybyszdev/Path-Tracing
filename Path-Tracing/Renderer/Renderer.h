@@ -33,7 +33,7 @@ public:
     static void Init(const Swapchain *swapchain);
     static void Shutdown();
 
-    static void UpdateSceneData(bool updated);
+    static void UpdateSceneData(const std::shared_ptr<Scene> &scene, bool updated);
 
     static void OnResize(vk::Extent2D extent);
     static void OnUpdate(float timeStep);

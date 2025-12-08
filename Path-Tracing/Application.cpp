@@ -294,8 +294,9 @@ void Application::Run()
                 Window::OnUpdate(timeStep);
                 UserInterface::OnUpdate(timeStep);
 
-                bool updated = SceneManager::GetActiveScene()->Update(timeStep);
-                Renderer::UpdateSceneData(updated);
+                const auto scene = SceneManager::GetActiveScene();
+                const bool updated = scene->Update(timeStep);
+                Renderer::UpdateSceneData(scene, updated);
 
                 Renderer::OnUpdate(timeStep);
             }

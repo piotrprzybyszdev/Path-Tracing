@@ -319,7 +319,7 @@ void AccelerationStructure::AddTraceBarrier(vk::CommandBuffer commandBuffer)
 
 vk::BuildAccelerationStructureFlagsKHR AccelerationStructure::GetFlags(bool isAnimated) const
 {
-    return m_Scene->HasAnimations() ? vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastBuild |
+    return m_Scene->HasAnimations() ? vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace |
                                           vk::BuildAccelerationStructureFlagBitsKHR::eAllowUpdate
                                     : vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace;
 }

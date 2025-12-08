@@ -34,11 +34,11 @@ The default configuration is `Release`.
 | ASSERTS                                | ❌        | ❌           | ✅    | ✅     |
 | LOG_TO_FILE                            | ❌        | ❌           | ❌    | ✅     |
 | LOG_LEVEL_*                            | INFO      | INFO          | DEBUG | TRACE   |
+| MAX_TEXTURE_MEMORY_BUDGET_ABSOLUTE_MIB | ❌        | ❌           | 1024  | 1024    |
 | MAX_TEXTURE_LOADER_THREADS             | ❌        | ❌           | 2     | 2       |
 | MAX_BUFFERS_PER_LOADER_THREAD          | ❌        | ❌           | 1     | 1       |
 | MAX_SHADER_COMPILATION_THREADS         | ❌        | ❌           | 2     | 2       |
-| MAX_SHADER_COMPILATION_BATCH_SIZE      | ❌        | ❌           | 16    | 16      |
-| MAX_TEXTURE_MEMORY_BUDGET_ABSOLUTE_MIB | ❌        | ❌           | 1024  | 1024    |
+| MAX_SHADER_COMPILATION_BATCH_SIZE      | 128       | 128           | 16    | 16      |
 
 Other configuration options:
 * MAX_SHADER_INCLUDE_DEPTH

@@ -478,13 +478,13 @@ std::unordered_set<const aiNode *> FindDynamicNodes(const aiScene *scene)
             const std::string animationName = originalName.length != 0
                                                   ? originalName.C_Str()
                                                   : std::format("Unnamed Animation at index {}", i);
-            logger::info("{} ({:.1f}s)", animationName, animation->mDuration / animation->mTicksPerSecond);
+            logger::debug("{} ({:.1f}s)", animationName, animation->mDuration / animation->mTicksPerSecond);
         }
 
         for (int j = 0; j < animation->mNumChannels; j++)
         {
             const aiNodeAnim *animNode = animation->mChannels[j];
-            logger::info("    animates node named: {}", animNode->mNodeName.C_Str());
+            logger::debug("    animates node named: {}", animNode->mNodeName.C_Str());
 
             const aiNode *node = scene->mRootNode->FindNode(animNode->mNodeName);
             if (node == nullptr)
@@ -515,7 +515,7 @@ std::unordered_map<const aiNode *, uint32_t> LoadSceneNodes(
 
         nodes.push_back(node);
 
-        logger::info(
+        logger::debug(
             "{}{}, mesh count: {}", std::string(depth * 4, ' '), node->mName.C_Str(), node->mNumMeshes
         );
 
@@ -826,7 +826,7 @@ void LoadCameras(
         const float aspect = camera->mAspect == 0.0f ? 16.0f / 9.0f : camera->mAspect;
         const float verticalFov = camera->mHorizontalFOV == 0.0f
                                       ? 45.0f
-                                      : 2.0f * glm::atan(glm::tan(camera->mHorizontalFOV / 2.0f) / aspect);
+                                      : (2.0f * glm::atan(glm::tan(camera->mHorizontalFOV / 2.0f) * aspect));
         glm::vec3 up = TrivialCopy<aiVector3D, glm::vec3>(camera->mUp);
         up.y *= -1;
 

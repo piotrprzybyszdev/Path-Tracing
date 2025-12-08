@@ -14,7 +14,6 @@
 #include "CommandBuffer.h"
 #include "DeviceContext.h"
 #include "Renderer.h"
-#include "SceneManager.h"
 #include "Utils.h"
 
 namespace PathTracing
@@ -159,17 +158,17 @@ void Renderer::Shutdown()
     s_MainCommandBuffer.reset();
 }
 
-void Renderer::UpdateSceneData(bool updated)
+void Renderer::UpdateSceneData(const std::shared_ptr<Scene> &scene, bool updated)
 {
     if (updated)
         ResetAccumulationImage();
 
-    if (s_SceneData != nullptr && s_SceneData->Handle == SceneManager::GetActiveScene())
+    if (s_SceneData != nullptr && s_SceneData->Handle == scene)
         return;
 
     DeviceContext::GetGraphicsQueue().WaitIdle();
     s_TextureUploader->Cancel();
-    s_SceneData = std::make_unique<SceneData>(SceneManager::GetActiveScene());
+    s_SceneData = std::make_unique<SceneData>(scene);
 
     {
         Timer timer("Mesh Upload");
@@ -553,7 +552,8 @@ void Renderer::UpdateShaderBindingTable()
 void Renderer::UpdatePipelineSpecializations()
 {
     DeviceContext::GetGraphicsQueue().WaitIdle();
-    s_ActiveRayTracingPipeline->CancelUpdate();
+    s_PathTracingPipeline->CancelUpdate();
+    s_DebugRayTracingPipeline->CancelUpdate();
     s_SkinningPipeline->CancelUpdate();
     Application::ResetBackgroundTask(BackgroundTaskType::ShaderCompilation);
 

@@ -244,7 +244,8 @@ void BackgroundTaskListContent::Render()
         if (taskState.IsRunning())
             m_LastTimeRunning[static_cast<uint8_t>(taskType)] = time;
 
-        if (time - m_LastTimeRunning[static_cast<uint8_t>(taskType)] > m_WaitAfterCompleteTime)
+        if (time - m_LastTimeRunning[static_cast<uint8_t>(taskType)] > m_WaitAfterCompleteTime ||
+            taskState.TotalCount == 0)
             continue;
 
         float fraction = taskState.GetDoneFraction();
