@@ -145,6 +145,8 @@ void UserInterface::OnKeyRelease(Key key)
     case Key::H:
         Renderer::ReloadShaders();
         break;
+    case Key::P:
+        SceneManager::GetActiveScene()->ToggleAnimationPause();
     }
 }
 

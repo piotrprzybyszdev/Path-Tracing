@@ -46,6 +46,17 @@ Scene::Scene(
 
 bool Scene::Update(float timeStep)
 {
+    bool updated = m_HasCameraChanged;
+    m_HasCameraChanged = false;
+
+    updated |= GetActiveCamera().OnUpdate(timeStep);
+
+    Stats::AddStat("Animations", "Animations: {}", m_IsAnimationPaused ? "Paused" : "Playing");
+    if (m_IsAnimationPaused)
+        return updated;
+
+    updated |= m_HasAnimatedInstances;
+
     m_Graph.Update(timeStep);
 
     auto nodes = m_Graph.GetSceneNodes();
@@ -59,13 +70,7 @@ bool Scene::Update(float timeStep)
     for (int i = 0; i < m_LightInfos.size(); i++)
         m_PointLights[i].Position = glm::vec4(m_LightInfos[i].Position, 1.0f) *
                                     nodes[m_LightInfos[i].SceneNodeIndex].CurrentTransform;
-    
-    bool updated = m_HasAnimatedInstances;
-    
-    updated |= m_HasCameraChanged;
-    m_HasCameraChanged = false;
 
-    updated |= GetActiveCamera().OnUpdate(timeStep);
     return updated;
 }
 
@@ -416,6 +421,11 @@ void Scene::SetActiveCamera(CameraId id)
     camera->OnResize(width, height);
     m_ActiveCameraId = id;
     m_HasCameraChanged = true;
+}
+
+void Scene::ToggleAnimationPause()
+{
+    m_IsAnimationPaused = !m_IsAnimationPaused;
 }
 
 uint32_t Scene::GetDefaultTextureIndex(TextureType type)

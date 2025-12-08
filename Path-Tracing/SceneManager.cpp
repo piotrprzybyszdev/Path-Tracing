@@ -1,5 +1,3 @@
-#include <ranges>
-
 #include "Core/Core.h"
 
 #include "ExampleScenes.h"

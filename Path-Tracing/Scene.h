@@ -193,6 +193,8 @@ public:
     [[nodiscard]] Camera &GetActiveCamera();
     void SetActiveCamera(CameraId id);
 
+    void ToggleAnimationPause();
+
     inline static const CameraId g_InputCameraId = -1;
 
 public:
@@ -234,6 +236,8 @@ private:
     std::vector<AnimatedCamera> m_SceneCameras;
     CameraId m_ActiveCameraId = g_InputCameraId;
     bool m_HasCameraChanged = true;
+
+    bool m_IsAnimationPaused = false;
 };
 
 class SceneBuilder

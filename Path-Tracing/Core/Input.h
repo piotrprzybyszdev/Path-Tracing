@@ -23,6 +23,7 @@ enum Key : uint16_t
     W = GLFW_KEY_W,
 
     H = GLFW_KEY_H,
+    P = GLFW_KEY_P,
     Space = GLFW_KEY_SPACE,
 };
 
