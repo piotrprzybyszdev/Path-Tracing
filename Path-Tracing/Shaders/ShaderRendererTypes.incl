@@ -119,6 +119,16 @@ const uint PrimaryRayMissGroupIndex         = 0u;
 const uint OcclusionRayHitGroupIndex        = 1u;
 const uint OcclusionRayMissGroupIndex       = 1u;
 
+struct MaterialSample
+{
+    vec3 EmissiveColor;
+    vec3 Color;
+    vec3 Normal;
+    float Roughness;
+    float Metalness;
+    float Transmission;
+    float Eta;
+};
 
 #ifndef GL_core_profile
 

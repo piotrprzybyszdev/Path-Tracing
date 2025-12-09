@@ -3,7 +3,7 @@
 #extension GL_EXT_nonuniform_qualifier : require
 
 #include "Application/ShaderRendererTypes.incl"
-#include "TestShaderTypes.incl"
+#include "ShadingTestShaderTypes.incl"
 
 layout(constant_id = 0) const uint s_Mode = 0;
 

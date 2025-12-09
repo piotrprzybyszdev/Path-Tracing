@@ -1,0 +1,50 @@
+#version 460
+#extension GL_EXT_buffer_reference : require
+
+#include "BsdfTestShaderTypes.incl"
+
+layout(constant_id = 0) const uint s_Mode = 0;
+
+layout (local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+#include "testCommon.glsl"
+
+layout(push_constant, std430) uniform PushConstantLayout {
+    VoidBuffer pc_InputBuffer;
+    VoidBuffer pc_OutputBuffer;
+};
+
+TEST_BUFFER(SampleLobePdfs);
+
+#include "Application/bsdf.glsl"
+
+void testSampleLobePdfs(uint index)
+{
+    SampleLobePdfsInput testInput = TEST_READ(SampleLobePdfs, index);
+
+    MaterialSample material;
+    material.Metalness = testInput.Metalness;
+    material.Transmission = testInput.Transmission;
+
+    LobePdfs pdfs = sampleLobePdfs(material, testInput.F);
+
+    SampleLobePdfsOutput testOutput;
+    testOutput.Diffuse = pdfs.Diffuse;
+    testOutput.Glossy = pdfs.Glossy;
+    testOutput.Metallic = pdfs.Metallic;
+    testOutput.Transmissive = pdfs.Transmissive;
+
+    TEST_WRITE(SampleLobePdfs, index, testOutput);
+}
+
+void main()
+{
+    const uint index = gl_GlobalInvocationID.x;
+
+    switch (s_Mode)
+    {
+    case BsdfTestModeSampleLobePdfs:
+        testSampleLobePdfs(index);
+        break;
+    }
+}

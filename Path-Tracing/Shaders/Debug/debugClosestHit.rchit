@@ -45,10 +45,24 @@ hitAttributeEXT vec3 attribs;
 
 #include "common.glsl"
 #include "sampling.glsl"
-#include "shading.glsl"
 #include "tracing.glsl"
+#include "material.glsl"
 
 const float ambient = 0.05f;
+
+bool checkOccluded(vec3 lightDir, vec3 position, float dist)
+{  
+    vec3 direction = -normalize(lightDir);
+
+    float tmin = 0.00001;
+    float tmax = dist;
+
+    isOccluded = true;
+
+    traceRayEXT(u_TopLevelAS, gl_RayFlagsTerminateOnFirstHitEXT, 0xff, OcclusionRayHitGroupIndex, 2, OcclusionRayMissGroupIndex, position, tmin, direction, tmax, 1);
+
+    return isOccluded;
+}
 
 float DDDDistributionGGX(vec3 N, vec3 H, float roughness)
 {
@@ -143,18 +157,6 @@ vec3 getRandomColor(uint x)
     return vec3(r, g, b);
 }
 
-Vertex transform(Vertex vertex, uint transformIndex)
-{
-    const mat3x4 transform = mat3x4(mat4(transforms[transformIndex]) * gl_ObjectToWorld3x4EXT);
-
-    vertex.Position = vec4(vertex.Position, 1.0f) * transform;
-    vertex.Tangent = normalize(vec4(vertex.Tangent, 0.0f) * transform);
-    vertex.Bitangent = normalize(vec4(vertex.Bitangent, 0.0f) * transform);
-    vertex.Normal = normalize((vec4(vertex.Normal, 0.0f) * transpose(inverse(mat4(transform)))).xyz);  // TODO: Calculate inverse on the CPU
-
-    return vertex;
-}
-
 void main()
 {
     const vec3 barycentricCoords = computeBarycentricCoords(attribs);
@@ -178,15 +180,15 @@ void main()
     v2 = transform(v2, sbt.TransformIndex);
 
     vec3 dpdu, dpdv, dndu, dndv;
-    ComputeDpnDuv(v0, v1, v2, vertex, dpdu, dpdv, dndu, dndv);
+    computeDpnDuv(v0, v1, v2, vertex, dpdu, dpdv, dndu, dndv);
 
     vec3 dpdx, dpdy;
-    ComputeDpDxy(vertex.Position, origin, normalize(viewDir), origin, payload.RxDirection, origin, payload.RyDirection, vertex.Normal, dpdx, dpdy);
-    const vec4 derivatives = (s_HitGroupFlags & HitGroupFlagsDisableMipMaps) != HitGroupFlagsNone ? vec4(0.0f) : ComputeDerivatives(dpdx, dpdy, dpdu, dpdv);
+    computeDpDxy(vertex.Position, origin, normalize(viewDir), origin, payload.RxDirection, origin, payload.RyDirection, vertex.Normal, dpdx, dpdy);
+    const vec4 derivatives = (s_HitGroupFlags & HitGroupFlagsDisableMipMaps) != HitGroupFlagsNone ? vec4(0.0f) : computeDerivatives(dpdx, dpdy, dpdu, dpdv);
 
     const bool flipYNormal = (s_HitGroupFlags & HitGroupFlagsDxNormalTextures) != HitFlagsNone;
 
-    MaterialSample material = SampleMaterial(sbt.MaterialId, vertex.TexCoords, derivatives, s_HitGroupFlags, false, flipYNormal);
+    MaterialSample material = sampleMaterial(sbt.MaterialId, vertex.TexCoords, derivatives, s_HitGroupFlags, false, flipYNormal);
 
     if (payload.DecalDist != -1.0f && gl_RayTmaxEXT > payload.DecalDist)
         material.Color = mix(material.Color, payload.Color.rgb, payload.Color.a);
@@ -231,7 +233,7 @@ void main()
         payload.Color = vec4(vertex.TexCoords, 0.0f, 1.0f);
         break;
     case RenderModeMips:
-        payload.Color = vec4(vec3(0.1f * ComputeLod(derivatives) + 1.0f), 1.0f);
+        payload.Color = vec4(vec3(0.1f * computeLod(derivatives) + 1.0f), 1.0f);
         break;
     case RenderModeGeometry:
         payload.Color = vec4(getRandomColor(gl_GeometryIndexEXT), 1.0f);

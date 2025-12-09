@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "Shaders/TestShaderTypes.incl"
+#include "Shaders/ShadingTestShaderTypes.incl"
 
 #include "TestRenderer.h"
 

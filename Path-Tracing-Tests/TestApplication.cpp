@@ -81,7 +81,7 @@ vk::SurfaceKHR Application::s_Surface = nullptr;
 Application::State Application::s_State = Application::State::Shutdown;
 
 Config Application::s_Config = {};
-std::array<BackgroundTask, 3> Application::s_BackgroundTasks = {};
+std::array<BackgroundTask, 4> Application::s_BackgroundTasks = {};
 
 void Application::Init(int argc, const char *argv[])
 {

@@ -14,7 +14,7 @@ Ray constructPrimaryRay(uvec2 pixel, uvec2 resolution, Camera camera, vec2 u, ve
     const vec2 pixelCenterOffsetX = pixelCenter + vec2(1.0, 0.0);
     const vec2 pixelCenterOffsetY = pixelCenter + vec2(0.0, 1.0);
 
-    const vec2 pLens = lensRadius * SampleUniformDiskConcentric(u2);
+    const vec2 pLens = lensRadius * sampleUniformDiskConcentric(u2);
 
     const vec2 inUV = pixelCenter / resolution;
     vec2 d = inUV * 2.0 - 1.0;

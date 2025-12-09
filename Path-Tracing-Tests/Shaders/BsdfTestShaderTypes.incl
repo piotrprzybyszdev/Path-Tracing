@@ -1,0 +1,36 @@
+#ifndef GL_core_profile
+#pragma once
+
+#include <glm/glm.hpp>
+
+namespace PathTracingTests::Shaders
+{
+
+using namespace glm;
+
+#endif
+
+const uint BsdfTestModeSampleLobePdfs                = 0u;
+const uint BsdfTestModeMax                           = 0u;
+
+struct SampleLobePdfsInput
+{
+    float Metalness;
+    float Transmission;
+    float F;
+    float pad0;
+};
+
+struct SampleLobePdfsOutput
+{
+    float Diffuse;
+    float Glossy;
+    float Metallic;
+    float Transmissive;
+};
+
+#ifndef GL_core_profile
+
+}
+
+#endif

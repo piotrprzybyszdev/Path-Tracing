@@ -1,33 +1,139 @@
 #version 460
 #extension GL_EXT_buffer_reference : require
 
-#include "Application/ShaderRendererTypes.incl"
-#include "Application/shading.glsl"
-#include "TestShaderTypes.incl"
+#include "ShadingTestShaderTypes.incl"
+
+layout(constant_id = 0) const uint s_Mode = 0;
 
 layout (local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 
-BUFFER_POINTER(VoidBuffer, bool);
-BUFFER_POINTER(FresnelSchlickInputBufer, FresnelSchlickInput);
-BUFFER_POINTER(FresnelSchlickOutputBufer, FresnelSchlickOutput);
+#include "testCommon.glsl"
 
 layout(push_constant, std430) uniform PushConstantLayout {
     VoidBuffer pc_InputBuffer;
     VoidBuffer pc_OutputBuffer;
 };
 
-void testFresnelSchlick(uint index)
-{
-    FresnelSchlickInputBufer inputBuffer = FresnelSchlickInputBufer(pc_InputBuffer);
-    FresnelSchlickOutputBufer outputBuffer = FresnelSchlickOutputBufer(pc_OutputBuffer);
+TEST_BUFFER(GGXDistribution);
+TEST_BUFFER(Lambda);
+TEST_BUFFER(GGXSmith);
+TEST_BUFFER(DielectricFresnel);
+TEST_BUFFER(SchlickFresnel);
+TEST_BUFFER(EvaluateReflection);
+TEST_BUFFER(EvaluateRefraction);
+TEST_BUFFER(SampleGGX);
 
-    // TODO: Fix the test, the below doesn't make sense it is there just so that the test compiles
-    outputBuffer.v[index].result = vec3(SchlickFresnel(inputBuffer.v[index].theta));
+#include "Application/shading.glsl"
+
+void testGGXDistribution(uint index)
+{
+    GGXDistributionInput testInput = TEST_READ(GGXDistribution, index);
+
+    GGXDistributionOutput testOutput;
+    testOutput.result = GGXDistribution(testInput.H, testInput.alpha);
+
+    TEST_WRITE(GGXDistribution, index, testOutput);
+}
+
+void testLambda(uint index)
+{
+    LambdaInput testInput = TEST_READ(Lambda, index);
+
+    LambdaOutput testOutput;
+    testOutput.result = Lambda(testInput.V, testInput.alpha);
+
+    TEST_WRITE(Lambda, index, testOutput);
+}
+
+void testGGXSmith(uint index)
+{    
+    GGXSmithInput testInput = TEST_READ(GGXSmith, index);
+
+    GGXSmithOutput testOutput;
+    testOutput.result = GGXSmith(testInput.V, testInput.alpha);
+
+    TEST_WRITE(GGXSmith, index, testOutput);
+}
+
+void testDielectricFresnel(uint index)
+{
+    DielectricFresnelInput testInput = TEST_READ(DielectricFresnel, index);
+
+    DielectricFresnelOutput testOutput;
+    testOutput.result = DielectricFresnel(testInput.VdotH, testInput.eta);
+
+    TEST_WRITE(DielectricFresnel, index, testOutput);
+}
+
+void testSchlickFresnel(uint index)
+{
+    SchlickFresnelInput testInput = TEST_READ(SchlickFresnel, index);
+
+    SchlickFresnelOutput testOutput;
+    testOutput.result = SchlickFresnel(testInput.VdotH);
+
+    TEST_WRITE(SchlickFresnel, index, testOutput);
+}
+
+void testEvaluateReflection(uint index)
+{
+    EvaluateReflectionInput testInput = TEST_READ(EvaluateReflection, index);
+
+    EvaluateReflectionOutput testOutput;
+    testOutput.result = EvaluateReflection(testInput.V, testInput.L, testInput.F, testInput.alpha, testOutput.pdf);
+
+    TEST_WRITE(EvaluateReflection, index, testOutput);
+}
+
+void testEvaluateRefraction(uint index)
+{
+    EvaluateRefractionInput testInput = TEST_READ(EvaluateRefraction, index);
+
+    EvaluateRefractionOutput testOutput;
+    testOutput.result = EvaluateRefraction(testInput.V, testInput.L, testInput.F, testInput.alpha, testInput.eta, testOutput.pdf);
+
+    TEST_WRITE(EvaluateRefraction, index, testOutput);
+}
+
+void testSampleGGX(uint index)
+{
+    SampleGGXInput testInput = TEST_READ(SampleGGX, index);
+
+    SampleGGXOutput testOutput;
+    testOutput.result = SampleGGX(testInput.u, testInput.V, testInput.alpha);
+
+    TEST_WRITE(SampleGGX, index, testOutput);
 }
 
 void main() 
 {
     const uint index = gl_GlobalInvocationID.x;
 
-    testFresnelSchlick(index);
+    switch (s_Mode)
+    {
+    case ShadingTestModeGGXDistribution:
+        testGGXDistribution(index);
+        break;
+    case ShadingTestModeLambda:
+        testLambda(index);
+        break;
+    case ShadingTestModeGGXSmith:
+        testGGXSmith(index);
+        break;
+    case ShadingTestModeDielectricFresnel:
+        testDielectricFresnel(index);
+        break;
+    case ShadingTestModeSchlickFresnel:
+        testSchlickFresnel(index);
+        break;
+    case ShadingTestModeEvaluateReflection:
+        testEvaluateReflection(index);
+        break;
+    case ShadingTestModeEvaluateRefraction:
+        testEvaluateRefraction(index);
+        break;
+    case ShadingTestModeSampleGGX:
+        testSampleGGX(index);
+        break;
+    }
 }

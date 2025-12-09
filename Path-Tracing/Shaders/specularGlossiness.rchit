@@ -4,9 +4,10 @@
 #extension GL_EXT_nonuniform_qualifier : require
 
 #include "ShaderRendererTypes.incl"
-#include "common.glsl"
 
 layout(binding = 0, set = 0) uniform accelerationStructureEXT u_TopLevelAS;
+
+layout(binding = 3, set = 0) uniform sampler2D textures[];
 
 layout(binding = 4, set = 0) readonly buffer TransformBuffer {
     mat3x4[] transforms;
@@ -16,8 +17,18 @@ layout(binding = 5, set = 0) readonly buffer GeometryBuffer {
     Geometry[] geometries;
 };
 
-layout(binding = 7, set = 0) readonly buffer MaterialBuffer {
-    SpecularGlossinessMaterial[] materials;
+layout(binding = 6, set = 0) readonly buffer MetallicRoughnessMaterialBuffer {
+    MetallicRoughnessMaterial[] metallicRoughnessMaterials;
+};
+
+layout(binding = 7, set = 0) readonly buffer SpecularGlossinessMaterialBuffer {
+    SpecularGlossinessMaterial[] specularGlossinessMaterials;
+};
+
+layout(binding = 8, set = 0) uniform LightsBuffer {
+    uint u_LightCount;
+    DirectionalLight u_DirectionalLight;
+    PointLight[MaxLightCount] u_Lights;
 };
 
 layout(shaderRecordEXT, std430) buffer SBT {
@@ -27,17 +38,8 @@ layout(shaderRecordEXT, std430) buffer SBT {
 layout(location = 0) rayPayloadInEXT Payload payload;
 hitAttributeEXT vec3 attribs;
 
-Vertex transform(Vertex vertex, uint transformIndex)
-{
-    const mat3x4 transform = mat3x4(mat4(transforms[transformIndex]) * gl_ObjectToWorld3x4EXT);
-
-    vertex.Position = vec4(vertex.Position, 1.0f) * transform;
-    vertex.Tangent = normalize(vec4(vertex.Tangent, 0.0f) * transform);
-    vertex.Bitangent = normalize(vec4(vertex.Bitangent, 0.0f) * transform);
-    vertex.Normal = normalize((vec4(vertex.Normal, 0.0f) * transpose(inverse(mat4(transform)))).xyz);  // TODO: Disallow non-uniform scale
-
-    return vertex;
-}
+#include "common.glsl"
+#include "sampling.glsl"
 
 void main()
 {

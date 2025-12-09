@@ -90,6 +90,15 @@ void writeVertex(VertexWriteBuffer vertices, uint index, Vertex vertex)
     vertices.v[index * 7 + 6] = p7;
 }
 
+vec2 getTexCoords(VertexBuffer vertices, IndexBuffer indices, uint offset)
+{
+    const uint index = indices.v[offset];
+    const float p2 = vertices.v[index * 7 + 1].y;
+    const float p3 = vertices.v[index * 7 + 2].x;
+
+    return vec2(p2, p3);
+}
+
 vec2 interpolate(vec2 v1, vec2 v2, vec2 v3, vec3 barycentricCoords)
 {
     return v1 * barycentricCoords.x + v2 * barycentricCoords.y + v3 * barycentricCoords.z;
@@ -154,7 +163,7 @@ float rand(inout uint rngState)
     return uintToFloat(xorshift(rngState));
 }
 
-vec2 SampleUniformDiskConcentric(vec2 u)
+vec2 sampleUniformDiskConcentric(vec2 u)
 {
     vec2 offset = 2.0f * u - 1.0f;
     if (offset == vec2(0.0f))
@@ -170,4 +179,22 @@ vec2 SampleUniformDiskConcentric(vec2 u)
         float theta = PI / 2 - PI / 4 * (offset.x / offset.y);
         return offset.y * vec2(cos(theta), sin(theta));
     }
+}
+
+vec3 sampleCosineHemisphere(vec2 u)
+{
+    vec2 d = sampleUniformDiskConcentric(u);
+    float z = sqrt(1 - d.x * d.x - d.y * d.y);
+    return vec3(d, z);
+}
+
+mat3 computeTangentSpace(vec3 normal)
+{
+    vec3 t1 = cross(normal, vec3(1.0f, 0.0f, 0.0f));
+    vec3 t2 = cross(normal, vec3(0.0f, 1.0f, 0.0f));
+
+    vec3 tangent = length(t1) > length(t2) ? t1 : t2;
+    vec3 bitangent = cross(normal, tangent);
+    
+    return mat3(normalize(tangent), normalize(bitangent), normal);
 }
