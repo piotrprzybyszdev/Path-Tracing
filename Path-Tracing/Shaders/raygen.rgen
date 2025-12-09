@@ -60,7 +60,7 @@ void main()
 {
     uint rng = initRng(gl_LaunchIDEXT.xy, gl_LaunchSizeEXT.xy, mainUniform.TotalSamples);
 
-    const Ray primaryRay = constructPrimaryRay(gl_LaunchIDEXT.xy, gl_LaunchSizeEXT.xy, mainUniform.Camera);
+    const Ray primaryRay = constructPrimaryRay(gl_LaunchIDEXT.xy, gl_LaunchSizeEXT.xy, mainUniform.MainCamera);
 
     vec3 totalLight = vec3(0.0f);
 

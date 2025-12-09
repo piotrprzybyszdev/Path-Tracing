@@ -21,7 +21,7 @@ layout(location = 0) rayPayloadEXT vec3 hitValue;
 
 void main()
 {
-    const Ray ray = constructPrimaryRay(gl_LaunchIDEXT.xy, gl_LaunchSizeEXT.xy, mainUniform.Camera);
+    const Ray ray = constructPrimaryRay(gl_LaunchIDEXT.xy, gl_LaunchSizeEXT.xy, mainUniform.MainCamera);
 
     uint flags = gl_RayFlagsNoneEXT;
     if ((s_RaygenFlags & RaygenFlagsForceOpaque) != RaygenFlagsNone)

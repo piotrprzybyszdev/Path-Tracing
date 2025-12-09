@@ -64,7 +64,7 @@ struct SceneDescription
 {
     std::vector<std::filesystem::path> ComponentPaths;
     std::optional<std::filesystem::path> SkyboxPath;
-    TextureMapping TextureMapping;
+    TextureMapping Mapping;
 
     [[nodiscard]] std::unique_ptr<CombinedSceneLoader> ToLoader() const;
 };
@@ -72,7 +72,7 @@ struct SceneDescription
 std::unique_ptr<CombinedSceneLoader> SceneDescription::ToLoader() const
 {
     auto loader = std::make_unique<CombinedSceneLoader>();
-    loader->AddTextureMapping(TextureMapping);
+    loader->AddTextureMapping(Mapping);
 
     for (const auto &path : ComponentPaths)
     {
@@ -141,7 +141,7 @@ static void AddHighQualityScenes(std::map<std::string, SceneGroup> &scenes)
     SceneDescription ue4SunTempleDescription = {
         .ComponentPaths = { base / "UE4SunTemple" / "SunTemple_v4" / "SunTemple" / "SunTemple.fbx" },
         .SkyboxPath = { base / "UE4SunTemple" / "SunTemple_v4" / "SunTemple" / "SunTemple_Skybox.hdr" },
-        .TextureMapping = NVIDIAOrcaTextureMapping,
+        .Mapping = NVIDIAOrcaTextureMapping,
     };
 
     SceneDescription amazonBistroDescription = {
@@ -151,7 +151,7 @@ static void AddHighQualityScenes(std::map<std::string, SceneGroup> &scenes)
             base / "AmazonBistro" / "Bistro_v5_2" / "BistroInterior_Wine.fbx",
         },
         .SkyboxPath = base / "AmazonBistro" / "Bistro_v5_2" / "san_giuseppe_bridge_4k.hdr",
-        .TextureMapping = NVIDIAOrcaTextureMapping,
+        .Mapping = NVIDIAOrcaTextureMapping,
     };
 
     AddSceneByDescription(group, "Intel Sponza", std::move(intelSponzaDescription));

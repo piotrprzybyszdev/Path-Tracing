@@ -25,7 +25,7 @@ BUFFER_POINTER(VertexWriteBuffer, vec2);
 
 struct RaygenUniformData
 {
-    Camera Camera;
+    Camera MainCamera;
     uint BounceCount;
     uint SampleCount;
     uint TotalSamples;

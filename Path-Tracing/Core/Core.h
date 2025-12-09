@@ -16,32 +16,47 @@ namespace PathTracing
 
 namespace logger = spdlog;
 
-inline constexpr uint64_t FromKiB(uint64_t value)
+inline constexpr uint64_t FromKiB(long double value)
 {
     return value * 1024ull;
 }
 
-inline constexpr uint64_t FromMiB(uint64_t value)
+inline constexpr uint64_t FromMiB(long double value)
 {
-    return FromKiB(value) * 1024ull;
+    return FromKiB(value * 1024ull);
 }
 
-inline constexpr uint64_t FromGiB(uint64_t value)
+inline constexpr uint64_t FromGiB(long double value)
 {
-    return FromMiB(value) * 1024ull;
+    return FromMiB(value * 1024ull);
 }
 
-inline constexpr uint64_t operator"" _KiB(uint64_t value)
+inline constexpr uint64_t operator"" _KiB(unsigned long long int value)
 {
     return FromKiB(value);
 }
 
-inline constexpr uint64_t operator"" _MiB(uint64_t value)
+inline constexpr uint64_t operator"" _MiB(unsigned long long int value)
 {
     return FromMiB(value);
 }
 
-inline constexpr uint64_t operator"" _GiB(uint64_t value)
+inline constexpr uint64_t operator"" _GiB(unsigned long long int value)
+{
+    return FromGiB(value);
+}
+
+inline constexpr uint64_t operator"" _KiB(long double value)
+{
+    return FromKiB(value);
+}
+
+inline constexpr uint64_t operator"" _MiB(long double value)
+{
+    return FromMiB(value);
+}
+
+inline constexpr uint64_t operator"" _GiB(long double value)
 {
     return FromGiB(value);
 }
