@@ -24,6 +24,12 @@ layout(binding = 7, set = 0) readonly buffer SpecularGlossinessMaterialBuffer {
     SpecularGlossinessMaterial[] specularGlossinessMaterials;
 };
 
+layout(binding = 8, set = 0) uniform LightsBuffer {
+    uint u_LightCount;
+    DirectionalLight u_DirectionalLight;
+    PointLight[MaxLightCount] u_Lights;
+};
+
 layout(shaderRecordEXT, std430) buffer SBT {
     SBTBuffer sbt;
 };
@@ -31,6 +37,7 @@ layout(shaderRecordEXT, std430) buffer SBT {
 layout(location = 0) rayPayloadInEXT Payload payload;
 hitAttributeEXT vec3 attribs;
 
+#include "shading.glsl"
 #include "sampling.glsl"
 
 Vertex transform(Vertex vertex, uint transformIndex)
@@ -72,6 +79,40 @@ vec3 SampleCosineHemisphere(vec2 u, out float pdf)
     return vec3(d, z);
 }
 
+struct LightSample
+{
+    vec3 Direction;
+    float Distance;
+    vec3 Color;
+    float Attenuation;
+};
+
+LightSample SampleLight(float u, vec3 position, out float pdf)
+{
+    uint lightIndex = uint(u * (u_LightCount + 1));
+    pdf = 1.0f / (u_LightCount + 1);
+    LightSample ret;
+
+    if (lightIndex >= u_LightCount)
+    {
+        ret.Direction = normalize(u_DirectionalLight.Direction);
+        ret.Color = u_DirectionalLight.Color;
+        ret.Distance = DirectionalLightDistance;
+        ret.Attenuation = 1.0f;
+        return ret;
+    }
+
+    const PointLight light = u_Lights[lightIndex];
+
+    ret.Distance = distance(position, light.Position);
+    ret.Direction = normalize(position - light.Position);
+    ret.Color = light.Color;
+    const float attenuation = 1.0f / (light.AttenuationConstant + ret.Distance * light.AttenuationLinear + ret.Distance * ret.Distance * light.AttenuationQuadratic);
+    ret.Attenuation = clamp(attenuation, 0.0f, 1.0f);
+    
+    return ret;
+}
+
 struct BSDFSample
 {
     vec3 Direction;
@@ -87,6 +128,11 @@ BSDFSample SampleDiffuseBRDF(vec2 u, vec3 color)
     ret.Color = color / PI;
 
     return ret;
+}
+
+vec3 EvaluateDiffuseBRDF(vec3 color)
+{
+    return color / PI;
 }
 
 void main()
@@ -106,16 +152,25 @@ void main()
     const vec3 normal = material.Normal;
 
     const mat3 TBN = mat3(vertex.Tangent, vertex.Bitangent, vertex.Normal);
-    const vec3 N = normalize(vertex.Normal + TBN * (2.0f * normal - 1.0f));
+    const vec3 N = normalize(vertex.Normal + TBN * normal);
 
     uint rngState = payload.RngState;
-    vec2 u = vec2(rand(rngState), rand(rngState));
-    BSDFSample bsdf = SampleDiffuseBRDF(u, material.Color);
+    
+    float lightPdf;
+    BSDFSample bsdf = SampleDiffuseBRDF(vec2(rand(rngState), rand(rngState)), material.Color);
+    LightSample light = SampleLight(rand(rngState), vertex.Position, lightPdf);
 
-    payload.Distance = gl_RayTmaxEXT;
+    const vec3 directLight = light.Color * light.Attenuation;
+    const vec3 dlbrdf = EvaluateDiffuseBRDF(material.Color) * abs(dot(N, light.Direction));
+
+    payload.Position = vertex.Position + vertex.Normal * 0.001f;
     payload.Direction = normalize(TBN * bsdf.Direction);
     payload.Bsdf = bsdf.Color;
     payload.Pdf = bsdf.Pdf * abs(dot(N, payload.Direction));
     payload.Emissive = material.EmissiveColor;
     payload.RngState = rngState;
+    payload.DirectLight = directLight * dlbrdf;
+    payload.DirectLightPdf = lightPdf;
+    payload.LightDirection = light.Direction;
+    payload.LightDistance = light.Distance;
 }

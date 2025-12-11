@@ -33,5 +33,5 @@ void main()
     // else
     //     payload.Position = 0.0f * vec3(0.08f, 0.09f, 0.1f);
 
-    payload.Distance = MISS_HIT_DISTANCE;
+    payload.Pdf = -1.0f;
 }

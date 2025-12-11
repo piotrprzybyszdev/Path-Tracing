@@ -13,53 +13,12 @@ layout(binding = 2, set = 0) uniform MainBlock {
 
 layout(binding = 3, set = 0) uniform sampler2D textures[];
 
-layout(binding = 8, set = 0) uniform LightsBuffer {
-    uint u_LightCount;
-    DirectionalLight u_DirectionalLight;
-    PointLight[MaxLightCount] u_Lights;
-};
-
 layout(location = 0) rayPayloadEXT Payload payload;
 layout(location = 1) rayPayloadEXT bool isOccluded;
 
 #include "ray.glsl"
 #include "shading.glsl"
 #include "tracing.glsl"
-
-bool sampleLight(out vec3 lightDirection, out vec3 lightColor, out float lightDistance, out float attenuation, vec3 position, inout uint rngState)
-{
-    uint lightIndex = uint(rand(rngState) * (u_LightCount + 1));
-    
-    if (lightIndex >= u_LightCount)
-    {
-        lightDirection = u_DirectionalLight.Direction;
-        lightColor = u_DirectionalLight.Color;
-        lightDistance = DirectionalLightDistance;
-        attenuation = 1.0f;
-        return true;
-    }
-
-    const PointLight light = u_Lights[lightIndex];
-
-    // Area-light sampling: sample a point on a small sphere around the original point light position.
-    // You can tune this radius to control apparent size of the area light.
-    const float AreaLightRadius = 0.01f;
-
-    // Sample direction on unit sphere (getRandomUnitSphere is defined in common.glsl)
-    vec3 sphereDir = getRandomUnitSphere(rngState);
-
-    vec3 sampledPosition = light.Position + sphereDir * AreaLightRadius;
-
-    lightDistance = distance(position, sampledPosition);
-    lightDirection = normalize(position - sampledPosition);
-    lightColor = light.Color;
-
-    // Attenuation computed using the sampled distance from the surface point to the sampled light position.
-    attenuation = 1.0f / (light.AttenuationConstant + lightDistance * light.AttenuationLinear + lightDistance * lightDistance * light.AttenuationQuadratic);
-    attenuation = clamp(attenuation, 0.0f, 1.0f);
-
-    return false;
-}
 
 void main()
 {
@@ -81,17 +40,18 @@ void main()
             traceRayEXT(u_TopLevelAS, gl_RayFlagsNoneEXT, 0xff, PrimaryRayHitGroupIndex, 2, PrimaryRayMissGroupIndex, ray.Origin, ray.tmin, ray.Direction, ray.tmax, 0);
             rngState = payload.RngState;
 
-            if (payload.Distance == MISS_HIT_DISTANCE)
+            if (payload.Pdf == -1.0f)
             {
                 // radiance += throughput * payload.Position;
                 break;
             }
-            
-            // sampleLight(lightDirection, lightColor, lightDistance, attenuation, payload.Position, rngState);
 
             radiance += throughput * payload.Emissive;
 
-		    throughput *= payload.Bsdf / max(payload.Pdf, 0.001f);
+            if (!checkOccluded(payload.LightDirection, payload.Position, payload.LightDistance))
+                radiance += throughput * payload.DirectLight / max(payload.DirectLightPdf, 0.0001f);
+
+            throughput *= payload.Bsdf / max(payload.Pdf, 0.0001f);
 
             const float prob = max(throughput.r, max(throughput.g, throughput.b));
             if (prob < 0.001f)
@@ -102,14 +62,18 @@ void main()
 
             throughput /= prob;
 
-            const vec3 hitPosition = ray.Origin + ray.Direction * payload.Distance;
-            ray.Origin = hitPosition + payload.Direction * 0.001f;
+            ray.Origin = payload.Position;
             ray.Direction = payload.Direction;
         }
     }
     
     vec3 prevColor = imageLoad(u_Image, ivec2(gl_LaunchIDEXT.xy)).rgb;
     radiance = (radiance * mainUniform.Exposure + prevColor * mainUniform.TotalSamples) / (mainUniform.TotalSamples + mainUniform.SampleCount);
+
+    if (isnan(radiance.r) || isnan(radiance.g) || isnan(radiance.b))
+        radiance = vec3(5000.0f, 0.0f, 0.0f);
+    if (prevColor == vec3(5000.0f, 0.0f, 0.0f))
+        radiance = vec3(5000.0f, 0.0f, 0.0f);
 
     imageStore(u_Image, ivec2(gl_LaunchIDEXT.xy), vec4(radiance, 1.0f));
 }

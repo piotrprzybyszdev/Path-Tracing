@@ -34,7 +34,8 @@ struct MaterialSample
 vec3 ReconstructNormalFromXY(vec3 normal)
 {
     // TODO: Don't do it if it's a 3-comp texuture
-    return vec3(normal.x, normal.y, sqrt(1 - normal.x * normal.x - normal.y * normal.y));
+    normal = 2.0f * normal - 1.0f;
+    return vec3(normal.x, normal.y, sqrt(max(1 - normal.x * normal.x - normal.y * normal.y, 0.0f)));
 }
 
 MaterialSample SampleMaterial(MetalicRoughnessMaterial material, vec2 texCoords, float lod, uint flags)
