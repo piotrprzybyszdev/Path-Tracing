@@ -147,7 +147,7 @@ MaterialInfo LoadMetalicRoughnessMaterial(
 )
 {
     aiColor3D color = aiColor3D(1.0f, 1.0f, 1.0f);
-    float roughness = 1.0f, metalness = 1.0f;
+    float roughness = 0.5f, metalness = 0.0f;
 
     material->Get(AI_MATKEY_BASE_COLOR, color);
     material->Get(AI_MATKEY_ROUGHNESS_FACTOR, roughness);

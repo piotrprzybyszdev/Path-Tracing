@@ -128,7 +128,7 @@ static void AddHighQualityScenes(std::map<std::string, SceneGroup> &scenes)
      * specular encoded as a scalar intensity instead of a 3-component color
      * However, the values still don't make sense
      * The values do make sense however when the they are interpreted as roughness/metalness
-     * 
+     *
      * Hence - The need for the below mapping
      */
     static const MetalicRoughnessTextureMapping NVIDIAOrcaTextureMapping = {
@@ -240,11 +240,11 @@ static std::array<uint32_t, 6> AddCube(SceneBuilder &sceneBuilder)
 
 void CreateDefaultScene(SceneBuilder &sceneBuilder)
 {
-    auto makeMaterialFromColor = [](glm::vec3 color) {
+    auto makeMaterialFromColor = [](glm::vec3 color, float roughness = 1.0f) {
         return Shaders::MetalicRoughnessMaterial {
             .Color = color,
-            .Roughness = 1.0f,
-            .Metalness = 1.0f,
+            .Roughness = roughness,
+            .Metalness = 0.0f,
             .EmissiveIdx = Scene::GetDefaultTextureIndex(TextureType::Emisive),
             .ColorIdx = Scene::GetDefaultTextureIndex(TextureType::Color),
             .NormalIdx = Scene::GetDefaultTextureIndex(TextureType::Normal),
@@ -257,7 +257,7 @@ void CreateDefaultScene(SceneBuilder &sceneBuilder)
             .EmissiveColor = color,
             .EmissiveIntensity = 1.0f,
             .Roughness = 1.0f,
-            .Metalness = 1.0f,
+            .Metalness = 0.0f,
             .EmissiveIdx = Scene::GetDefaultTextureIndex(TextureType::Emisive),
             .ColorIdx = Scene::GetDefaultTextureIndex(TextureType::Color),
             .NormalIdx = Scene::GetDefaultTextureIndex(TextureType::Normal),
@@ -269,7 +269,7 @@ void CreateDefaultScene(SceneBuilder &sceneBuilder)
         return Shaders::MetalicRoughnessMaterial {
             .Color = glm::vec3(1.0f),
             .Roughness = 1.0f,
-            .Metalness = 1.0f,
+            .Metalness = 0.0f,
             .EmissiveIdx = Scene::GetDefaultTextureIndex(TextureType::Emisive),
             .ColorIdx = sceneBuilder.AddTexture(
                 TextureImporter::GetTextureInfo(
@@ -285,9 +285,9 @@ void CreateDefaultScene(SceneBuilder &sceneBuilder)
     Shaders::MaterialId whiteMaterial =
         sceneBuilder.AddMaterial("White Material", makeMaterialFromColor(glm::vec3(1.0f)));
     Shaders::MaterialId greenMaterial =
-        sceneBuilder.AddMaterial("Green Material", makeMaterialFromColor(glm::vec3(0.0f, 1.0f, 0.0f)));
+        sceneBuilder.AddMaterial("Green Material", makeMaterialFromColor(glm::vec3(0.0f, 1.0f, 0.0f), 0.1f));
     Shaders::MaterialId redMaterial =
-        sceneBuilder.AddMaterial("Red Material", makeMaterialFromColor(glm::vec3(1.0f, 0.0f, 0.0f)));
+        sceneBuilder.AddMaterial("Red Material", makeMaterialFromColor(glm::vec3(1.0f, 0.0f, 0.0f), 0.1f));
     Shaders::MaterialId logoMaterial = sceneBuilder.AddMaterial(
         "Logo Material", makeMaterialFromTexture(Resources::g_PlaceholderTextureData)
     );
@@ -358,10 +358,14 @@ void CreateDefaultScene(SceneBuilder &sceneBuilder)
 
     std::ranges::copy(
         std::array<Shaders::Vertex, 4> {
-            Shaders::Vertex{ { 0.2f, 0.0f, 0.2f }, { 1.0f, 1.0f }, { 0.0f, -1.0f, 0.0f }, { 1, 0, 0 }, { 0, 0, 1 } },
-            Shaders::Vertex{ { -0.2f, 0.0f, 0.2f }, { 0.0f, 1.0f }, { 0.0f, -1.0f, 0.0f }, { 1, 0, 0 }, { 0, 0, 1 } },
-            Shaders::Vertex{ { -0.2f, 0.0f, -0.2f }, { 0.0f, 1.0f }, { 0.0f, -1.0f, 0.0f }, { 1, 0, 0 }, { 0, 0, 1 } },
-            Shaders::Vertex{ { 0.2f, 0.0f, -0.2f }, { 1.0f, 0.0f }, { 0.0f, -1.0f, 0.0f }, { 1, 0, 0 }, { 0, 0, 1 } },
+            Shaders::Vertex {
+                { 0.2f, 0.0f, 0.2f }, { 1.0f, 1.0f }, { 0.0f, -1.0f, 0.0f }, { 1, 0, 0 }, { 0, 0, 1 } },
+            Shaders::Vertex {
+                { -0.2f, 0.0f, 0.2f }, { 0.0f, 1.0f }, { 0.0f, -1.0f, 0.0f }, { 1, 0, 0 }, { 0, 0, 1 } },
+            Shaders::Vertex {
+                { -0.2f, 0.0f, -0.2f }, { 0.0f, 1.0f }, { 0.0f, -1.0f, 0.0f }, { 1, 0, 0 }, { 0, 0, 1 } },
+            Shaders::Vertex {
+                { 0.2f, 0.0f, -0.2f }, { 1.0f, 0.0f }, { 0.0f, -1.0f, 0.0f }, { 1, 0, 0 }, { 0, 0, 1 } },
         },
         std::back_inserter(vertices)
     );

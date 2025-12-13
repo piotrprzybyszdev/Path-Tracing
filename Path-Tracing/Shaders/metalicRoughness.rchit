@@ -52,7 +52,7 @@ Vertex transform(Vertex vertex, uint transformIndex)
     return vertex;
 }
 
-vec2 SampleUniformDiskConcentric(vec2 u, out float theta)
+vec2 SampleUniformDiskConcentric(vec2 u)
 {
     vec2 offset = 2.0f * u - 1.0f;
     if (offset == vec2(0.0f))
@@ -60,22 +60,20 @@ vec2 SampleUniformDiskConcentric(vec2 u, out float theta)
 
     if (abs(offset.x) > abs(offset.y))
     {
-        theta = PI / 4 * (offset.y / offset.x);
+        float theta = PI / 4 * (offset.y / offset.x);
         return offset.x * vec2(cos(theta), sin(theta));
     }
     else
     {
-        theta = PI / 2 - PI / 4 * (offset.x / offset.y);
+        float theta = PI / 2 - PI / 4 * (offset.x / offset.y);
         return offset.y * vec2(cos(theta), sin(theta));
     }
 }
 
-vec3 SampleCosineHemisphere(vec2 u, out float pdf)
+vec3 SampleCosineHemisphere(vec2 u)
 {
-    float theta;
-    vec2 d = SampleUniformDiskConcentric(u, theta);
+    vec2 d = SampleUniformDiskConcentric(u);
     float z = sqrt(1 - d.x * d.x - d.y * d.y);
-    pdf = abs(cos(theta)) / PI;
     return vec3(d, z);
 }
 
@@ -120,19 +118,63 @@ struct BSDFSample
     vec3 Color;
 };
 
-BSDFSample SampleDiffuseBRDF(vec2 u, vec3 color)
+vec3 EvaluateDiffuseBRDF(MaterialSample material, vec3 V, vec3 L, out float pdf)
 {
-    BSDFSample ret;
-
-    ret.Direction = SampleCosineHemisphere(u, ret.Pdf);
-    ret.Color = color / PI;
-
-    return ret;
+    pdf = L.z * 1.0f / PI;
+    return L.z * material.Color / PI;
 }
 
-vec3 EvaluateDiffuseBRDF(vec3 color)
+vec3 SampleDiffuseBRDF(MaterialSample material, vec2 u)
 {
-    return color / PI;
+    return SampleCosineHemisphere(u);
+}
+
+vec3 EvaluateGlossBRDF(MaterialSample material, vec3 V, vec3 L, out float pdf)
+{
+    return EvaluateReflection(V, L, material.Color, material.Roughness * material.Roughness, pdf);
+}
+
+// TODO: Is this the correct name?
+vec3 SampleGlossBSDF(MaterialSample material, vec3 H, vec3 V)
+{
+    return normalize(reflect(-V, H));
+}
+
+vec3 EvaluateBSDF(MaterialSample material, vec3 V, vec3 L, out float outPdf)
+{
+    const vec3 H = normalize(V + L);
+    const float F = SchlickFresnel(abs(dot(V, H)));
+
+    vec3 bsdf = vec3(0.0f);
+    outPdf = 0.0f;
+    float pdf;
+
+    bsdf += EvaluateDiffuseBRDF(material, V, L, pdf) * (1.0f - F);
+    outPdf += pdf * (1.0f - F);
+
+    bsdf += EvaluateGlossBRDF(material, V, L, pdf) * F;
+    outPdf += pdf * F;
+
+    return bsdf;
+}
+
+BSDFSample SampleBSDF(MaterialSample material, vec3 V, inout uint rngState)
+{
+    const float alpha = material.Roughness * material.Roughness;
+    const vec3 H = SampleGGX(vec2(rand(rngState), rand(rngState)), V, alpha);
+    const float F = SchlickFresnel(dot(V, H));
+
+    vec3 L;
+    if (rand(rngState) < F)
+        L = SampleGlossBSDF(material, H, V);
+    else
+        L = SampleDiffuseBRDF(material, vec2(rand(rngState), rand(rngState)));
+
+    BSDFSample ret;
+    ret.Direction = L;
+    ret.Color = EvaluateBSDF(material, V, L, ret.Pdf);
+
+    return ret;
 }
 
 void main()
@@ -153,23 +195,25 @@ void main()
 
     const mat3 TBN = mat3(vertex.Tangent, vertex.Bitangent, vertex.Normal);
     const vec3 N = normalize(vertex.Normal + TBN * normal);
+    const vec3 V = normalize(inverse(TBN) * normalize(-gl_WorldRayDirectionEXT));
 
     uint rngState = payload.RngState;
-    
-    float lightPdf;
-    BSDFSample bsdf = SampleDiffuseBRDF(vec2(rand(rngState), rand(rngState)), material.Color);
-    LightSample light = SampleLight(rand(rngState), vertex.Position, lightPdf);
 
-    const vec3 directLight = light.Color * light.Attenuation;
-    const vec3 dlbrdf = EvaluateDiffuseBRDF(material.Color) * abs(dot(N, light.Direction));
+    float lightPdf, lightSmplPdf;  // unused
+    LightSample light = SampleLight(rand(rngState), vertex.Position, lightPdf);
+    const vec3 L = normalize(inverse(TBN) * -light.Direction);
+    vec3 lightBsdf = EvaluateBSDF(material, V, L, lightSmplPdf);
+
+    BSDFSample bsdf = SampleBSDF(material, V, rngState);
+
 
     payload.Position = vertex.Position + vertex.Normal * 0.001f;
     payload.Direction = normalize(TBN * bsdf.Direction);
     payload.Bsdf = bsdf.Color;
-    payload.Pdf = bsdf.Pdf * abs(dot(N, payload.Direction));
+    payload.Pdf = bsdf.Pdf;
     payload.Emissive = material.EmissiveColor;
     payload.RngState = rngState;
-    payload.DirectLight = directLight * dlbrdf;
+    payload.DirectLight = light.Color * light.Attenuation * lightBsdf;
     payload.DirectLightPdf = lightPdf;
     payload.LightDirection = light.Direction;
     payload.LightDistance = light.Distance;

@@ -47,8 +47,8 @@ struct SBTBuffer
 
 const uint DefaultTextureColor              = 0xffffffffu;
 const uint DefaultTextureNormal             = 0xffff8080u;
-const uint DefaultTextureRoughness          = 0x80808080u;
-const uint DefaultTextureMetalness          = 0x00000000u;
+const uint DefaultTextureRoughness          = 0xffffffffu;
+const uint DefaultTextureMetalness          = 0xffffffffu;
 const uint DefaultTextureEmissive           = 0x00000000u;
 const vec3 DefaultEmissiveColor             = vec3(1.0f, 1.0f, 1.0f);
 const vec3 DefaultColor                     = vec3(1.0f, 1.0f, 1.0f);

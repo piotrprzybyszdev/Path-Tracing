@@ -50,6 +50,78 @@ hitAttributeEXT vec3 attribs;
 
 const float ambient = 0.05f;
 
+float DDDDistributionGGX(vec3 N, vec3 H, float roughness)
+{
+    float a = roughness * roughness;
+    float a2 = a * a;
+    float NdotH = max(dot(N, H), 0.0);
+    float NdotH2 = NdotH * NdotH;
+
+    float nom = a2;
+    float denom = (NdotH2 * (a2 - 1.0) + 1.0);
+    denom = PI * denom * denom;
+
+    return nom / max(denom, 0.0001);
+}
+
+float DDDGeometrySchlickGGX(float NdotV, float roughness)
+{
+    float r = (roughness + 1.0);
+    float k = (r * r) / 8.0;
+
+    float nom = NdotV;
+    float denom = NdotV * (1.0 - k) + k;
+
+    return nom / denom;
+}
+
+float DDDGeometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
+{
+    float NdotV = max(dot(N, V), 0.0);
+    float NdotL = max(dot(N, L), 0.0);
+    float ggx2 = DDDGeometrySchlickGGX(NdotV, roughness);
+    float ggx1 = DDDGeometrySchlickGGX(NdotL, roughness);
+
+    return ggx1 * ggx2;
+}
+
+vec3 DDDfresnelSchlick(float cosTheta, vec3 F0)
+{
+    return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
+vec3 DDDcomputeLightContribution(vec3 lightDir, vec3 lightColor, float attenuation, vec3 position, vec3 V, vec3 N, vec3 color, float roughness, float metalness)
+{
+    const vec3 L = -normalize(lightDir);
+
+    const vec3 H = normalize(V + L);
+
+    const vec3 R = 2.0f * dot(L, N) * N - L;
+
+    const vec3 radiance = lightColor * attenuation;
+
+    vec3 F0 = vec3(0.04);
+    F0 = mix(F0, color, metalness);
+
+    float NDF = DDDDistributionGGX(N, H, roughness);
+    float G = DDDGeometrySmith(N, V, L, roughness);
+    vec3 F = DDDfresnelSchlick(max(dot(H, V), 0.0), F0);
+
+    vec3 numerator = NDF * G * F;
+    float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0);
+    vec3 specular = numerator / max(denominator, 0.0001);
+
+    vec3 kS = F;
+
+    vec3 kD = vec3(1.0) - kS;
+
+    kD *= 1.0 - metalness;
+
+    float NdotL = max(dot(N, L), 0.0);
+
+    return (kD * color / PI + specular) * radiance * NdotL;
+}
+
 uint hash(uint x)
 {
     x *= 0x1eca7d79u;
@@ -108,7 +180,7 @@ void main()
     bool shadowsDisabled = (s_HitGroupFlags & HitGroupFlagsDisableShadows) != HitGroupFlagsNone;
 
     if (shadowsDisabled || !checkOccluded(u_DirectionalLight.Direction, vertex.Position, DirectionalLightDistance))
-        totalLight += computeLightContribution(u_DirectionalLight.Direction, u_DirectionalLight.Color, 1.0f, vertex.Position, V, N, material.Color, material.Roughness, material.Metalness);
+        totalLight += DDDcomputeLightContribution(u_DirectionalLight.Direction, u_DirectionalLight.Color, 1.0f, vertex.Position, V, N, material.Color, material.Roughness, material.Metalness);
     
     for (uint lightIndex = 0; lightIndex < u_LightCount; lightIndex++)
     {
@@ -119,7 +191,7 @@ void main()
         
         if (shadowsDisabled || !checkOccluded(lightDirection, vertex.Position, dist))
         {
-            const vec3 lightContribution = computeLightContribution(lightDirection, light.Color, attenuation, vertex.Position, V, N, material.Color, material.Roughness, material.Metalness);
+            const vec3 lightContribution = DDDcomputeLightContribution(lightDirection, light.Color, attenuation, vertex.Position, V, N, material.Color, material.Roughness, material.Metalness);
             totalLight += lightContribution;
         }
     }
