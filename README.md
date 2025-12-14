@@ -27,6 +27,7 @@ Some scenes are composed of separate components. In that case, you can also inst
 * Full scene: **INTEL_SPONZA_FULL** (*all of the below will be installed*)
 * Intel Sponza Main Component - **INTEL_SPONZA_MAIN** (*3.9 GB zip*)
 * Intel Sponza Curtains Component - **INTEL_SPONZA_CURTAINS** (*0.8 GB zip*)
+* Intel Sponza Ivy Component - **INTEL_SPONZA_IVY** (*1.3 GB zip*)
 ![alt text](gallery/sponza.png)
 
 ### [UE4 Sun Temple](https://developer.nvidia.com/ue4-sun-temple)

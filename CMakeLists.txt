@@ -21,6 +21,7 @@ option(BUILD_GMOCK OFF)
 option(INSTALL_GTEST OFF)
 
 add_subdirectory(Path-Tracing)
+
 add_subdirectory(Path-Tracing-Tests)
 add_subdirectory(vendor/glfw)
 add_subdirectory(vendor/imgui)

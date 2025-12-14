@@ -114,6 +114,7 @@ static void AddHighQualityScenes(std::map<std::string, SceneGroup> &scenes)
         .ComponentPaths = {
             base / "IntelSponzaMain" / "main_sponza" / "NewSponza_Main_glTF_003.gltf",
             base / "IntelSponzaCurtains" / "pkg_a_curtains" / "NewSponza_Curtains_glTF.gltf",
+            base / "IntelSponzaIvy" / "pkg_b_ivy" / "NewSponza_IvyGrowth_glTF.gltf",
         },
         .SkyboxPath = base / "IntelSponzaMain" / "main_sponza" / "textures" / "kloppenheim_05_4k.hdr",
     };
@@ -149,6 +150,14 @@ static void AddHighQualityScenes(std::map<std::string, SceneGroup> &scenes)
         .ComponentPaths = {
             base / "AmazonBistro" / "Bistro_v5_2" / "BistroExterior.fbx",
             base / "AmazonBistro" / "Bistro_v5_2" / "BistroInterior.fbx",
+        },
+        .SkyboxPath = base / "AmazonBistro" / "Bistro_v5_2" / "san_giuseppe_bridge_4k.hdr",
+        .Mapping = NVIDIAOrcaTextureMapping,
+    };
+
+    SceneDescription amazonBistroWineDescription = {
+        .ComponentPaths = {
+            base / "AmazonBistro" / "Bistro_v5_2" / "BistroExterior.fbx",
             base / "AmazonBistro" / "Bistro_v5_2" / "BistroInterior_Wine.fbx",
         },
         .SkyboxPath = base / "AmazonBistro" / "Bistro_v5_2" / "san_giuseppe_bridge_4k.hdr",
@@ -158,6 +167,7 @@ static void AddHighQualityScenes(std::map<std::string, SceneGroup> &scenes)
     AddSceneByDescription(group, "Intel Sponza", std::move(intelSponzaDescription));
     AddSceneByDescription(group, "UE4 Sun Temple", std::move(ue4SunTempleDescription));
     AddSceneByDescription(group, "Amazon Bistro", std::move(amazonBistroDescription));
+    AddSceneByDescription(group, "Amazon Bistro Wine", std::move(amazonBistroWineDescription));
 }
 
 static void AddTestScenes(std::map<std::string, SceneGroup> &scenes)

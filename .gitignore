@@ -11,6 +11,7 @@ ZERO_CHECK.*
 INSTALL.*
 *.vcxproj*
 *.sln
+*.slnx
 x64
 
 # Build Artifacts
