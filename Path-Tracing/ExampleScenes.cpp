@@ -28,6 +28,7 @@ public:
 void CreateDefaultScene(SceneBuilder &sceneBuilder);
 void CreateMetalicRoughnessCubesScene(SceneBuilder &sceneBuilder);
 void CreateReuseMeshCubesScene(SceneBuilder &sceneBuilder);
+void CreateRoughnessTestCubesScene(SceneBuilder &sceneBuilder);
 
 static SceneGroup &AddSceneGroup(std::map<std::string, SceneGroup> &scenes, const std::string &name)
 {
@@ -162,6 +163,9 @@ static void AddHighQualityScenes(std::map<std::string, SceneGroup> &scenes)
 static void AddTestScenes(std::map<std::string, SceneGroup> &scenes)
 {
     SceneGroup &group = AddSceneGroup(scenes, "Test Scenes");
+    group.emplace(
+        "Roughness Test Cubes", std::make_unique<CustomSceneLoader<CreateRoughnessTestCubesScene>>()
+    );
     group.emplace(
         "MetalicRoughness Cubes", std::make_unique<CustomSceneLoader<CreateMetalicRoughnessCubesScene>>()
     );
@@ -631,6 +635,93 @@ void CreateReuseMeshCubesScene(SceneBuilder &sceneBuilder)
         TextureImporter::GetTextureInfo(skyboxPath / "ny.png", TextureType::Skybox, "Skybox ny"),
         TextureImporter::GetTextureInfo(skyboxPath / "pz.png", TextureType::Skybox, "Skybox pz"),
         TextureImporter::GetTextureInfo(skyboxPath / "nz.png", TextureType::Skybox, "Skybox nz")
+    ));
+}
+
+void CreateRoughnessTestCubesScene(SceneBuilder &sceneBuilder)
+{
+    const std::filesystem::path base = Application::GetConfig().AssetDirectoryPath / "textures";
+
+    auto makeMaterialFromColor = [](glm::vec3 color, float roughness, float metalness) {
+        return Shaders::MetalicRoughnessMaterial
+        {
+            .Color = color,
+            .Roughness = roughness,
+            .Metalness = metalness,
+            .EmissiveIdx = Scene::GetDefaultTextureIndex(TextureType::Emisive),
+            .ColorIdx = Scene::GetDefaultTextureIndex(TextureType::Color),
+            .NormalIdx = Scene::GetDefaultTextureIndex(TextureType::Normal),
+            .RoughnessIdx = Scene::GetDefaultTextureIndex(TextureType::Roughness),
+            .MetalicIdx = Scene::GetDefaultTextureIndex(TextureType::Metalic),
+        };
+    };
+    auto makeMaterialFromTexture = [&](std::span<const uint8_t>) {
+        return Shaders::MetalicRoughnessMaterial {
+            .Color = glm::vec3(1.0f),
+            .Roughness = 1.0f,
+            .Metalness = 0.0f,
+            .EmissiveIdx = Scene::GetDefaultTextureIndex(TextureType::Emisive),
+            .ColorIdx = sceneBuilder.AddTexture(
+                TextureImporter::GetTextureInfo(
+                    Resources::g_PlaceholderTextureData, TextureType::Color, "Logo Texture"
+                )
+            ),
+            .NormalIdx = Scene::GetDefaultTextureIndex(TextureType::Normal),
+            .RoughnessIdx = Scene::GetDefaultTextureIndex(TextureType::Roughness),
+            .MetalicIdx = Scene::GetDefaultTextureIndex(TextureType::Metalic),
+        };
+    };
+
+    std::array<std::array<Shaders::MaterialId, 6>, 6> whiteMaterials;
+    for (int i = 0; i < 6; i++)
+        for (int j = 0; j < 6; j++)
+            whiteMaterials[i][j] = sceneBuilder.AddMaterial(
+                "White Material " + std::to_string(i) + "_" + std::to_string(j),
+                makeMaterialFromColor(glm::vec3(1.0f), i * 0.2f, j * 0.2f)
+            );
+
+    std::array<uint32_t, 6> geometryIndices = AddCube(sceneBuilder);
+
+    std::array<std::array<MeshInfo, 6>, 36> cubeMeshes;
+    for (int i = 0; i < 6; i++)
+    {
+        for (int j = 0; j < 6; j++)
+        {
+            for (int k = 0; k < 6; k++)
+            {
+                cubeMeshes[i * 6 + j][k] = MeshInfo {
+                    .GeometryIndex = geometryIndices[k],
+                    .MaterialIndex = whiteMaterials[i][j],
+                    .ShaderMaterialType = MaterialType::MetalicRoughness,
+                    .Transform = glm::mat4(1.0f),
+                };
+            }
+        }
+    }
+
+    std::array<uint32_t, 36> cubeModels;
+    for (int i = 0; i < 36; i++)
+    {
+        cubeModels[i] = sceneBuilder.AddModel(cubeMeshes[i]);
+    }
+
+    const uint32_t rootNode = sceneBuilder.AddSceneNode({ 0u, glm::mat4(1.0f), glm::mat4(1.0f) });
+    std::array<glm::mat4, 36> cubeNodeTransforms;
+    for (int i = 0; i < 6; i++)
+    {
+        for (int j = 0; j < 6; j++)
+        {
+            cubeNodeTransforms[i * 6 + j] = glm::transpose(
+                glm::translate(glm::mat4(1.0f), glm::vec3(j * -4.0f, 0.0f, i * -4.0f))
+            );
+            const uint32_t cubeNode =
+                sceneBuilder.AddSceneNode({ rootNode, cubeNodeTransforms[i * 6 + j], glm::mat4(1.0f) });
+            sceneBuilder.AddModelInstance(cubeModels[i * 6 + j], cubeNode);
+        }
+    }
+
+    sceneBuilder.SetSkybox(Skybox2D(
+        TextureImporter::GetTextureInfo(base / "skybox" / "sky_42_2k.png", TextureType::Skybox, "Skybox")
     ));
 }
 

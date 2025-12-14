@@ -89,7 +89,7 @@ MaterialSample SampleMaterial(uint materialId, vec2 texCoords, float lod, uint f
 
 vec3 EvaluateReflection(vec3 V, vec3 L, vec3 F, float alpha, out float pdf)
 {
-    if (L.z <= 1e-5)
+    if (L.z <= 0.00001f)
     {
         pdf = 0.0f;
         return vec3(0.0f, 0.0f, 0.0f);

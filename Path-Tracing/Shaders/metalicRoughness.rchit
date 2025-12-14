@@ -131,7 +131,7 @@ vec3 SampleDiffuseBRDF(MaterialSample material, vec2 u)
 
 vec3 EvaluateGlossBRDF(MaterialSample material, vec3 V, vec3 L, out float pdf)
 {
-    return EvaluateReflection(V, L, material.Color, material.Roughness * material.Roughness, pdf);
+    return EvaluateReflection(V, L, vec3(1.0f), material.Roughness * material.Roughness, pdf);
 }
 
 // TODO: Is this the correct name?
@@ -140,20 +140,53 @@ vec3 SampleGlossBSDF(MaterialSample material, vec3 H, vec3 V)
     return normalize(reflect(-V, H));
 }
 
+vec3 EvaluateMetalicBRDF(MaterialSample material, vec3 V, vec3 L, out float pdf)
+{
+    const vec3 H = normalize(V + L);
+    const vec3 F0 = mix(material.Color, vec3(1.0f), SchlickFresnel(dot(V, H)));
+    return EvaluateReflection(V, L, F0, material.Roughness * material.Roughness, pdf);
+}
+
+vec3 SampleMetalicBRDF(MaterialSample material, vec3 H, vec3 V)
+{
+    return normalize(reflect(-V, H));
+}
+
+struct LobePdfs
+{
+    float Diffuse;
+    float Gloss;
+    float Metalic;
+};
+
+LobePdfs SampleLobePdfs(MaterialSample material, float F)
+{
+    LobePdfs pdfs;
+    pdfs.Diffuse = (1.0f - material.Metalness) * (1.0f - F);
+    pdfs.Gloss = (1.0f - material.Metalness) * F;
+    pdfs.Metalic = material.Metalness;
+    return pdfs;
+}
+
 vec3 EvaluateBSDF(MaterialSample material, vec3 V, vec3 L, out float outPdf)
 {
     const vec3 H = normalize(V + L);
     const float F = SchlickFresnel(abs(dot(V, H)));
 
+    LobePdfs pdfs = SampleLobePdfs(material, F);
+
     vec3 bsdf = vec3(0.0f);
     outPdf = 0.0f;
     float pdf;
 
-    bsdf += EvaluateDiffuseBRDF(material, V, L, pdf) * (1.0f - F);
-    outPdf += pdf * (1.0f - F);
+    bsdf += EvaluateDiffuseBRDF(material, V, L, pdf) * pdfs.Diffuse;
+    outPdf += pdf * pdfs.Diffuse;
 
-    bsdf += EvaluateGlossBRDF(material, V, L, pdf) * F;
-    outPdf += pdf * F;
+    bsdf += EvaluateGlossBRDF(material, V, L, pdf) * pdfs.Gloss;
+    outPdf += pdf * pdfs.Gloss;
+
+    bsdf += EvaluateMetalicBRDF(material, V, L, pdf) * pdfs.Metalic;
+    outPdf += pdf * pdfs.Metalic;
 
     return bsdf;
 }
@@ -164,11 +197,18 @@ BSDFSample SampleBSDF(MaterialSample material, vec3 V, inout uint rngState)
     const vec3 H = SampleGGX(vec2(rand(rngState), rand(rngState)), V, alpha);
     const float F = SchlickFresnel(dot(V, H));
 
+    LobePdfs pdfs = SampleLobePdfs(material, F);
+    
     vec3 L;
-    if (rand(rngState) < F)
-        L = SampleGlossBSDF(material, H, V);
+    if (rand(rngState) < pdfs.Metalic)
+        L = SampleMetalicBRDF(material, H, V);
     else
-        L = SampleDiffuseBRDF(material, vec2(rand(rngState), rand(rngState)));
+    {
+        if (rand(rngState) < pdfs.Gloss)
+            L = SampleGlossBSDF(material, H, V);
+        else
+            L = SampleDiffuseBRDF(material, vec2(rand(rngState), rand(rngState)));
+    }
 
     BSDFSample ret;
     ret.Direction = L;

@@ -42,17 +42,18 @@ void main()
 
             if (payload.Pdf == -1.0f)
             {
-                if (bounce == 0)
-                    radiance += throughput * payload.Emissive;
+                radiance += throughput * payload.Emissive;
                 break;
             }
 
             radiance += throughput * payload.Emissive;
 
-            if (!checkOccluded(payload.LightDirection, payload.Position, payload.LightDistance))
-                radiance += throughput * payload.DirectLight / max(payload.DirectLightPdf, 0.0001f);
+            if (payload.DirectLightPdf > 0.0f)
+                if (!checkOccluded(payload.LightDirection, payload.Position, payload.LightDistance))
+                    radiance += throughput * payload.DirectLight / payload.DirectLightPdf;
             
-            throughput *= payload.Bsdf / max(payload.Pdf, 0.0001f);
+            if (payload.Pdf > 0.0f)
+                throughput *= payload.Bsdf / payload.Pdf;
             
             const float prob = min(max(throughput.r, max(throughput.g, throughput.b)), 1.0f);
             if (prob < 0.001f)
