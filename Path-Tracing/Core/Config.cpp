@@ -231,6 +231,14 @@ Config Config::Create(int argc, const char *argv[])
 #ifdef CONFIG_MAX_TEXTURE_MEMORY_BUDGET_VRAM_PERCENT
         .MaxTextureMemoryBudgetVramPercent = CONFIG_MAX_TEXTURE_MEMORY_BUDGET_VRAM_PERCENT,
 #endif
+
+#ifdef CONFIG_MAX_SAMPLES_PER_FRAME
+        .MaxSamplesPerFrame = CONFIG_MAX_SAMPLES_PER_FRAME,
+#endif
+
+#ifdef CONFIG_MIN_REFRESH_RATE
+        .MinRefreshRate = CONFIG_MIN_REFRESH_RATE,
+#endif
     };
 }
 

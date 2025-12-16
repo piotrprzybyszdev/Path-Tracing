@@ -193,7 +193,7 @@ void Application::Init(int argc, const char *argv[])
 
     s_Swapchain = std::make_unique<Swapchain>(
         s_Surface, vk::SurfaceFormatKHR(vk::Format::eR8G8B8A8Srgb, vk::ColorSpaceKHR::eSrgbNonlinear),
-        vk::Format::eR8G8B8A8Unorm, UserInterface::GetPresentMode(), windowSize
+        vk::Format::eR8G8B8A8Unorm, UserInterface::GetPresentMode(), windowSize, 2
     );
     s_State = State::HasSwapchain;
 
@@ -270,6 +270,12 @@ void Application::Run()
         {
             DeviceContext::GetGraphicsQueue().WaitIdle();
             s_Swapchain->Recreate(UserInterface::GetPresentMode());
+        }
+
+        if (s_Swapchain->GetImageCount() != Renderer::GetPreferredImageCount())
+        {
+            DeviceContext::GetGraphicsQueue().WaitIdle();
+            s_Swapchain->Recreate(Renderer::GetPreferredImageCount());
         }
 
         const vk::Extent2D windowSize = Window::GetSize();

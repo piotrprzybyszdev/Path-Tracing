@@ -58,6 +58,7 @@ The default configuration is `Release`.
 | MAX_BUFFERS_PER_LOADER_THREAD          | ❌        | ❌           | 1     | 1       |
 | MAX_SHADER_COMPILATION_THREADS         | ❌        | ❌           | 2     | 2       |
 | MAX_SHADER_COMPILATION_BATCH_SIZE      | 32        | 32            | 16    | 16      |
+| MAX_SAMPELS_PER_FRAME                  | ❌        | 1            | 1     | 1       |
 
 Other configuration options:
 * MAX_SHADER_INCLUDE_DEPTH
@@ -66,6 +67,7 @@ Other configuration options:
 * MAX_PIPELINE_VARIANT_CACHE_SIZE
 * MAX_STAGING_BUFFER_SIZE_MIB
 * MAX_TEXTURE_MEMORY_BUDGET_VRAM_PERCENT
+* MIN_REFRESH_RATE
 
 For example, to compile in `Profile` mode but with logging to a file at `trace` log level and max shader include depth set to `1`, you should append to the cmake command: `-DCMAKE_BUILD_TYPE=Profile -DPATH_TRACING_CONFIG="CONFIG_LOG_TO_FILE;CONFIG_LOG_LEVEL_TRACE;CONFIG_MAX_SHADER_INCLUDE_DEPTH=1"`.
 

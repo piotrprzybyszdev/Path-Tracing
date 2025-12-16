@@ -1,0 +1,28 @@
+#version 460
+#extension GL_EXT_buffer_reference : require
+
+#include "ShaderRendererTypes.incl"
+
+layout(binding = 0, set = 0, rgba32f) uniform image2D u_AccumulationImage;
+layout(binding = 1, set = 0, rgba16f) uniform image2D u_PostProcessImage;
+layout(binding = 2, set = 0) uniform MainBlock {
+    PostProcessingUniformData mainUniform;
+};
+
+layout (local_size_x = PostProcessShaderGroupSizeX, local_size_y = PostProcessShaderGroupSizeY, local_size_z = 1) in;
+
+void main() 
+{
+    const ivec2 imageCoords = ivec2(gl_GlobalInvocationID.xy);
+    
+    const vec3 accColor = imageLoad(u_AccumulationImage, imageCoords).rgb;
+
+    vec3 color = accColor / mainUniform.TotalSamples * mainUniform.Exposure;
+       
+    if (isnan(color.r) || isnan(color.g) || isnan(color.b))
+        color = vec3(5000.0f, 0.0f, 0.0f);
+    if (isinf(color.r) || isinf(color.g) || isinf(color.b))
+        color = vec3(0.0f, 5000.0f, 0.0f);
+
+    imageStore(u_PostProcessImage, imageCoords, vec4(color, 1.0f));
+}

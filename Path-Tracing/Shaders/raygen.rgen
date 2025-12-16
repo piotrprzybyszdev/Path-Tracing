@@ -70,19 +70,7 @@ void main()
         }
     }
     
-    vec3 prevColor = imageLoad(u_Image, ivec2(gl_LaunchIDEXT.xy)).rgb;
-
-    if (isnan(radiance.r) || isnan(radiance.g) || isnan(radiance.b))
-        radiance = vec3(5000.0f, 0.0f, 0.0f);
-    else if (isinf(radiance.r) || isinf(radiance.g) || isinf(radiance.b))
-        radiance = vec3(0.0f, 5000.0f, 0.0f);
-    else
-        radiance = (radiance * mainUniform.Exposure + prevColor * mainUniform.TotalSamples) / (mainUniform.TotalSamples + mainUniform.SampleCount);
-    
-    if (prevColor == vec3(5000.0f, 0.0f, 0.0f))
-        radiance = vec3(5000.0f, 0.0f, 0.0f);
-    if (prevColor == vec3(0.0f, 5000.0f, 0.0f))
-        radiance = vec3(0.0f, 5000.0f, 0.0f);
-
-    imageStore(u_Image, ivec2(gl_LaunchIDEXT.xy), vec4(radiance, 1.0f));
+    const ivec2 imageCoords = ivec2(gl_LaunchIDEXT.xy);
+    const vec3 prevColor = imageLoad(u_Image, imageCoords).rgb;
+    imageStore(u_Image, imageCoords, vec4(radiance + prevColor, 1.0f));
 }

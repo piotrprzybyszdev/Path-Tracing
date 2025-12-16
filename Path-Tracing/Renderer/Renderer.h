@@ -4,6 +4,7 @@
 
 #include <memory>
 #include <mutex>
+#include <queue>
 #include <vector>
 
 #include "Shaders/ShaderRendererTypes.incl"
@@ -26,6 +27,7 @@ namespace PathTracing
 using PathTracingPipelineConfig = PipelineConfig<1>;
 using DebugRaytracingPipelineConfig = PipelineConfig<4>;
 using SkinningPipelineConfig = PipelineConfig<0>;
+using PostProcessPipelineConfig = PipelineConfig<0>;
 
 class Renderer
 {
@@ -33,6 +35,7 @@ public:
     static void Init(const Swapchain *swapchain);
     static void Shutdown();
 
+    static uint32_t GetPreferredImageCount();
     static void UpdateSceneData(const std::shared_ptr<Scene> &scene, bool updated);
 
     static void OnResize(vk::Extent2D extent);
@@ -43,14 +46,18 @@ public:
     static void SetPathTracingPipeline(PathTracingPipelineConfig config);
     static void SetDebugRaytracingPipeline(DebugRaytracingPipelineConfig config);
 
-    struct Settings
+    struct PathTracingSettings
     {
-        float Exposure = 1.0f;
         uint32_t BounceCount = 4;
-        uint32_t SampleCount = 1;
     };
 
-    static void SetSettings(const Settings &settings);
+    struct PostProcessSettings
+    {
+        float Exposure = 1.0f;
+    };
+
+    static void SetSettings(const PathTracingSettings &settings);
+    static void SetSettings(const PostProcessSettings &settings);
 
     static std::unique_ptr<CommandBuffer> s_MainCommandBuffer;
     static std::unique_ptr<StagingBuffer> s_StagingBuffer;
@@ -71,6 +78,7 @@ private:
         ShaderId AnyHit = ShaderLibrary::g_UnusedShaderId;
         ShaderId OcclusionMiss = ShaderLibrary::g_UnusedShaderId;
         ShaderId SkinningCompute = ShaderLibrary::g_UnusedShaderId;
+        ShaderId PostProcessCompute = ShaderLibrary::g_UnusedShaderId;
 
         ShaderId DebugRaygen = ShaderLibrary::g_UnusedShaderId;
         ShaderId DebugMiss = ShaderLibrary::g_UnusedShaderId;
@@ -98,10 +106,12 @@ private:
         vk::CommandPool CommandPool;
         vk::CommandBuffer CommandBuffer;
 
-        Image StorageImage;
         uint32_t TotalSamples = 0;
+        Image AccumulationImage;
+        Image PostProcessImage;
 
         Buffer RaygenUniformBuffer;
+        Buffer PostProcessUniformBuffer;
 
         static inline constexpr vk::DeviceSize s_DirectionalLightOffset =
             Utils::AlignTo(sizeof(Shaders::uint), Shaders::DirectionalLightStructAlignment);
@@ -120,7 +130,18 @@ private:
 
     static std::vector<RenderingResources> s_RenderingResources;
 
-    static Settings s_Settings;
+    static struct RefreshRate
+    {
+        std::queue<float> Timings;
+        float TimeSum = 0.0f;
+        float SinceResetSeconds = 0.0f;
+        float IncraseThresholdSeconds = 2.0f;
+        float DecreaseThresholdSeconds = 1.0f;
+        uint32_t SamplesPerFrame = 1;
+    } s_RefreshRate;
+
+    static PathTracingSettings s_PathTracingSettings;
+    static PostProcessSettings s_PostProcessSettings;
 
     struct SceneData
     {
@@ -159,6 +180,7 @@ private:
     static std::unique_ptr<RaytracingPipeline> s_PathTracingPipeline;
     static std::unique_ptr<RaytracingPipeline> s_DebugRayTracingPipeline;
     static std::unique_ptr<ComputePipeline> s_SkinningPipeline;
+    static std::unique_ptr<ComputePipeline> s_PostProcessPipeline;
 
     static RaytracingPipeline *s_ActiveRayTracingPipeline;
 
@@ -182,7 +204,7 @@ private:
     static void UpdateAnimatedVertices(const RenderingResources &resources);
 
     static void CreateSceneRenderingResources(RenderingResources &res, uint32_t frameIndex);
-    static Image CreateStorageImage(vk::Extent2D extent);
+    static void CreateImageResources(RenderingResources &res, uint32_t frameIndex, vk::Extent2D extent);
     static void CreateGeometryBuffer(RenderingResources &resources);
     static void CreateAccelerationStructure(RenderingResources &resources);
     

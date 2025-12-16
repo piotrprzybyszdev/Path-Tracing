@@ -31,6 +31,10 @@ namespace PathTracing
 #define CONFIG_MAX_SHADER_COMPILATION_BATCH_SIZE 32
 #endif
 
+#ifndef CONFIG_MAX_SAMPLES_PER_FRAME
+#define CONFIG_MAX_SAMPLES_PER_FRAME 1
+#endif
+
 #endif
 
 #ifdef CONFIG_DEBUG
@@ -58,6 +62,10 @@ namespace PathTracing
 
 #ifndef CONFIG_MAX_TEXTURE_MEMORY_BUDGET_ABSOLUTE_MIB
 #define CONFIG_MAX_TEXTURE_MEMORY_BUDGET_ABSOLUTE_MIB 1024
+#endif
+
+#ifndef CONFIG_MAX_SAMPLES_PER_FRAME
+#define CONFIG_MAX_SAMPLES_PER_FRAME 1
 #endif
 
 #endif
@@ -88,6 +96,10 @@ namespace PathTracing
 
 #ifndef CONFIG_MAX_TEXTURE_MEMORY_BUDGET_VRAM_ABSOLUTE_MIB
 #define CONFIG_MAX_TEXTURE_MEMORY_BUDGET_VRAM_ABSOLUTE_MIB 1024
+#endif
+
+#ifndef CONFIG_MAX_SAMPLES_PER_FRAME
+#define CONFIG_MAX_SAMPLES_PER_FRAME 1
 #endif
 
 #endif
@@ -149,6 +161,9 @@ struct Config
     uint64_t MaxStagingBufferSize = 64_MiB;
     uint64_t MaxTextureMemoryBudgetAbsolute = std::numeric_limits<uint64_t>::max();
     uint32_t MaxTextureMemoryBudgetVramPercent = 80;
+
+    uint32_t MaxSamplesPerFrame = std::numeric_limits<uint32_t>::max();
+    uint32_t MinRefreshRate = 60;
 };
 
 class PrintHelpException : public std::exception

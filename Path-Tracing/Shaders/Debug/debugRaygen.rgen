@@ -31,5 +31,5 @@ void main()
 
     traceRayEXT(u_TopLevelAS, flags, 0xff, PrimaryRayHitGroupIndex, 2, PrimaryRayMissGroupIndex, ray.Origin, ray.tmin, ray.Direction, ray.tmax, 0);
   
-    imageStore(u_Image, ivec2(gl_LaunchIDEXT.xy), vec4(hitValue * mainUniform.Exposure, 1.0f));
+    imageStore(u_Image, ivec2(gl_LaunchIDEXT.xy), vec4(hitValue, 1.0f));
 }

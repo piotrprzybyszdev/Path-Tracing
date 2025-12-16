@@ -32,7 +32,6 @@ Shaders::SpecializationConstant s_RenderMode = Shaders::RenderModeColor;
 Shaders::SpecializationConstant s_RaygenFlags = Shaders::RaygenFlagsNone;
 Shaders::SpecializationConstant s_HitGroupFlags = Shaders::HitGroupFlagsNone;
 std::span<const vk::PresentModeKHR> s_PresentModes = {};
-Renderer::Settings s_Settings = {};
 bool s_DebuggingEnabled = false;
 bool s_ShowingImportScene = false;
 
@@ -208,7 +207,6 @@ void CameraListContent::Render()
 {
     auto scene = SceneManager::GetActiveScene();
 
-    ImGui::Text("Cameras");
     ApplyLeftMargin();
     if (ImGui::RadioButton("Input Camera", scene->GetActiveCameraId() == Scene::g_InputCameraId))
         scene->SetActiveCamera(Scene::g_InputCameraId);
@@ -415,6 +413,54 @@ void ImportSceneContent::Render()
     }
 }
 
+class SettingsContent : public Content
+{
+public:
+    ~SettingsContent() override = default;
+
+    void Render() override;
+
+private:
+    float m_Exposure = 0.0f;
+    int m_BounceCount = 4;
+    int m_SampleCount = 1;
+};
+
+void SettingsContent::Render()
+{
+    bool pathTracingSettingsChanged = false;
+    bool postProcessSettingsChanged = false;
+    if (s_DebuggingEnabled)
+        ImGui::BeginDisabled();
+
+    ImGui::Dummy({ 0, 5 });
+    if (ImGui::TreeNodeEx("Path-tracing", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Text("Bounces: ");
+        ImGui::SameLine();
+        pathTracingSettingsChanged |= ImGui::SliderInt("##Bounces", &m_BounceCount, 1, 32, "%d");
+
+        ImGui::TreePop();
+    }
+    if (s_DebuggingEnabled)
+        ImGui::EndDisabled();
+
+    ImGui::Dummy({ 0, 5 });
+    if (ImGui::TreeNodeEx("Post-processing", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Text("Exposure:");
+        ImGui::SameLine();
+        postProcessSettingsChanged |= ImGui::SliderFloat("##Exposure", &m_Exposure, -10.0f, 10.0f, "%.2f");
+
+        ImGui::TreePop();
+    }
+
+    if (pathTracingSettingsChanged)
+        Renderer::SetSettings(Renderer::PathTracingSettings(m_BounceCount));
+    if (postProcessSettingsChanged)
+        Renderer::SetSettings(Renderer::PostProcessSettings(std::pow(2.0f, m_Exposure)));
+}
+
 class SettingsTab : public Tab
 {
 public:
@@ -428,42 +474,31 @@ protected:
 
 private:
     CameraListContent m_CameraList;
+    SettingsContent m_Settings;
 };
 
 void SettingsTab::RenderContent()
 {
     ImGui::Dummy({ 0.0f, 5.0f });
-    m_CameraList.SetLeftMargin(10.0f);
-    m_CameraList.Render();
-    ImGui::Dummy({ 0.0f, 5.0f });
-
-    float exposure = std::log2(s_Settings.Exposure);
-    int bounceCount = s_Settings.BounceCount, sampleCount = s_Settings.SampleCount;
-
-    bool hasChanged = false;
-    ImGui::Text("Exposure:");
+    ImGui::Dummy({ 5.0f, 0.0f });
     ImGui::SameLine();
-    hasChanged |= ImGui::SliderFloat("##Exposure", &exposure, -10.0f, 10.0f, "%.2f");
 
-    if (s_DebuggingEnabled)
-        ImGui::BeginDisabled();
-
-    ImGui::Text("Bounces:");
-    ImGui::SameLine();
-    hasChanged |= ImGui::SliderInt("##Bounces", &bounceCount, 1, 32, "%d");
-    ImGui::Text("Samples:");
-    ImGui::SameLine();
-    hasChanged |= ImGui::SliderInt("##Samples", &sampleCount, 1, 32, "%d");
-
-    if (s_DebuggingEnabled)
-        ImGui::EndDisabled();
-
-    if (hasChanged)
+    if (ImGui::TreeNodeEx("Cameras", ImGuiTreeNodeFlags_DefaultOpen))
     {
-        s_Settings.Exposure = std::pow(2.0f, exposure);
-        s_Settings.BounceCount = bounceCount;
-        s_Settings.SampleCount = sampleCount;
-        Renderer::SetSettings(s_Settings);
+        m_CameraList.SetLeftMargin(10.0f);
+        m_CameraList.Render();
+        ImGui::TreePop();
+    }
+
+    ImGui::Dummy({ 0.0f, 5.0f });
+    ImGui::Dummy({ 5.0f, 0.0f });
+    ImGui::SameLine();
+
+    if (ImGui::TreeNodeEx("Rendering", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        m_Settings.SetLeftMargin(10.0f);
+        m_Settings.Render();
+        ImGui::TreePop();
     }
 }
 

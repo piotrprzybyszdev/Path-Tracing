@@ -1,8 +1,8 @@
 #include "Core/Core.h"
 
-#include "Swapchain.h"
-#include "Application.h"
 #include "DeviceContext.h"
+#include "Renderer.h"
+#include "Swapchain.h"
 #include "Utils.h"
 
 namespace PathTracing
@@ -10,26 +10,12 @@ namespace PathTracing
 
 Swapchain::Swapchain(
     vk::SurfaceKHR surface, vk::SurfaceFormatKHR surfaceFormat, vk::Format linearFormat,
-    vk::PresentModeKHR presentMode, vk::Extent2D extent
+    vk::PresentModeKHR presentMode, vk::Extent2D extent, uint32_t imageCount
 )
-    : m_Surface(surface), m_SurfaceFormat(surfaceFormat), m_Extent(extent), m_LinearFormat(linearFormat)
+    : m_Surface(surface), m_SurfaceFormat(surfaceFormat), m_Extent(extent), m_LinearFormat(linearFormat),
+      m_ImageCount(imageCount)
 {
     Recreate(presentMode);
-}
-
-uint32_t Swapchain::GetImageCount(vk::PresentModeKHR presentMode) const
-{
-    switch (presentMode)
-    {
-    case vk::PresentModeKHR::eMailbox:
-        return 3;
-    case vk::PresentModeKHR::eFifo:
-        return 2;
-    case vk::PresentModeKHR::eImmediate:
-        return 2;
-    default:
-        throw error(std::format("Present mode {} not supported", vk::to_string(presentMode)));
-    }
 }
 
 Swapchain::~Swapchain()
@@ -61,6 +47,15 @@ void Swapchain::Recreate(vk::Extent2D extent)
         return;
 
     m_Extent = extent;
+    Recreate();
+}
+
+void Swapchain::Recreate(uint32_t imageCount)
+{
+    if (m_ImageCount == imageCount)
+        return;
+
+    m_ImageCount = imageCount;
     Recreate();
 }
 
@@ -100,7 +95,7 @@ void Swapchain::Recreate(vk::PresentModeKHR presentMode)
     if (maxImageCount == 0)
         maxImageCount = std::numeric_limits<uint32_t>::max();
 
-    m_ImageCount = std::clamp(GetImageCount(m_PresentMode), surfaceCapabilities.minImageCount, maxImageCount);
+    m_ImageCount = std::clamp(m_ImageCount, surfaceCapabilities.minImageCount, maxImageCount);
     m_InFlightCount = m_ImageCount - 1;
     logger::info("Swapchain Image Count: {}", m_ImageCount);
     logger::info("Frame In Flight Count: {}", m_InFlightCount);

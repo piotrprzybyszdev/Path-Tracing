@@ -1,8 +1,9 @@
 #pragma once
 
-#include <vector>
-
 #include <vulkan/vulkan.hpp>
+
+#include <span>
+#include <vector>
 
 namespace PathTracing
 {
@@ -12,13 +13,14 @@ class Swapchain
 public:
     Swapchain(
         vk::SurfaceKHR surface, vk::SurfaceFormatKHR surfaceFormat, vk::Format linearFormat,
-        vk::PresentModeKHR presentMode, vk::Extent2D extent
+        vk::PresentModeKHR presentMode, vk::Extent2D extent, uint32_t imageCount
     );
     ~Swapchain();
 
     void Recreate();
     void Recreate(vk::PresentModeKHR presentMode);
     void Recreate(vk::Extent2D extent);
+    void Recreate(uint32_t imageCount);
 
     Swapchain(const Swapchain &) = delete;
     Swapchain &operator=(const Swapchain &) = delete;
@@ -65,8 +67,6 @@ private:
     uint32_t m_ImageCount;
     uint32_t m_InFlightCount;
     vk::Extent2D m_Extent;
-
-    [[nodiscard]] uint32_t GetImageCount(vk::PresentModeKHR presentMode) const;
 
     std::vector<Frame> m_Frames;
     std::vector<SynchronizationObjects> m_SynchronizationObjects;

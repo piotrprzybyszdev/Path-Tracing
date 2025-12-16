@@ -29,7 +29,6 @@ struct RaygenUniformData
     uint BounceCount;
     uint SampleCount;
     uint TotalSamples;
-    float Exposure;
 };
 
 struct Geometry
@@ -58,10 +57,19 @@ const float DefaultMetalness                = 0.0f;
 
 const uint SkinningShaderGroupSizeX         = 256u;
 
+const uint PostProcessShaderGroupSizeX      = 32u;
+const uint PostProcessShaderGroupSizeY      = 32u;
+
 struct SkinningPushConstants
 {
     AnimatedVertexBuffer inAnimatedVertices;
     VertexWriteBuffer outVertices;
+};
+
+struct PostProcessingUniformData
+{
+    uint TotalSamples;
+    float Exposure;
 };
 
 const uint MissFlagsConstantId              = 0u;

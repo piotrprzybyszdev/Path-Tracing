@@ -19,7 +19,8 @@
 namespace PathTracing
 {
 
-Renderer::Settings Renderer::s_Settings = {};
+Renderer::PathTracingSettings Renderer::s_PathTracingSettings = {};
+Renderer::PostProcessSettings Renderer::s_PostProcessSettings = {};
 
 const Swapchain *Renderer::s_Swapchain = nullptr;
 
@@ -32,6 +33,8 @@ PathTracingPipelineConfig Renderer::s_PathTracingPipelineConfig = {};
 DebugRaytracingPipelineConfig Renderer::s_DebugRayTracingPipelineConfig = {};
 
 std::vector<Renderer::RenderingResources> Renderer::s_RenderingResources = {};
+
+Renderer::RefreshRate Renderer::s_RefreshRate = {};
 
 std::unique_ptr<CommandBuffer> Renderer::s_MainCommandBuffer = nullptr;
 std::unique_ptr<StagingBuffer> Renderer::s_StagingBuffer = nullptr;
@@ -50,6 +53,7 @@ std::unique_ptr<ShaderLibrary> Renderer::s_ShaderLibrary = nullptr;
 std::unique_ptr<RaytracingPipeline> Renderer::s_PathTracingPipeline = nullptr;
 std::unique_ptr<RaytracingPipeline> Renderer::s_DebugRayTracingPipeline = nullptr;
 std::unique_ptr<ComputePipeline> Renderer::s_SkinningPipeline = nullptr;
+std::unique_ptr<ComputePipeline> Renderer::s_PostProcessPipeline = nullptr;
 RaytracingPipeline *Renderer::s_ActiveRayTracingPipeline = nullptr;
 
 std::unique_ptr<BufferBuilder> Renderer::s_BufferBuilder = nullptr;
@@ -139,6 +143,7 @@ void Renderer::Shutdown()
         DeviceContext::GetLogical().destroyCommandPool(res.CommandPool);
     s_RenderingResources.clear();
 
+    s_PostProcessPipeline.reset();
     s_SkinningPipeline.reset();
     s_DebugRayTracingPipeline.reset();
     s_PathTracingPipeline.reset();
@@ -156,6 +161,14 @@ void Renderer::Shutdown()
     s_StagingBuffer.reset();
 
     s_MainCommandBuffer.reset();
+}
+
+uint32_t Renderer::GetPreferredImageCount()
+{
+    if (s_ActiveRayTracingPipeline == s_DebugRayTracingPipeline.get() &&
+        s_Swapchain->GetPresentMode() == vk::PresentModeKHR::eMailbox)
+        return 3;
+    return 2;
 }
 
 void Renderer::UpdateSceneData(const std::shared_ptr<Scene> &scene, bool updated)
@@ -459,6 +472,8 @@ void Renderer::CreatePipelines()
         s_ShaderLibrary->AddShader("occlusion.rmiss", vk::ShaderStageFlagBits::eMissKHR);
     s_Shaders.SkinningCompute =
         s_ShaderLibrary->AddShader("skinning.comp", vk::ShaderStageFlagBits::eCompute);
+    s_Shaders.PostProcessCompute =
+        s_ShaderLibrary->AddShader("postprocess.comp", vk::ShaderStageFlagBits::eCompute);
     s_Shaders.DebugRaygen =
         s_ShaderLibrary->AddShader("Debug/debugRaygen.rgen", vk::ShaderStageFlagBits::eRaygenKHR);
     s_Shaders.DebugMiss =
@@ -537,6 +552,12 @@ void Renderer::CreatePipelines()
         static SkinningPipelineConfig maxSkinningConfig = {};
         s_SkinningPipeline = builder.CreatePipelineUnique(maxSkinningConfig);
     }
+
+    {
+        ComputePipelineBuilder builder(*s_ShaderLibrary, s_Shaders.PostProcessCompute);
+        static PostProcessPipelineConfig maxPostProcessConfig = {};
+        s_PostProcessPipeline = builder.CreatePipelineUnique(maxPostProcessConfig);
+    }
 }
 
 void Renderer::UpdateShaderBindingTable()
@@ -555,6 +576,7 @@ void Renderer::UpdatePipelineSpecializations()
     s_PathTracingPipeline->CancelUpdate();
     s_DebugRayTracingPipeline->CancelUpdate();
     s_SkinningPipeline->CancelUpdate();
+    s_PostProcessPipeline->CancelUpdate();
     Application::ResetBackgroundTask(BackgroundTaskType::ShaderCompilation);
 
     if (s_ActiveRayTracingPipeline == s_PathTracingPipeline.get())
@@ -562,6 +584,7 @@ void Renderer::UpdatePipelineSpecializations()
     else
         s_ActiveRayTracingPipeline->Update(s_DebugRayTracingPipelineConfig);
 
+    s_PostProcessPipeline->Update(PostProcessPipelineConfig());
     s_SkinningPipeline->Update(SkinningPipelineConfig());
     UpdateShaderBindingTable();
     ResetAccumulationImage();
@@ -591,23 +614,32 @@ void Renderer::SetDebugRaytracingPipeline(DebugRaytracingPipelineConfig config)
 
 void Renderer::ResetAccumulationImage()
 {
+    s_RefreshRate.SamplesPerFrame = 1;
+    s_RefreshRate.SinceResetSeconds = 0.0f;
     for (RenderingResources &res : s_RenderingResources)
         res.TotalSamples = 0;
 }
 
-void Renderer::SetSettings(const Settings &settings)
+void Renderer::SetSettings(const PathTracingSettings &settings)
 {
-    s_Settings = settings;
+    s_PathTracingSettings = settings;
     ResetAccumulationImage();
+}
+
+void Renderer::SetSettings(const PostProcessSettings &settings)
+{
+    s_PostProcessSettings = settings;
 }
 
 void Renderer::RecordCommandBuffer(const RenderingResources &resources)
 {
     vk::CommandBuffer commandBuffer = resources.CommandBuffer;
-    vk::Image image = s_Swapchain->GetCurrentFrame().Image;
+    vk::Image swapchainImage = s_Swapchain->GetCurrentFrame().Image;
     vk::ImageView linearImageView = s_Swapchain->GetCurrentFrame().LinearImageView;
     vk::ImageView nonLinearImageView = s_Swapchain->GetCurrentFrame().NonLinearImageView;
-    vk::Extent2D extent = s_Swapchain->GetExtent();
+    vk::Extent2D swapchainExtent = s_Swapchain->GetExtent();
+    vk::Extent2D storageExtent = resources.AccumulationImage.GetExtent();
+    assert(storageExtent == resources.PostProcessImage.GetExtent());
 
     {
         Utils::DebugLabel label(commandBuffer, "Path tracing pass", { 0.35f, 0.9f, 0.29f, 1.0f });
@@ -627,36 +659,62 @@ void Renderer::RecordCommandBuffer(const RenderingResources &resources)
             s_SceneData->SceneShaderBindingTable->GetRaygenTableEntry(),
             s_SceneData->SceneShaderBindingTable->GetMissTableEntry(),
             s_SceneData->SceneShaderBindingTable->GetClosestHitTableEntry(),
-            vk::StridedDeviceAddressRegionKHR(), extent.width, extent.height, 1,
+            vk::StridedDeviceAddressRegionKHR(), storageExtent.width, storageExtent.height, 1,
             Application::GetDispatchLoader()
         );
 
         Image::Transition(
-            commandBuffer, image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
+            commandBuffer, resources.AccumulationImage.GetHandle(), vk::ImageLayout::eGeneral,
+            vk::ImageLayout::eGeneral, vk::PipelineStageFlagBits2::eRayTracingShaderKHR,
+            vk::PipelineStageFlagBits2::eComputeShader, vk::AccessFlagBits2::eShaderStorageWrite,
+            vk::AccessFlagBits2::eShaderStorageRead
+        );
+    }
+
+    {
+        Utils::DebugLabel label(commandBuffer, "Post Processing pass", { 0.92f, 0.05f, 0.16f, 1.0f });
+
+        commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, s_PostProcessPipeline->GetHandle());
+        commandBuffer.bindDescriptorSets(
+            vk::PipelineBindPoint::eCompute, s_PostProcessPipeline->GetLayout(), 0,
+            { s_PostProcessPipeline->GetDescriptorSet()->GetSet(
+                s_Swapchain->GetCurrentFrameInFlightIndex()
+            ) },
+            {}
+        );
+
+        const uint32_t groupSizeX = std::ceil(storageExtent.width / Shaders::PostProcessShaderGroupSizeX);
+        const uint32_t groupSizeY = std::ceil(storageExtent.height / Shaders::PostProcessShaderGroupSizeY);
+        commandBuffer.dispatch(groupSizeX, groupSizeY, 1);
+
+        Image::Transition(
+            commandBuffer, swapchainImage, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
             vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::PipelineStageFlagBits2::eTransfer,
             vk::AccessFlagBits2::eNone, vk::AccessFlagBits2::eTransferWrite
         );
 
-        resources.StorageImage.Transition(
+        resources.PostProcessImage.Transition(
             commandBuffer, vk::ImageLayout::eGeneral, vk::ImageLayout::eTransferSrcOptimal
         );
 
-        auto area = Image::GetMipLevelArea(extent);
+        auto srcarea = Image::GetMipLevelArea(storageExtent);
+        auto dstarea = Image::GetMipLevelArea(swapchainExtent);
         vk::ImageSubresourceLayers subresource(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
-        vk::ImageBlit2 imageBlit(subresource, area, subresource, area);
+        vk::ImageBlit2 imageBlit(subresource, srcarea, subresource, dstarea);
 
         vk::BlitImageInfo2 blitInfo(
-            resources.StorageImage.GetHandle(), vk::ImageLayout::eTransferSrcOptimal, image,
+            resources.PostProcessImage.GetHandle(), vk::ImageLayout::eTransferSrcOptimal, swapchainImage,
             vk::ImageLayout::eTransferDstOptimal, imageBlit, vk::Filter::eLinear
         );
 
         commandBuffer.blitImage2(blitInfo);
 
         Image::Transition(
-            commandBuffer, image, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eAttachmentOptimal
+            commandBuffer, swapchainImage, vk::ImageLayout::eTransferDstOptimal,
+            vk::ImageLayout::eAttachmentOptimal
         );
 
-        resources.StorageImage.Transition(
+        resources.PostProcessImage.Transition(
             commandBuffer, vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eGeneral
         );
     }
@@ -669,13 +727,13 @@ void Renderer::RecordCommandBuffer(const RenderingResources &resources)
         };
 
         commandBuffer.beginRendering(
-            vk::RenderingInfo(vk::RenderingFlags(), vk::Rect2D({}, extent), 1, 0, colorAttachments)
+            vk::RenderingInfo(vk::RenderingFlags(), vk::Rect2D({}, swapchainExtent), 1, 0, colorAttachments)
         );
         UserInterface::OnRender(commandBuffer);
         commandBuffer.endRendering();
 
         Image::Transition(
-            commandBuffer, image, vk::ImageLayout::eAttachmentOptimal, vk::ImageLayout::ePresentSrcKHR
+            commandBuffer, swapchainImage, vk::ImageLayout::eAttachmentOptimal, vk::ImageLayout::ePresentSrcKHR
         );
     }
 }
@@ -752,18 +810,28 @@ void Renderer::CreateSceneRenderingResources(RenderingResources &res, uint32_t f
     CreateAccelerationStructure(res);
 }
 
-Image Renderer::CreateStorageImage(vk::Extent2D extent)
+void Renderer::CreateImageResources(RenderingResources &res, uint32_t frameIndex, vk::Extent2D extent)
 {
-    Image image = s_ImageBuilder->ResetFlags()
-                      .SetFormat(vk::Format::eR32G32B32A32Sfloat)
-                      .SetUsageFlags(vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eStorage)
-                      .CreateImage(extent);
+    s_ImageBuilder->ResetFlags();
+
+    res.AccumulationImage =
+        s_ImageBuilder->SetFormat(vk::Format::eR32G32B32A32Sfloat)
+            .SetUsageFlags(vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eTransferDst)
+            .CreateImage(extent, std::format("Accumulation Image {}", frameIndex));
+
+    res.PostProcessImage =
+        s_ImageBuilder->SetFormat(vk::Format::eR16G16B16A16Sfloat)
+            .SetUsageFlags(vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eTransferSrc)
+            .CreateImage(extent, std::format("Post-process Image {}", frameIndex));
 
     s_MainCommandBuffer->Begin();
-    image.Transition(s_MainCommandBuffer->Buffer, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
+    res.AccumulationImage.Transition(
+        s_MainCommandBuffer->Buffer, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral
+    );
+    res.PostProcessImage.Transition(
+        s_MainCommandBuffer->Buffer, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral
+    );
     s_MainCommandBuffer->SubmitBlocking();
-
-    return image;
 }
 
 void Renderer::CreateGeometryBuffer(RenderingResources &resources)
@@ -804,15 +872,20 @@ void Renderer::OnResize(vk::Extent2D extent)
     {
         RenderingResources &res = s_RenderingResources[i];
         res.TotalSamples = 0;
-        res.StorageImage = CreateStorageImage(extent);
-        res.StorageImage.SetDebugName(std::format("Storage Image {}", i));
+        CreateImageResources(res, i, extent);
 
         std::lock_guard lock(s_DescriptorSetMutex);
         s_PathTracingPipeline->GetDescriptorSet()->UpdateImage(
-            1, i, res.StorageImage, vk::Sampler(), vk::ImageLayout::eGeneral
+            1, i, res.AccumulationImage, vk::Sampler(), vk::ImageLayout::eGeneral
         );
         s_DebugRayTracingPipeline->GetDescriptorSet()->UpdateImage(
-            1, i, res.StorageImage, vk::Sampler(), vk::ImageLayout::eGeneral
+            1, i, res.AccumulationImage, vk::Sampler(), vk::ImageLayout::eGeneral
+        );
+        s_PostProcessPipeline->GetDescriptorSet()->UpdateImage(
+            0, i, res.AccumulationImage, vk::Sampler(), vk::ImageLayout::eGeneral
+        );
+        s_PostProcessPipeline->GetDescriptorSet()->UpdateImage(
+            1, i, res.PostProcessImage, vk::Sampler(), vk::ImageLayout::eGeneral
         );
     }
 }
@@ -835,13 +908,14 @@ void Renderer::OnInFlightCountChange()
 
         const uint32_t frameIndex = s_RenderingResources.size();
 
-        vk::Extent2D extent = s_Swapchain->GetExtent();
-        res.StorageImage = CreateStorageImage(extent);
-        res.StorageImage.SetDebugName(std::format("Storage image {}", frameIndex));
+        CreateImageResources(res, frameIndex, s_Swapchain->GetExtent());
 
         s_BufferBuilder->ResetFlags().SetUsageFlags(vk::BufferUsageFlagBits::eUniformBuffer);
         res.RaygenUniformBuffer = s_BufferBuilder->CreateHostBuffer(
             sizeof(Shaders::RaygenUniformData), std::format("Raygen Uniform Buffer {}", frameIndex)
+        );
+        res.PostProcessUniformBuffer = s_BufferBuilder->CreateHostBuffer(
+            sizeof(Shaders::PostProcessingUniformData), std::format("Post-process Uniform Buffer {}", frameIndex)
         );
 
         CreateSceneRenderingResources(res, frameIndex);
@@ -863,7 +937,9 @@ void Renderer::RecreateDescriptorSet()
     s_PathTracingPipeline->CreateDescriptorSet(s_RenderingResources.size());
     s_DebugRayTracingPipeline->CreateDescriptorSet(s_RenderingResources.size());
     s_SkinningPipeline->CreateDescriptorSet(s_RenderingResources.size());
+    s_PostProcessPipeline->CreateDescriptorSet(s_RenderingResources.size());
     DescriptorSet *skinningDescriptorSet = s_SkinningPipeline->GetDescriptorSet();
+    DescriptorSet *postProcessDescriptorSet = s_PostProcessPipeline->GetDescriptorSet();
 
     for (uint32_t frameIndex = 0; frameIndex < s_RenderingResources.size(); frameIndex++)
     {
@@ -873,7 +949,7 @@ void Renderer::RecreateDescriptorSet()
                                                  DescriptorSet *set, Shaders::SpecializationConstant missFlags
                                              ) {
             set->UpdateAccelerationStructures(0, frameIndex, { res.SceneAccelerationStructure->GetTlas() });
-            set->UpdateImage(1, frameIndex, res.StorageImage, vk::Sampler(), vk::ImageLayout::eGeneral);
+            set->UpdateImage(1, frameIndex, res.AccumulationImage, vk::Sampler(), vk::ImageLayout::eGeneral);
             set->UpdateBuffer(2, frameIndex, res.RaygenUniformBuffer);
             set->UpdateImageArray(
                 3, frameIndex, s_Textures, s_TextureMap, s_TextureSampler,
@@ -912,18 +988,63 @@ void Renderer::RecreateDescriptorSet()
             skinningDescriptorSet->UpdateBuffer(0, frameIndex, res.BoneTransformUniformBuffer);
             skinningDescriptorSet->UpdateBuffer(1, frameIndex, s_SceneData->AnimatedVertexMapBuffer);
         }
+
+        postProcessDescriptorSet->UpdateImage(
+            0, frameIndex, res.AccumulationImage, vk::Sampler(), vk::ImageLayout::eGeneral
+        );
+        postProcessDescriptorSet->UpdateImage(
+            1, frameIndex, res.PostProcessImage, vk::Sampler(), vk::ImageLayout::eGeneral
+        );
+        postProcessDescriptorSet->UpdateBuffer(2, frameIndex, res.PostProcessUniformBuffer);
     }
 }
 
-void Renderer::OnUpdate(float /* timeStep */)
+void Renderer::OnUpdate(float timeStep)
 {
     if (s_RenderingResources.size() < s_Swapchain->GetInFlightCount())
         OnInFlightCountChange();
+
+    // Keep the last MinRefreshRate frame times and their sum
+    if (s_RefreshRate.Timings.size() == Application::GetConfig().MinRefreshRate)
+    {
+        s_RefreshRate.TimeSum -= s_RefreshRate.Timings.front();
+        s_RefreshRate.Timings.pop();
+    }
+    s_RefreshRate.TimeSum += timeStep;
+    s_RefreshRate.Timings.push(timeStep);
+
+    const float threshold =
+        1.0f * (Application::GetConfig().MinRefreshRate + 1) / Application::GetConfig().MinRefreshRate;
+
+    if (s_RefreshRate.SinceResetSeconds > s_RefreshRate.IncraseThresholdSeconds &&
+        s_RefreshRate.TimeSum < threshold &&
+        s_RefreshRate.SamplesPerFrame < Application::GetConfig().MaxSamplesPerFrame)
+    {
+        // If the framerate has stabilized above the desired threshold
+        // We increase the samples per frame, the next increase can happen after 2 seconds
+        s_RefreshRate.IncraseThresholdSeconds = 2.0f;
+        s_RefreshRate.SamplesPerFrame++;
+        s_RefreshRate.SinceResetSeconds = 0.0f;
+    }
+    else if (s_RefreshRate.SinceResetSeconds > s_RefreshRate.DecreaseThresholdSeconds &&
+             s_RefreshRate.TimeSum > threshold && s_RefreshRate.SamplesPerFrame > 1)
+    {
+        // If the framerate stabilized below the desired threshold
+        // We decrease the samples per frame, the next increase can happen after 10 seconds
+        s_RefreshRate.IncraseThresholdSeconds = 10.0f;
+        s_RefreshRate.SamplesPerFrame--;
+        s_RefreshRate.SinceResetSeconds = 0.0f;
+    }
+    else
+        s_RefreshRate.SinceResetSeconds += timeStep;
+
+    Stats::AddStat("Samples Per Frame", "Samples Per Frame: {}", s_RefreshRate.SamplesPerFrame);
 }
 
 void Renderer::Render()
 {
     s_SkinningPipeline->GetDescriptorSet()->FlushUpdate(s_Swapchain->GetCurrentFrameInFlightIndex());
+    s_PostProcessPipeline->GetDescriptorSet()->FlushUpdate(s_Swapchain->GetCurrentFrameInFlightIndex());
 
     {
         std::lock_guard lock(s_DescriptorSetMutex);
@@ -942,13 +1063,19 @@ void Renderer::Render()
     RenderingResources &res = s_RenderingResources[s_Swapchain->GetCurrentFrameInFlightIndex()];
 
     Camera &camera = s_SceneData->Handle->GetActiveCamera();
-    camera.OnResize(res.StorageImage.GetExtent().width, res.StorageImage.GetExtent().height);
+    camera.OnResize(res.AccumulationImage.GetExtent().width, res.AccumulationImage.GetExtent().height);
     Shaders::RaygenUniformData rgenData = { camera.GetInvViewMatrix(), camera.GetInvProjectionMatrix(),
-                                            s_Settings.BounceCount,    s_Settings.SampleCount,
-                                            res.TotalSamples,          s_Settings.Exposure };
+                                            s_PathTracingSettings.BounceCount, s_RefreshRate.SamplesPerFrame,
+                                            res.TotalSamples };
+    
+    bool resetAccumulationImage = res.TotalSamples == 0;
+    res.TotalSamples += s_RefreshRate.SamplesPerFrame;
+    if (s_ActiveRayTracingPipeline == s_DebugRayTracingPipeline.get())
+        res.TotalSamples = 1;
+    Shaders::PostProcessingUniformData postprocessData = { res.TotalSamples, s_PostProcessSettings.Exposure };
 
-    res.TotalSamples += s_Settings.SampleCount;
     res.RaygenUniformBuffer.Upload(&rgenData);
+    res.PostProcessUniformBuffer.Upload(&postprocessData);
     res.LightUniformBuffer.Upload(ToByteSpan(res.LightCount));
     res.LightUniformBuffer.Upload(
         ToByteSpan(s_SceneData->Handle->GetDirectionalLight()), RenderingResources::s_DirectionalLightOffset
@@ -960,6 +1087,22 @@ void Renderer::Render()
 
     res.CommandBuffer.reset();
     res.CommandBuffer.begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
+
+    if (resetAccumulationImage)
+    {
+        vk::ImageSubresourceRange subresource(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
+        res.CommandBuffer.clearColorImage(
+            res.AccumulationImage.GetHandle(), vk::ImageLayout::eGeneral,
+            vk::ClearColorValue(0.0f, 0.0f, 0.0f, 0.0f), subresource
+        );
+
+        Image::Transition(
+            res.CommandBuffer, res.AccumulationImage.GetHandle(), vk::ImageLayout::eGeneral,
+            vk::ImageLayout::eGeneral, vk::PipelineStageFlagBits2::eAllCommands,
+            vk::PipelineStageFlagBits2::eRayTracingShaderKHR, vk::AccessFlagBits2::eNone,
+            vk::AccessFlagBits2::eShaderStorageWrite
+        );
+    }
 
     UpdateAnimatedVertices(res);
 
