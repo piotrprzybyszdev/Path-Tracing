@@ -93,10 +93,18 @@ struct Payload
     float DirectLightPdf;
     vec3 LightDirection;
     float LightDistance;
+    vec3 RxOrigin;
+    float pad2;
+    vec3 RxDirection;
+    float pad3;
+    vec3 RyOrigin;
+    float pad4;
+    vec3 RyDirection;
+    float pad5;
 };
 
 const uint MaxRecursionDepth                = 1u;
-const uint MaxPayloadSize                   = 96u;
+const uint MaxPayloadSize                   = 160u;
 const uint MaxHitAttributeSize              = 12u;
 
 const uint PrimaryRayHitGroupIndex          = 0u;
@@ -104,8 +112,9 @@ const uint PrimaryRayMissGroupIndex         = 0u;
 const uint OcclusionRayHitGroupIndex        = 1u;
 const uint OcclusionRayMissGroupIndex       = 1u;
 
-const uint BrdfTypeDiffuse                  = 0u;
-const uint BrdfTypeSpecular                 = 1u;
+const uint BsdfTypeDiffuse                  = 0u;
+const uint BsdfTypeGloss                    = 1u;
+const uint BsdfTypeMetalic                  = 2u;
 
 const uint MinBounces                       = 4u;
 

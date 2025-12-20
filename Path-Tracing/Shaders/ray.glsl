@@ -6,25 +6,38 @@ struct Ray
     float tmax;
 };
 
-Ray constructPrimaryRay(uvec2 pixel, uvec2 resolution, Camera camera, vec2 u)
+Ray constructPrimaryRay(uvec2 pixel, uvec2 resolution, Camera camera, vec2 u, out Ray rx, out Ray ry)
 {
     const vec2 pixelCenter = pixel + u;
+    const vec2 pixelCenterOffsetX = pixelCenter + vec2(1.0, 0.0);
+    const vec2 pixelCenterOffsetY = pixelCenter + vec2(0.0, 1.0);
+
     const vec2 inUV = pixelCenter / resolution;
     vec2 d = inUV * 2.0 - 1.0;
+    const vec2 inUVOffsetX = pixelCenterOffsetX / resolution;
+    vec2 dOffsetX = inUVOffsetX * 2.0 - 1.0;
+    const vec2 inUVOffsetY = pixelCenterOffsetY / resolution;
+    vec2 dOffsetY = inUVOffsetY * 2.0 - 1.0;
 
     vec3 origin = (camera.ViewInverse * vec4(0, 0, 0, 1)).xyz;
     vec3 target = (camera.ProjInverse * vec4(d.x, d.y, 1, 1)).xyz;
     vec3 direction = (camera.ViewInverse * vec4(normalize(target), 0)).xyz;
+    vec3 targetOffsetX = (camera.ProjInverse * vec4(dOffsetX.x, dOffsetX.y, 1, 1)).xyz;
+    vec3 targetOffsetY = (camera.ProjInverse * vec4(dOffsetY.x, dOffsetY.y, 1, 1)).xyz;
+    vec3 directionOffsetX = (camera.ViewInverse * vec4(normalize(targetOffsetX), 0)).xyz;
+    vec3 directionOffsetY = (camera.ViewInverse * vec4(normalize(targetOffsetY), 0)).xyz;
 
     float tmin = 0.00001;
     float tmax = 10000.0;
 
+    rx = Ray(origin, tmin, directionOffsetX, tmax);
+    ry = Ray(origin, tmin, directionOffsetY, tmax);
     return Ray(origin, tmin, direction, tmax);
 }
 
-Ray constructPrimaryRay(uvec2 pixel, uvec2 resolution, Camera camera)
+Ray constructPrimaryRay(uvec2 pixel, uvec2 resolution, Camera camera, out Ray rx, out Ray ry)
 {
-    return constructPrimaryRay(pixel, resolution, camera, vec2(0.5f));
+    return constructPrimaryRay(pixel, resolution, camera, vec2(0.5f), rx, ry);
 }
 
 // TODO: Fix the `shadow terminator problem` properly

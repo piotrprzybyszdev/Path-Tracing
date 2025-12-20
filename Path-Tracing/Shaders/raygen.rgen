@@ -24,15 +24,20 @@ void main()
 {
     uint rngState = initRng(gl_LaunchIDEXT.xy, gl_LaunchSizeEXT.xy, mainUniform.TotalSamples);
 
-    vec2 u = vec2(rand(rngState), rand(rngState));
-    const Ray primaryRay = constructPrimaryRay(gl_LaunchIDEXT.xy, gl_LaunchSizeEXT.xy, mainUniform.MainCamera, u);
-
     vec3 radiance = vec3(0.0f);
 
     for (int smpl = 0; smpl < mainUniform.SampleCount; smpl++)
     {
         vec3 throughput = vec3(1.0f);
-        Ray ray = primaryRay;
+
+        vec2 u = vec2(rand(rngState), rand(rngState));
+        Ray rx, ry;
+        Ray ray = constructPrimaryRay(gl_LaunchIDEXT.xy, gl_LaunchSizeEXT.xy, mainUniform.MainCamera, u, rx, ry);
+        payload.RxOrigin = rx.Origin;
+        payload.RxDirection = rx.Direction;
+        payload.RyOrigin = ry.Origin;
+        payload.RyDirection = ry.Direction;
+
         payload.MaxRoughness = 0.0f;
         
         for (int bounce = 0; bounce < mainUniform.BounceCount; bounce++)

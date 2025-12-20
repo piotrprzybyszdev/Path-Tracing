@@ -5,6 +5,7 @@
 
 #include "ShaderRendererTypes.incl"
 #include "common.glsl"
+#include "shading.glsl"
 
 layout(binding = 3, set = 0) uniform sampler2D textures[];
 
@@ -229,12 +230,35 @@ void main()
     const Vertex vertex = transform(originalVertex, sbt.TransformIndex);
 
     // TODO: Calculate the LOD properly
-    const float lod = 0.0f;
+    const vec3 origin = gl_WorldRayOriginEXT;
+    const vec3 viewDir = gl_WorldRayDirectionEXT;
 
-    MaterialSample material = SampleMaterial(sbt.MaterialId, vertex.TexCoords, lod, 0);
+    // Calculate geometric dP/du and dP/dv
+    Vertex v0 = getVertex(vertices, indices, gl_PrimitiveID * 3);
+    Vertex v1 = getVertex(vertices, indices, gl_PrimitiveID * 3 + 1);
+    Vertex v2 = getVertex(vertices, indices, gl_PrimitiveID * 3 + 2);
+
+    v0 = transform(v0, sbt.TransformIndex);
+    v1 = transform(v1, sbt.TransformIndex);
+    v2 = transform(v2, sbt.TransformIndex);
+
+    vec3 dpdu, dpdv, dndu, dndv;
+    ComputeDpnDuv(v0, v1, v2, vertex, dpdu, dpdv, dndu, dndv);
+
+    vec3 rxOrigin = payload.RxOrigin;
+    vec3 rxDirection = payload.RxDirection;
+    vec3 ryOrigin = payload.RyOrigin;
+    vec3 ryDirection = payload.RyDirection;
+
+    vec3 dpdx, dpdy;
+    ComputeDpDxy(vertex.Position, origin, normalize(viewDir), rxOrigin, rxDirection, ryOrigin, ryDirection, vertex.Normal, dpdx, dpdy);
+
+    const vec4 derivatives = ComputeDerivatives(dpdx, dpdy, dpdu, dpdv);
+
+    MaterialSample material = SampleMaterial(sbt.MaterialId, vertex.TexCoords, derivatives, 0);
     payload.MaxRoughness = max(material.Roughness, payload.MaxRoughness);
     material.Roughness = max(payload.MaxRoughness, 0.01f);  // TODO: Consider adding a specular lobe
-    
+
     const mat3 TBN = mat3(vertex.Tangent, vertex.Bitangent, vertex.Normal);
     const vec3 N = normalize(vertex.Normal + TBN * material.Normal);
     const vec3 V = normalize(inverse(TBN) * normalize(-gl_WorldRayDirectionEXT));
@@ -248,7 +272,6 @@ void main()
 
     BSDFSample bsdf = SampleBSDF(material, V, rngState);
 
-
     payload.Position = vertex.Position + vertex.Normal * 0.001f;
     payload.Direction = normalize(TBN * bsdf.Direction);
     payload.Bsdf = bsdf.Color;
@@ -259,4 +282,10 @@ void main()
     payload.DirectLightPdf = lightPdf;
     payload.LightDirection = light.Direction;
     payload.LightDistance = light.Distance;
+
+    ComputeReflectedDifferentialRays(derivatives, vertex.Normal, vertex.Position, viewDir, payload.Direction, dndu, dndv, rxOrigin, rxDirection, ryOrigin, ryDirection);
+    payload.RxOrigin = rxOrigin;
+    payload.RxDirection = rxDirection;
+    payload.RyOrigin = ryOrigin;
+    payload.RyDirection = ryDirection;
 }

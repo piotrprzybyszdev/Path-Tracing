@@ -174,3 +174,11 @@ vec3 rotatePoint(vec4 q, vec3 v) {
 	const vec3 qAxis = vec3(q.x, q.y, q.z);
 	return 2.0f * dot(qAxis, v) * qAxis + (q.w * q.w - dot(qAxis, qAxis)) * v + 2.0f * q.w * cross(qAxis, v);
 }
+
+float DifferenceOfProducts(float a, float b, float c, float d)
+{
+    float cd = c * d;
+    float differenceOfProducts = fma(a, b, -cd);
+    float error = fma(-c, d, cd);
+    return differenceOfProducts + error;
+}

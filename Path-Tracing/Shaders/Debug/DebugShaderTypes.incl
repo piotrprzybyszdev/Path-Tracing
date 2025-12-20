@@ -40,7 +40,7 @@ const uint HitGroupFlagsDisableShadows              = 0x20u;
 const uint HitGroupFlagsAll                         = 0x3fu;
 
 const uint MaxDebugRecursionDepth					= 2u;
-const uint MaxDebugPayloadSize						= 12u;
+const uint MaxDebugPayloadSize						= 48u;
 const uint MaxDebugHitAttributeSize					= 12u;
 
 

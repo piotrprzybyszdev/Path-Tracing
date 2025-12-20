@@ -1,0 +1,28 @@
+#include "ShaderTypes.incl"
+
+#ifndef GL_core_profile
+#pragma once
+
+#include <glm/glm.hpp>
+
+namespace PathTracing::Shaders
+{
+
+using namespace glm;
+
+#endif
+
+struct DebugPayload
+{
+    vec3 hitValue;
+    float pad0;
+    vec3 RxDirection;
+    float pad1;
+    vec3 RyDirection;
+    float pad2;
+};
+
+#ifndef GL_core_profile
+
+}
+#endif

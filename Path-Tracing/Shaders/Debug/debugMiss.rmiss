@@ -3,6 +3,7 @@
 #extension GL_EXT_buffer_reference : require
 
 #include "ShaderRendererTypes.incl"
+#include "DebugShaderRendererTypes.incl"
 #include "DebugShaderTypes.incl"
 
 layout(constant_id = DebugMissFlagsConstantId) const uint s_MissFlags = MissFlagsNone;
@@ -11,7 +12,7 @@ layout(binding = 9, set = 0) uniform sampler2D skybox2D;
 
 layout(binding = 10, set = 0) uniform samplerCube skyboxCube;
 
-layout(location = 0) rayPayloadInEXT vec3 hitValue;
+layout(location = 0) rayPayloadInEXT DebugPayload payload;
 
 #include "common.glsl"
 
@@ -26,12 +27,12 @@ void main()
 
         const vec2 texCoords = vec2(longitude / 2.0f, latitude) / PI + 0.5f;
 
-        hitValue = texture(skybox2D, texCoords).xyz;
+        payload.hitValue = texture(skybox2D, texCoords).xyz;
     }
     else if ((s_MissFlags & MissFlagsSkyboxCube) != MissFlagsNone)
     {
-        hitValue = texture(skyboxCube, gl_WorldRayDirectionEXT).xyz;
+        payload.hitValue = texture(skyboxCube, gl_WorldRayDirectionEXT).xyz;
     }
     else
-        hitValue = vec3(0.2f, 0.2f, 0.2f);
+        payload.hitValue = vec3(0.2f, 0.2f, 0.2f);
 }

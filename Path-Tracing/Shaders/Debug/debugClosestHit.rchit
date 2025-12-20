@@ -4,6 +4,7 @@
 #extension GL_EXT_nonuniform_qualifier : require
 
 #include "ShaderRendererTypes.incl"
+#include "DebugShaderRendererTypes.incl"
 #include "DebugShaderTypes.incl"
 
 layout(constant_id = DebugRenderModeConstantId) const uint s_RenderMode = RenderModeColor;
@@ -39,7 +40,7 @@ layout(shaderRecordEXT, std430) buffer SBT {
     SBTBuffer sbt;
 };
 
-layout(location = 0) rayPayloadInEXT vec3 hitValue;
+layout(location = 0) rayPayloadInEXT DebugPayload payload;
 layout(location = 1) rayPayloadEXT bool isOccluded;
 hitAttributeEXT vec3 attribs;
 
@@ -166,11 +167,31 @@ void main()
     const Vertex vertex = transform(originalVertex, sbt.TransformIndex);
 
     // TODO: Calculate the LOD properly
-    const float lod = (s_HitGroupFlags & HitGroupFlagsDisableMipMaps) != HitGroupFlagsNone ? 0.0f : log2(gl_RayTmaxEXT);
-
-    MaterialSample material = SampleMaterial(sbt.MaterialId, vertex.TexCoords, lod, s_HitGroupFlags);
-
+    const vec3 origin = gl_WorldRayOriginEXT;
     const vec3 viewDir = gl_WorldRayDirectionEXT;
+    
+    // Calculate geometric dP/du and dP/dv
+    Vertex v0 = getVertex(vertices, indices, gl_PrimitiveID * 3);
+    Vertex v1 = getVertex(vertices, indices, gl_PrimitiveID * 3 + 1);
+    Vertex v2 = getVertex(vertices, indices, gl_PrimitiveID * 3 + 2);
+    
+    v0 = transform(v0, sbt.TransformIndex);
+    v1 = transform(v1, sbt.TransformIndex);
+    v2 = transform(v2, sbt.TransformIndex);
+
+    vec3 dpdu, dpdv, dndu, dndv;
+    ComputeDpnDuv(v0, v1, v2, vertex, dpdu, dpdv, dndu, dndv);
+
+    vec3 dpdx, dpdy;
+    ComputeDpDxy(vertex.Position, origin, normalize(viewDir), origin, payload.RxDirection, origin, payload.RyDirection, vertex.Normal, dpdx, dpdy);
+    const vec4 derivatives = ComputeDerivatives(dpdx, dpdy, dpdu, dpdv);
+
+    const float lod = (s_HitGroupFlags & HitGroupFlagsDisableMipMaps) != HitGroupFlagsNone ? 0.0f : ComputeLod(derivatives);
+
+    MaterialSample material = (s_HitGroupFlags & HitGroupFlagsDisableMipMaps) != HitGroupFlagsNone
+        ? SampleMaterial(sbt.MaterialId, vertex.TexCoords, 0.0f, 0)
+        : SampleMaterial(sbt.MaterialId, vertex.TexCoords, derivatives, 0);
+
     const vec3 V = -normalize(viewDir);
     const mat3 TBN = mat3(vertex.Tangent, vertex.Bitangent, vertex.Normal);
     const vec3 N = normalize(vertex.Normal + TBN * material.Normal);
@@ -199,28 +220,28 @@ void main()
     switch (s_RenderMode)
     {
     case RenderModeColor:
-        hitValue = totalLight;
+        payload.hitValue = totalLight;
         break;
     case RenderModeWorldPosition:
-        hitValue = vertex.Position;
+        payload.hitValue = vertex.Position;
         break;
     case RenderModeNormal:
-        hitValue = N;
+        payload.hitValue = N;
         break;
     case RenderModeTextureCoords:
-        hitValue = vec3(vertex.TexCoords, 0.0f);
+        payload.hitValue = vec3(vertex.TexCoords, 0.0f);
         break;
     case RenderModeMips:
-        hitValue = vec3(floor(lod) / 12.0f);
+        payload.hitValue = vec3(0.1f * lod + 1.0f);
         break;
     case RenderModeGeometry:
-        hitValue = getRandomColor(gl_GeometryIndexEXT);
+        payload.hitValue = getRandomColor(gl_GeometryIndexEXT);
         break;
     case RenderModePrimitive:
-        hitValue = getRandomColor(gl_PrimitiveID);
+        payload.hitValue = getRandomColor(gl_PrimitiveID);
         break;
     case RenderModeInstance:
-        hitValue = getRandomColor(gl_InstanceID);
+        payload.hitValue = getRandomColor(gl_InstanceID);
         break;
     }
 }
