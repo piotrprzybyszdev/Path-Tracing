@@ -89,13 +89,11 @@ MaterialSample SampleMaterial(uint materialId, vec2 texCoords, float lod, uint f
 
 vec3 EvaluateReflection(vec3 V, vec3 L, vec3 F, float alpha, out float pdf)
 {
-    if (L.z <= 0.00001f)
+    if (L.z < 0.00001f)
     {
         pdf = 0.0f;
         return vec3(0.0f, 0.0f, 0.0f);
     }
-
-    alpha = max(alpha, 0.0001f);
 
     const vec3 H = normalize(V + L);
 
@@ -109,7 +107,7 @@ vec3 EvaluateReflection(vec3 V, vec3 L, vec3 F, float alpha, out float pdf)
     const float G = GV * GL;
 
     pdf = (GV * max(VdotH, 0.0f) * D / V.z) / (4.0f * VdotH);
-    return D * F * GV * GL / (4.0f * V.z);
+    return G * D * F / (4.0f * V.z);
 }
 
 vec3 SampleGGX(vec2 u, vec3 V, float alpha)
@@ -129,7 +127,5 @@ vec3 SampleGGX(vec2 u, vec3 V, float alpha)
 
     const vec3 Nh = t1 * T1 + t2 * T2 + sqrt(max(0.0, 1.0 - t1 * t1 - t2 * t2)) * Vh;
 
-    const vec3 Ne = normalize(vec3(alpha * Nh.x, alpha * Nh.y, max(0.0, Nh.z)));
-
-    return Ne;
+    return normalize(vec3(alpha * Nh.x, alpha * Nh.y, max(0.0, Nh.z)));
 }

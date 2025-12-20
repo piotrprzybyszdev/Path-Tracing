@@ -147,7 +147,7 @@ MaterialInfo LoadMetalicRoughnessMaterial(
 )
 {
     aiColor3D color = aiColor3D(1.0f, 1.0f, 1.0f);
-    float roughness = 0.5f, metalness = 0.0f;
+    float roughness = 1.0f, metalness = 1.0f;
 
     material->Get(AI_MATKEY_BASE_COLOR, color);
     material->Get(AI_MATKEY_ROUGHNESS_FACTOR, roughness);
@@ -378,6 +378,16 @@ std::vector<uint32_t> LoadMeshes(
         {
             const uint32_t idx = vo + j;
 
+            auto computeTangentSpace = [](glm::vec3 normal) -> std::pair<glm::vec3, glm::vec3> {
+                glm::vec3 t1 = glm::cross(normal, glm::vec3(1.0f, 0.0f, 0.0f));
+                glm::vec3 t2 = glm::cross(normal, glm::vec3(0.0f, 1.0f, 0.0f));
+
+                glm::vec3 tangent = glm::length(t1) > glm::length(t2) ? t1 : t2;
+                glm::vec3 bitangent = cross(normal, tangent);
+                
+                return { glm::normalize(tangent), glm::normalize(bitangent) };
+            };
+
             if (CheckAnimated(mesh))
             {
                 animatedVertices[idx].Position = TrivialCopy<aiVector3D, glm::vec3>(mesh->mVertices[j]);
@@ -392,11 +402,9 @@ std::vector<uint32_t> LoadMeshes(
                         TrivialCopy<aiVector3D, glm::vec3>(mesh->mBitangents[j]);
                 }
                 else
-                {
-                    vertices[idx].Tangent = TrivialCopy<aiVector3D, glm::vec3>(mesh->mNormals[j]);
-                    vertices[idx].Bitangent = TrivialCopy<aiVector3D, glm::vec3>(mesh->mNormals[j]);
-                    vertices[idx].Tangent.x *= -1;
-                    vertices[idx].Bitangent.y *= -1;
+                {                 
+                    std::tie(animatedVertices[idx].Tangent, animatedVertices[idx].Bitangent) =
+                        computeTangentSpace(animatedVertices[idx].Normal);
                 }
             }
             else
@@ -412,10 +420,8 @@ std::vector<uint32_t> LoadMeshes(
                 }
                 else
                 {
-                    vertices[idx].Tangent = TrivialCopy<aiVector3D, glm::vec3>(mesh->mNormals[j]);
-                    vertices[idx].Bitangent = TrivialCopy<aiVector3D, glm::vec3>(mesh->mNormals[j]);
-                    vertices[idx].Tangent.x *= -1;
-                    vertices[idx].Bitangent.y *= -1;
+                    std::tie(vertices[idx].Tangent, vertices[idx].Bitangent) =
+                        computeTangentSpace(vertices[idx].Normal);
                 }
             }
         }

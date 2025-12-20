@@ -25,6 +25,7 @@ void main()
         const vec2 texCoords = vec2(longitude / 2.0f, latitude) / PI + 0.5f;
     
         payload.Emissive = texture(skybox2D, texCoords).xyz;
+        payload.Emissive = hdrToLdr(payload.Emissive);
     }
     else if ((s_MissFlags & MissFlagsSkyboxCube) != MissFlagsNone)
     {
@@ -33,5 +34,6 @@ void main()
     else
         payload.Emissive = vec3(0.08f, 0.09f, 0.1f);
 
+    // TODO: Proper env map sampling
     payload.Pdf = -1.0f;
 }

@@ -9,6 +9,16 @@ float luminance(vec3 rgb)
 	return dot(rgb, vec3(0.2126f, 0.7152f, 0.0722f));
 }
 
+float maxComponent(vec3 rgb)
+{
+    return max(rgb.r, max(rgb.g, rgb.b));
+}
+
+vec3 hdrToLdr(vec3 rgb)
+{
+    return rgb / (1.0f + maxComponent(rgb));
+}
+
 vec3 computeBarycentricCoords(vec3 attribs)
 {
     return vec3(1.0f - attribs.x - attribs.y, attribs.x, attribs.y);

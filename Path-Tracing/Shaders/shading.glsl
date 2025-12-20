@@ -12,7 +12,7 @@ float GGXDistribution(vec3 H, float alpha)
 
     const float denom = PI * alpha2 * pow(Hx2 / alpha2 + Hy2 / alpha2 + Hz2, 2.0f);
 
-    return 1.0f / denom;
+    return 1.0f / max(denom, 1.0f);
 }
 
 float Lambda(vec3 V, float alpha)
@@ -23,7 +23,7 @@ float Lambda(vec3 V, float alpha)
 
     const float alpha2 = alpha * alpha;
 
-    const float nom = -1.0f + sqrt(1.0f + (alpha2 * Vx2 + alpha2 * Vy2) / Vz2);
+    const float nom = sqrt(1.0f + (alpha2 * Vx2 + alpha2 * Vy2) / Vz2) - 1.0f;
 
     return nom / 2.0f;
 }

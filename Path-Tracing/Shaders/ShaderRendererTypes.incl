@@ -76,7 +76,7 @@ struct Payload
     vec3 Position;
     float pad0;
     vec3 Direction;
-    float pad1;
+    float MaxRoughness;
     vec3 Bsdf;
     float Pdf;
     vec3 Emissive;

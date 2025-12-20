@@ -173,7 +173,7 @@ void main()
     const vec3 viewDir = gl_WorldRayDirectionEXT;
     const vec3 V = -normalize(viewDir);
     const mat3 TBN = mat3(vertex.Tangent, vertex.Bitangent, vertex.Normal);
-    const vec3 N = normalize(vertex.Normal + TBN * (2.0f * material.Normal - 1.0f));
+    const vec3 N = normalize(vertex.Normal + TBN * material.Normal);
 
     vec3 totalLight = material.Color * ambient + material.EmissiveColor;
 

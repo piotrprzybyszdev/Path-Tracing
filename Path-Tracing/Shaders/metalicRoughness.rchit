@@ -94,7 +94,8 @@ LightSample SampleLight(float u, vec3 position, out float pdf)
     if (lightIndex >= u_LightCount)
     {
         ret.Direction = normalize(u_DirectionalLight.Direction);
-        ret.Color = u_DirectionalLight.Color;
+        // TODO: Proper sampling
+        ret.Color = hdrToLdr(u_DirectionalLight.Color);
         ret.Distance = DirectionalLightDistance;
         ret.Attenuation = 1.0f;
         return ret;
@@ -171,7 +172,7 @@ LobePdfs SampleLobePdfs(MaterialSample material, float F)
 vec3 EvaluateBSDF(MaterialSample material, vec3 V, vec3 L, out float outPdf)
 {
     const vec3 H = normalize(V + L);
-    const float F = SchlickFresnel(abs(dot(V, H)));
+    const float F = SchlickFresnel(dot(V, H));
 
     LobePdfs pdfs = SampleLobePdfs(material, F);
 
@@ -184,7 +185,7 @@ vec3 EvaluateBSDF(MaterialSample material, vec3 V, vec3 L, out float outPdf)
 
     bsdf += EvaluateGlossBRDF(material, V, L, pdf) * pdfs.Gloss;
     outPdf += pdf * pdfs.Gloss;
-
+    
     bsdf += EvaluateMetalicBRDF(material, V, L, pdf) * pdfs.Metalic;
     outPdf += pdf * pdfs.Metalic;
 
@@ -231,10 +232,11 @@ void main()
     const float lod = 0.0f;
 
     MaterialSample material = SampleMaterial(sbt.MaterialId, vertex.TexCoords, lod, 0);
-    const vec3 normal = material.Normal;
-
+    payload.MaxRoughness = max(material.Roughness, payload.MaxRoughness);
+    material.Roughness = max(payload.MaxRoughness, 0.01f);  // TODO: Consider adding a specular lobe
+    
     const mat3 TBN = mat3(vertex.Tangent, vertex.Bitangent, vertex.Normal);
-    const vec3 N = normalize(vertex.Normal + TBN * normal);
+    const vec3 N = normalize(vertex.Normal + TBN * material.Normal);
     const vec3 V = normalize(inverse(TBN) * normalize(-gl_WorldRayDirectionEXT));
 
     uint rngState = payload.RngState;
@@ -242,7 +244,7 @@ void main()
     float lightPdf, lightSmplPdf;  // unused
     LightSample light = SampleLight(rand(rngState), vertex.Position, lightPdf);
     const vec3 L = normalize(inverse(TBN) * -light.Direction);
-    vec3 lightBsdf = EvaluateBSDF(material, V, L, lightSmplPdf);
+    const vec3 lightBsdf = EvaluateBSDF(material, V, L, lightSmplPdf);
 
     BSDFSample bsdf = SampleBSDF(material, V, rngState);
 
