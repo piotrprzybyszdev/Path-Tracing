@@ -88,7 +88,7 @@ void SceneManager::SetActiveScene(std::unique_ptr<SceneLoader> loader, const std
         {
             SceneBuilder sceneBuilder;
             loader->Load(sceneBuilder); 
-            s_ActiveScene = sceneBuilder.CreateSceneShared();
+            s_ActiveScene = sceneBuilder.CreateSceneShared(sceneName);
         }
         catch (const error &error)
         {
@@ -108,7 +108,7 @@ void SceneManager::SetActiveScene(const std::string &groupName, const std::strin
         {
             SceneBuilder sceneBuilder;
             loader->Load(sceneBuilder);
-            s_ActiveScene = sceneBuilder.CreateSceneShared();
+            s_ActiveScene = sceneBuilder.CreateSceneShared(sceneName);
         }
         catch (const error &error)
         {

@@ -34,6 +34,7 @@ Shaders::SpecializationConstant s_HitGroupFlags = Shaders::HitGroupFlagsNone;
 std::span<const vk::PresentModeKHR> s_PresentModes = {};
 bool s_DebuggingEnabled = false;
 bool s_ShowingImportScene = false;
+bool s_ShowingOfflineRender = false;
 
 std::unique_ptr<UIComponents> s_Components = nullptr;
 
@@ -50,6 +51,7 @@ static const std::string &ToProgressString(BackgroundTaskType type)
     static const std::string shaderCompilationString = "Compiling Shaders";
     static const std::string textureUploadString = "Uploading Textures";
     static const std::string sceneImportString = "Importing Scene";
+    static const std::string renderingString = "Rendering";
 
     switch (type)
     {
@@ -59,6 +61,8 @@ static const std::string &ToProgressString(BackgroundTaskType type)
         return textureUploadString;
     case BackgroundTaskType::SceneImport:
         return sceneImportString;
+    case BackgroundTaskType::Rendering:
+        return renderingString;
     default:
         throw error("Unsupported BackgroundTaskType");
     }
@@ -125,6 +129,8 @@ void UserInterface::OnUpdate(float timeStep)
 
     if (s_IsVisible)
         DefineUI();
+
+    ImGui::EndFrame();
 }
 
 void UserInterface::OnRender(vk::CommandBuffer commandBuffer)
@@ -229,7 +235,7 @@ public:
     void Render() override;
 
 private:
-    std::array<double, 3> m_LastTimeRunning = {};
+    std::array<double, Application::g_BackgroundTasks.size()> m_LastTimeRunning = {};
     const double m_WaitAfterCompleteTime = 1.0;
 };
 
@@ -261,6 +267,7 @@ public:
     ~ImportSceneContent() override = default;
 
     void Render() override;
+
 private:
     std::vector<std::filesystem::path> m_ComponentPaths;
     std::optional<std::filesystem::path> m_SkyboxPath;
@@ -300,7 +307,9 @@ std::vector<std::filesystem::path> ImportSceneContent::OpenFileDialog(bool multi
     if (multiple)
     {
         NFD::UniquePathSet paths;
-        if (checkError(NFD::OpenDialogMultiple(paths, (const nfdu8filteritem_t*)nullptr)))
+        nfdresult_t result = NFD::OpenDialogMultiple(paths, (const nfdu8filteritem_t *)nullptr);
+        glfwRestoreWindow(Window::GetHandle());
+        if (checkError(result))
         {
             nfdpathsetsize_t size;
             nfdresult_t result = NFD::PathSet::Count(paths, size);
@@ -321,7 +330,9 @@ std::vector<std::filesystem::path> ImportSceneContent::OpenFileDialog(bool multi
     else
     {
         NFD::UniquePath path;
-        if (checkError(NFD::OpenDialog(path)))
+        nfdresult_t result = NFD::OpenDialog(path);
+        glfwRestoreWindow(Window::GetHandle());
+        if (checkError(result))
             return { std::filesystem::path(path.get()) };
     }
 
@@ -413,6 +424,248 @@ void ImportSceneContent::Render()
     }
 }
 
+class OfflineRenderContent : public Content
+{
+public:
+    ~OfflineRenderContent() override = default;
+
+    void Render() override;
+
+private:
+    std::optional<std::filesystem::path> m_OutputPath;
+    int m_MaxSampleCount = 1000;
+    int m_MaxBounceCount = 4;
+    int m_Extent[2] = { 1280, 720 };
+    int m_Time = 5;
+    float m_Exposure = 0.0f;
+    const char *m_TimeUnit = s_TimeUnitMinutes;
+    const char *m_OutputFormat = s_OutputFormatPng;
+
+private:
+    static inline const char *s_TimeUnitSeconds = "sec";
+    static inline const char *s_TimeUnitMinutes = "min";
+    static inline const char *s_TimeUnitHours = "hr";
+
+    static inline const char *s_OutputFormatPng = "png";
+    static inline const char *s_OutputFormatJpg = "jpg";
+    static inline const char *s_OutputFormatTga = "tga";
+    static inline const char *s_OutputFormatHdr = "hdr";
+
+    static inline const nfdfilteritem_t s_PngItemFilter = { .name = "Png Image (.png)", .spec = "png" };
+    static inline const nfdfilteritem_t s_JpgItemFilter = { .name = "Jpg Image (.jpg)", .spec = "jpg,jpeg" };
+    static inline const nfdfilteritem_t s_TgaItemFilter = { .name = "Tga Image (.tga)", .spec = "tga" };
+    static inline const nfdfilteritem_t s_HdrItemFilter = { .name = "Hdr Image (.hdr)", .spec = "hdr" };
+
+private:
+    void SaveFileDialog();
+    bool RenderPathButton();
+    std::chrono::seconds GetTime();
+    OutputFormat GetOutputFormat();
+    const nfdfilteritem_t *GetFileFilter();
+};
+
+void OfflineRenderContent::Render()
+{
+    ImVec2 size = ImGui::GetWindowSize();
+    ImVec2 buttonSize(100, 20);
+
+    ImGui::Dummy({ 0, 5 });
+    ImGui::Separator();
+    ImGui::Dummy({ 10, 0 });
+    ImGui::SameLine();
+    ImGui::Button("Image");  // TODO: Add Video
+    ImGui::SameLine();
+    ImGui::Dummy({ 2, 0 });
+    ImGui::SameLine();
+    ImGui::Text("Format");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(60);
+    if (ImGui::BeginCombo("##OuptutFormat", m_OutputFormat, ImGuiComboFlags_NoArrowButton))
+    {
+        if (ImGui::Selectable(s_OutputFormatPng, m_OutputFormat == s_OutputFormatPng))
+            m_OutputFormat = s_OutputFormatPng;
+        if (ImGui::Selectable(s_OutputFormatJpg, m_OutputFormat == s_OutputFormatJpg))
+            m_OutputFormat = s_OutputFormatJpg;
+        if (ImGui::Selectable(s_OutputFormatTga, m_OutputFormat == s_OutputFormatTga))
+            m_OutputFormat = s_OutputFormatTga;
+        if (ImGui::Selectable(s_OutputFormatHdr, m_OutputFormat == s_OutputFormatHdr))
+            m_OutputFormat = s_OutputFormatHdr;
+        ImGui::EndCombo();
+    }
+    ImGui::SameLine();
+    ImGui::Dummy({ 2, 0 });
+    ImGui::SameLine();
+    if (RenderPathButton())
+        SaveFileDialog();
+    ImGui::Separator();
+    ImGui::Dummy({ 0, 10 });
+
+    ImGui::Dummy({ 40, 0 });
+    ImGui::SameLine();
+    if (ImGui::BeginTable("Settings", 2, ImGuiTableFlags_None, { 400.0f, 0.0f }))
+    {
+        ImGui::TableSetupColumn(nullptr, ImGuiTableColumnFlags_WidthFixed);
+        ImGui::TableSetupColumn(nullptr, ImGuiTableColumnFlags_WidthStretch);
+
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("Image Size");
+        ImGui::TableNextColumn();
+        ImGui::SetNextItemWidth(-1);
+        ImGui::InputInt2("##ImageSize", m_Extent);
+
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("Max Sample Count");
+        ImGui::TableNextColumn();
+        ImGui::SetNextItemWidth(-1);
+        ImGui::SliderInt("##MaxSampleCount", &m_MaxSampleCount, 0, 10000);
+
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("Max Render Time");
+        ImGui::TableNextColumn();
+        float width = ImGui::GetContentRegionAvail().x;
+        ImGui::SetNextItemWidth(width - 70);
+        ImGui::InputInt("##MaxRenderTime", &m_Time, 0);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(60);
+        if (ImGui::BeginCombo("##MaxRenderTimeUnit", m_TimeUnit, ImGuiComboFlags_NoArrowButton))
+        {
+            if (ImGui::Selectable(s_TimeUnitSeconds, m_TimeUnit == s_TimeUnitSeconds))
+                m_TimeUnit = s_TimeUnitSeconds;
+            if (ImGui::Selectable(s_TimeUnitMinutes, m_TimeUnit == s_TimeUnitMinutes))
+                m_TimeUnit = s_TimeUnitMinutes;
+            if (ImGui::Selectable(s_TimeUnitHours, m_TimeUnit == s_TimeUnitHours))
+                m_TimeUnit = s_TimeUnitHours;
+            ImGui::EndCombo();
+        }
+
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("Max Bounce Count");
+        ImGui::TableNextColumn();
+        ImGui::SetNextItemWidth(-1);
+        ImGui::SliderInt("##MaxBounceCount", &m_MaxBounceCount, 1, 64);
+
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("Exposure");
+        ImGui::TableNextColumn();
+        ImGui::SetNextItemWidth(-1);
+        ImGui::SliderFloat("##Exposure", &m_Exposure, -10.0f, 10.0f, "%.2f");
+
+        ImGui::EndTable();
+    }
+
+    ImGui::Dummy({ 0, 5 });
+    const float margin = 20;
+    ImGui::SetCursorPosX(margin);
+    AlignItemBottom(size.y, buttonSize.y, margin);
+    if (ImGui::Button("Cancel", buttonSize))
+        s_ShowingOfflineRender = false;
+    AlignItemRight(size.x, buttonSize.x, margin);
+    AlignItemBottom(size.y, buttonSize.y, margin);
+
+    if (!m_OutputPath.has_value())
+        ImGui::BeginDisabled();
+    if (ImGui::Button("Render", buttonSize))
+    {
+        Application::BeginOfflineRendering();
+        Renderer::SetSettings(Renderer::PathTracingSettings(m_MaxBounceCount));
+        Renderer::SetSettings(Renderer::PostProcessSettings(std::pow(2.0f, m_Exposure)));
+        Renderer::SetSettings(
+            Renderer::RenderSettings(
+                OutputInfo(m_OutputPath.value(), vk::Extent2D(m_Extent[0], m_Extent[1]), GetOutputFormat()),
+                m_MaxSampleCount, GetTime()
+            )
+        );
+        s_ShowingOfflineRender = false;
+    }
+    if (!m_OutputPath.has_value())
+        ImGui::EndDisabled();
+    if (!m_OutputPath.has_value() && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("Select Output File Path");
+}
+
+void OfflineRenderContent::SaveFileDialog()
+{
+    auto checkError = [](nfdresult_t result) {
+        if (result == nfdresult_t::NFD_ERROR)
+        {
+            logger::error("File dialog error: {}", NFD::GetError());
+            NFD::ClearError();
+        }
+        return result == nfdresult_t::NFD_OKAY;
+    };
+
+    NFD::UniquePath path;
+    nfdresult_t result =
+        NFD::SaveDialog(path, GetFileFilter(), 1, nullptr, SceneManager::GetActiveScene()->GetName().c_str());
+    if (checkError(result))
+        m_OutputPath = std::filesystem::path(path.get());
+    glfwRestoreWindow(Window::GetHandle());
+}
+
+bool OfflineRenderContent::RenderPathButton()
+{
+    ImGui::Text("Path");
+    ImGui::SameLine();
+
+    std::string pathString = "Output path not selected";
+
+    if (m_OutputPath.has_value())
+    {
+        pathString = m_OutputPath.value().string();
+
+        const size_t maxLength = 30;
+        if (pathString.size() > maxLength)
+            pathString = "..." + pathString.substr(pathString.size() - maxLength + 3);
+    }
+
+    return ImGui::Button(pathString.c_str());
+}
+
+std::chrono::seconds OfflineRenderContent::GetTime()
+{
+    if (m_TimeUnit == s_TimeUnitSeconds)
+        return std::chrono::seconds(m_Time);
+    if (m_TimeUnit == s_TimeUnitMinutes)
+        return std::chrono::minutes(m_Time);
+    if (m_TimeUnit == s_TimeUnitHours)
+        return std::chrono::hours(m_Time);
+
+    throw error("Unsupported time unit type");
+}
+
+OutputFormat OfflineRenderContent::GetOutputFormat()
+{
+    if (m_OutputFormat == s_OutputFormatPng)
+        return OutputFormat::Png;
+    if (m_OutputFormat == s_OutputFormatJpg)
+        return OutputFormat::Jpg;
+    if (m_OutputFormat == s_OutputFormatTga)
+        return OutputFormat::Tga;
+    if (m_OutputFormat == s_OutputFormatHdr)
+        return OutputFormat::Hdr;
+
+    throw error("Unsupported output format");
+}
+
+const nfdfilteritem_t *OfflineRenderContent::GetFileFilter()
+{
+    if (m_OutputFormat == s_OutputFormatPng)
+        return &s_PngItemFilter;
+    if (m_OutputFormat == s_OutputFormatJpg)
+        return &s_JpgItemFilter;
+    if (m_OutputFormat == s_OutputFormatTga)
+        return &s_TgaItemFilter;
+    if (m_OutputFormat == s_OutputFormatHdr)
+        return &s_HdrItemFilter;
+
+    throw error("Unsupported output format");
+}
+
 class SettingsContent : public Content
 {
 public:
@@ -438,7 +691,7 @@ void SettingsContent::Render()
     {
         ImGui::Text("Bounces: ");
         ImGui::SameLine();
-        pathTracingSettingsChanged |= ImGui::SliderInt("##Bounces", &m_BounceCount, 1, 32, "%d");
+        pathTracingSettingsChanged |= ImGui::SliderInt("##Bounces", &m_BounceCount, 1, 16, "%d");
 
         ImGui::TreePop();
     }
@@ -500,6 +753,14 @@ void SettingsTab::RenderContent()
         m_Settings.Render();
         ImGui::TreePop();
     }
+
+    ImVec2 size = ImGui::GetWindowSize();
+    ImVec2 buttonSize(100, 25);
+    AlignItemRight(size.x, buttonSize.x, 15);
+    AlignItemBottom(size.y, buttonSize.y, 15);
+    
+    if (ImGui::Button("Render", buttonSize))
+        s_ShowingOfflineRender = true;
 }
 
 class SceneTab : public Tab
@@ -762,6 +1023,11 @@ struct UIComponents
         ImVec2(500, 500), "Import Scene",
         Widget<ImportSceneContent, 1>("Import Scene", { ImportSceneContent() }, 5.0f, 0.0f)
     );
+
+    FixedWindow<OfflineRenderContent, 1> OfflineRenderWindow = FixedWindow(
+        ImVec2(500, 500), "Offline Render",
+        Widget<OfflineRenderContent, 1>("Offline Rendering Settings", { OfflineRenderContent() }, 5.0f, 0.0f)
+    );
 };
 
 void UserInterface::DefineUI()
@@ -781,10 +1047,10 @@ void UserInterface::DefineUI()
 
     if (ImGui::BeginTabBar("Options"))
     {
-        s_Components->Settings.Render();
-        s_Components->Scene.Render();
+        s_Components->Settings.Render(Application::IsRendering());
+        s_Components->Scene.Render(Application::IsRendering());
         s_Components->Display.Render();
-        s_Components->Debug.Render();
+        s_Components->Debug.Render(Application::IsRendering());
         s_Components->Statistics.Render();
         s_Components->About.Render();
 
@@ -797,6 +1063,9 @@ void UserInterface::DefineUI()
 
     if (s_ShowingImportScene)
         s_Components->ImportSceneWindow.RenderCenter(s_Io->DisplaySize);
+
+    if (s_ShowingOfflineRender)
+        s_Components->OfflineRenderWindow.RenderCenter(s_Io->DisplaySize);
 }
 
 }

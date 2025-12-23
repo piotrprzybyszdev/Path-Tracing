@@ -165,12 +165,15 @@ public:
         std::vector<TextureInfo> &&textures,
         std::vector<Shaders::SpecularGlossinessMaterial> &&solidColorMaterials, std::vector<Model> &&models,
         std::vector<ModelInstance> &&modelInstances, std::vector<Bone> &&bones, SceneGraph &&sceneGraph,
-        std::vector<LightInfo> &&lightInfos, DirectionalLightInfo &&directionalLightInfo, std::vector<Shaders::PointLight> &&pointLights,
-        Shaders::DirectionalLight &&directionalLight, SkyboxVariant &&skybox,
-        const std::vector<CameraInfo> &cameraInfos, bool hasAnimatedInstances, bool hasDxNormalTextures
+        std::vector<LightInfo> &&lightInfos, DirectionalLightInfo &&directionalLightInfo,
+        std::vector<Shaders::PointLight> &&pointLights, Shaders::DirectionalLight &&directionalLight,
+        SkyboxVariant &&skybox, const std::vector<CameraInfo> &cameraInfos, bool hasAnimatedInstances,
+        bool hasDxNormalTextures, const std::string &name
     );
 
     bool Update(float timeStep);
+
+    [[nodiscard]] const std::string &GetName() const;
 
     [[nodiscard]] std::span<const Shaders::Vertex> GetVertices() const;
     [[nodiscard]] std::span<const Shaders::AnimatedVertex> GetAnimatedVertices() const;
@@ -209,6 +212,8 @@ public:
     [[nodiscard]] static uint32_t GetDefaultTextureIndex(TextureType type);
 
 private:
+    const std::string m_Name;
+
     std::vector<Shaders::Vertex> m_Vertices;
     std::vector<uint32_t> m_Indices;
     std::vector<glm::mat3x4> m_Transforms;
@@ -284,7 +289,7 @@ public:
     void AddCamera(CameraInfo &&camera);
 
     void SetDxNormalTextures();
-    [[nodiscard]] std::shared_ptr<Scene> CreateSceneShared();
+    [[nodiscard]] std::shared_ptr<Scene> CreateSceneShared(const std::string &name);
 
 public:
     static inline constexpr uint32_t IdentityTransformIndex = 0;

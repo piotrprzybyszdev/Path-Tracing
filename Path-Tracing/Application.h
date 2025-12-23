@@ -17,6 +17,7 @@ enum class BackgroundTaskType : uint8_t
     ShaderCompilation,
     TextureUpload,
     SceneImport,
+    Rendering,
 };
 
 struct BackgroundTask
@@ -49,13 +50,20 @@ public:
     static void ResetBackgroundTask(BackgroundTaskType type);
     static void AddBackgroundTask(BackgroundTaskType type, uint32_t totalCount);
     static void IncrementBackgroundTaskDone(BackgroundTaskType type, uint32_t value = 1);
+    static void SetBackgroundTaskDone(BackgroundTaskType type);
     static BackgroundTaskState GetBackgroundTaskState(BackgroundTaskType type);
 
+    static void BeginOfflineRendering();
+    static void EndOfflineRendering();
+
+    static bool IsRendering();
+
 public:
-    static inline constexpr std::array<BackgroundTaskType, 3> g_BackgroundTasks = {
+    static inline constexpr std::array<BackgroundTaskType, 4> g_BackgroundTasks = {
         BackgroundTaskType::ShaderCompilation,
         BackgroundTaskType::TextureUpload,
         BackgroundTaskType::SceneImport,
+        BackgroundTaskType::Rendering,
     };
 
 private:
@@ -79,13 +87,14 @@ private:
         HasSwapchain,
         HasUserInterface,
         Initialized,
-        Running
+        Running,
+        Rendering,
     };
 
     static State s_State;
 
     static Config s_Config;
-    static std::array<BackgroundTask, 3> s_BackgroundTasks;
+    static std::array<BackgroundTask, g_BackgroundTasks.size()> s_BackgroundTasks;
 
 private:
     static void SetupLogger();

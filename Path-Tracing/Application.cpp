@@ -99,7 +99,7 @@ std::unique_ptr<Swapchain> Application::s_Swapchain = nullptr;
 Application::State Application::s_State = Application::State::Shutdown;
 
 Config Application::s_Config = {};
-std::array<BackgroundTask, 3> Application::s_BackgroundTasks = {};
+std::array<BackgroundTask, Application::g_BackgroundTasks.size()> Application::s_BackgroundTasks = {};
 
 void Application::Init(int argc, const char *argv[])
 {
@@ -213,6 +213,8 @@ void Application::Shutdown()
 {
     switch (s_State)
     {
+    case State::Rendering:
+        [[fallthrough]];
     case State::Running:
         [[fallthrough]];
     case State::Initialized:
@@ -248,6 +250,7 @@ void Application::Run()
 {
     s_State = State::Running;
 
+    bool recreateSwapchain = false;
     float lastFrameTime = 0.0f;
     vk::Extent2D previousSize = {};
 
@@ -270,12 +273,14 @@ void Application::Run()
         {
             DeviceContext::GetGraphicsQueue().WaitIdle();
             s_Swapchain->Recreate(UserInterface::GetPresentMode());
+            recreateSwapchain = false;
         }
 
         if (s_Swapchain->GetImageCount() != Renderer::GetPreferredImageCount())
         {
             DeviceContext::GetGraphicsQueue().WaitIdle();
             s_Swapchain->Recreate(Renderer::GetPreferredImageCount());
+            recreateSwapchain = false;
         }
 
         const vk::Extent2D windowSize = Window::GetSize();
@@ -286,10 +291,20 @@ void Application::Run()
             DeviceContext::GetGraphicsQueue().WaitIdle();
             s_Swapchain->Recreate(windowSize);
 
-            Renderer::OnResize(windowSize);
+            if (!IsRendering())
+                Renderer::OnResize(windowSize);
 
             previousSize = windowSize;
+            recreateSwapchain = false;
         }
+
+        if (recreateSwapchain)
+        {
+            s_Swapchain->Recreate();
+            recreateSwapchain = false;
+        }
+
+        assert(recreateSwapchain == false);
 
         {
             MaxTimer timer("Frame total");
@@ -301,7 +316,7 @@ void Application::Run()
                 UserInterface::OnUpdate(timeStep);
 
                 const auto scene = SceneManager::GetActiveScene();
-                const bool updated = scene->Update(timeStep);
+                const bool updated = IsRendering() ? false : scene->Update(timeStep);
                 Renderer::UpdateSceneData(scene, updated);
 
                 Renderer::OnUpdate(timeStep);
@@ -311,12 +326,18 @@ void Application::Run()
                 MaxTimer timer("Render");
 
                 if (!s_Swapchain->AcquireImage())
+                {
+                    recreateSwapchain = true;
                     continue;
+                }
 
                 Renderer::Render();
 
                 if (!s_Swapchain->Present())
+                {
+                    recreateSwapchain = true;
                     continue;
+                }
             }
         }
 
@@ -357,12 +378,36 @@ void Application::IncrementBackgroundTaskDone(BackgroundTaskType type, uint32_t 
     s_BackgroundTasks[static_cast<uint8_t>(type)].DoneCount += value;
 }
 
+void Application::SetBackgroundTaskDone(BackgroundTaskType type)
+{
+    auto &task = s_BackgroundTasks[static_cast<uint8_t>(type)];
+    task.DoneCount = task.TotalCount.load();
+}
+
 BackgroundTaskState Application::GetBackgroundTaskState(BackgroundTaskType type)
 {
     return BackgroundTaskState {
         .TotalCount = s_BackgroundTasks[static_cast<uint8_t>(type)].TotalCount,
         .DoneCount = s_BackgroundTasks[static_cast<uint8_t>(type)].DoneCount,
     };
+}
+
+void Application::BeginOfflineRendering()
+{
+    assert(s_State == State::Running);
+    s_State = State::Rendering;
+}
+
+void Application::EndOfflineRendering()
+{
+    assert(s_State == State::Rendering);
+    s_State = State::Running;
+}
+
+bool Application::IsRendering()
+{
+    assert(s_State == State::Running || s_State == State::Rendering);
+    return s_State == State::Rendering;
 }
 
 void Application::SetupLogger()

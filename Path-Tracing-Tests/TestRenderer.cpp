@@ -72,6 +72,8 @@ void TestRenderer::AllocateResources(uint32_t inputBufferSize, uint32_t outputBu
 {
     s_InputBuffer = s_BufferBuilder->CreateHostBufferUnique(inputBufferSize);
     s_OutputBuffer = s_BufferBuilder->CreateHostBufferUnique(outputBufferSize);
+
+    s_Output = std::vector<std::byte>(std::max(inputBufferSize, outputBufferSize));
 }
 
 void TestRenderer::ExecutePipeline(const std::string &path, uint32_t size)

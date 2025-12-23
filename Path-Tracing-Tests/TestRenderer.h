@@ -1,8 +1,5 @@
 #pragma once
 
-#include <gtest/gtest.h>
-
-#include <filesystem>
 #include <memory>
 #include <unordered_map>
 
@@ -39,7 +36,7 @@ public:
 
     template<typename T> static std::span<T> ReadOutput()
     {
-        s_Output = s_OutputBuffer->Readback();
+        s_OutputBuffer->Readback(s_Output);
         return PathTracing::SpanCast<std::byte, T>(std::span(s_Output));
     }
 

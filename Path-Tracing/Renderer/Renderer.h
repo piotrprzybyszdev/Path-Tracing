@@ -2,6 +2,8 @@
 
 #include <vulkan/vulkan.hpp>
 
+#include <chrono>
+#include <filesystem>
 #include <memory>
 #include <mutex>
 #include <queue>
@@ -13,6 +15,7 @@
 #include "Buffer.h"
 #include "CommandBuffer.h"
 #include "Image.h"
+#include "OutputSaver.h"
 #include "Pipeline.h"
 #include "Scene.h"
 #include "ShaderBindingTable.h"
@@ -56,8 +59,16 @@ public:
         float Exposure = 1.0f;
     };
 
+    struct RenderSettings
+    {
+        OutputInfo OutputInfo;
+        uint32_t MaxSampleCount;
+        std::chrono::seconds MaxTime;
+    };
+
     static void SetSettings(const PathTracingSettings &settings);
     static void SetSettings(const PostProcessSettings &settings);
+    static void SetSettings(const RenderSettings &settings);
 
     static std::unique_ptr<CommandBuffer> s_MainCommandBuffer;
     static std::unique_ptr<StagingBuffer> s_StagingBuffer;
@@ -144,6 +155,8 @@ private:
 
     static PathTracingSettings s_PathTracingSettings;
     static PostProcessSettings s_PostProcessSettings;
+    static RenderSettings s_RenderSettings;
+    static float s_RenderTimeSeconds;
 
     struct SceneData
     {
@@ -179,6 +192,9 @@ private:
     static std::unique_ptr<CommandBuffer> s_TextureOwnershipCommandBuffer;
     static bool s_TextureOwnershipBufferHasCommands;
 
+    static std::unique_ptr<OutputSaver> s_OutputSaver;
+    static vk::Image s_OutputImage;
+
     static std::unique_ptr<RaytracingPipeline> s_PathTracingPipeline;
     static std::unique_ptr<RaytracingPipeline> s_DebugRayTracingPipeline;
     static std::unique_ptr<ComputePipeline> s_SkinningPipeline;
@@ -203,8 +219,11 @@ private:
     static void UpdateShaderBindingTable();
     static void ResetAccumulationImage();
 
-    static void RecordCommandBuffer(const RenderingResources &resources);
-    static void UpdateAnimatedVertices(const RenderingResources &resources);
+    static void RecordSkinningCommands(const RenderingResources &resources);
+    static void RecordPathTracingCommands(const RenderingResources &resources);
+    static void RecordPostProcessCommands(const RenderingResources &resources);
+    static void RecordUICommands(const RenderingResources &resources);
+    static void RecordSaveOutputCommands(const RenderingResources &resources);
 
     static void CreateSceneRenderingResources(RenderingResources &res, uint32_t frameIndex);
     static void CreateImageResources(RenderingResources &res, uint32_t frameIndex, vk::Extent2D extent);

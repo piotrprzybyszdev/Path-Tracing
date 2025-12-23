@@ -21,6 +21,8 @@ namespace PathTracing
 
 Renderer::PathTracingSettings Renderer::s_PathTracingSettings = {};
 Renderer::PostProcessSettings Renderer::s_PostProcessSettings = {};
+Renderer::RenderSettings Renderer::s_RenderSettings = {};
+float Renderer::s_RenderTimeSeconds = 0.0f;
 
 const Swapchain *Renderer::s_Swapchain = nullptr;
 
@@ -48,6 +50,9 @@ std::mutex Renderer::s_DescriptorSetMutex = {};
 std::unique_ptr<TextureUploader> Renderer::s_TextureUploader = nullptr;
 std::unique_ptr<CommandBuffer> Renderer::s_TextureOwnershipCommandBuffer = nullptr;
 bool Renderer::s_TextureOwnershipBufferHasCommands = false;
+
+std::unique_ptr<OutputSaver> Renderer::s_OutputSaver = nullptr;
+vk::Image Renderer::s_OutputImage = nullptr;
 
 std::unique_ptr<ShaderLibrary> Renderer::s_ShaderLibrary = nullptr;
 std::unique_ptr<RaytracingPipeline> Renderer::s_PathTracingPipeline = nullptr;
@@ -98,6 +103,8 @@ void Renderer::Init(const Swapchain *swapchain)
     s_TextureUploader = std::make_unique<TextureUploader>(s_Textures, s_DescriptorSetMutex);
     s_TextureOwnershipCommandBuffer = std::make_unique<CommandBuffer>(DeviceContext::GetGraphicsQueue());
 
+    s_OutputSaver = std::make_unique<OutputSaver>();
+
     {
         uint32_t colorIndex = AddTexture(
             Shaders::DefaultTextureColor, TextureType::Color, TextureFormat::RGBAU8, { 1, 1 },
@@ -135,6 +142,8 @@ void Renderer::Init(const Swapchain *swapchain)
 void Renderer::Shutdown()
 {
     DeviceContext::GetGraphicsQueue().WaitIdle();
+
+    s_OutputSaver.reset();
 
     s_TextureUploader.reset();
     s_TextureOwnershipCommandBuffer.reset();
@@ -646,6 +655,7 @@ void Renderer::SetDebugRaytracingPipeline(DebugRaytracingPipelineConfig config)
 
 void Renderer::ResetAccumulationImage()
 {
+    s_RenderTimeSeconds = 0.0f;
     s_RefreshRate.SamplesPerFrame = 1;
     s_RefreshRate.SinceResetSeconds = 0.0f;
     for (RenderingResources &res : s_RenderingResources)
@@ -663,119 +673,19 @@ void Renderer::SetSettings(const PostProcessSettings &settings)
     s_PostProcessSettings = settings;
 }
 
-void Renderer::RecordCommandBuffer(const RenderingResources &resources)
+void Renderer::SetSettings(const RenderSettings &settings)
 {
-    vk::CommandBuffer commandBuffer = resources.CommandBuffer;
-    vk::Image swapchainImage = s_Swapchain->GetCurrentFrame().Image;
-    vk::ImageView linearImageView = s_Swapchain->GetCurrentFrame().LinearImageView;
-    vk::ImageView nonLinearImageView = s_Swapchain->GetCurrentFrame().NonLinearImageView;
-    vk::Extent2D swapchainExtent = s_Swapchain->GetExtent();
-    vk::Extent2D storageExtent = resources.AccumulationImage.GetExtent();
-    assert(storageExtent == resources.PostProcessImage.GetExtent());
-
-    {
-        Utils::DebugLabel label(commandBuffer, "Path tracing pass", { 0.35f, 0.9f, 0.29f, 1.0f });
-
-        commandBuffer.bindPipeline(
-            vk::PipelineBindPoint::eRayTracingKHR, s_ActiveRayTracingPipeline->GetHandle()
-        );
-        commandBuffer.bindDescriptorSets(
-            vk::PipelineBindPoint::eRayTracingKHR, s_ActiveRayTracingPipeline->GetLayout(), 0,
-            { s_ActiveRayTracingPipeline->GetDescriptorSet()->GetSet(
-                s_Swapchain->GetCurrentFrameInFlightIndex()
-            ) },
-            {}
-        );
-
-        commandBuffer.traceRaysKHR(
-            s_SceneData->SceneShaderBindingTable->GetRaygenTableEntry(),
-            s_SceneData->SceneShaderBindingTable->GetMissTableEntry(),
-            s_SceneData->SceneShaderBindingTable->GetClosestHitTableEntry(),
-            vk::StridedDeviceAddressRegionKHR(), storageExtent.width, storageExtent.height, 1,
-            Application::GetDispatchLoader()
-        );
-
-        Image::Transition(
-            commandBuffer, resources.AccumulationImage.GetHandle(), vk::ImageLayout::eGeneral,
-            vk::ImageLayout::eGeneral, vk::PipelineStageFlagBits2::eRayTracingShaderKHR,
-            vk::PipelineStageFlagBits2::eComputeShader, vk::AccessFlagBits2::eShaderStorageWrite,
-            vk::AccessFlagBits2::eShaderStorageRead
-        );
-    }
-
-    {
-        Utils::DebugLabel label(commandBuffer, "Post Processing pass", { 0.92f, 0.05f, 0.16f, 1.0f });
-
-        commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, s_PostProcessPipeline->GetHandle());
-        commandBuffer.bindDescriptorSets(
-            vk::PipelineBindPoint::eCompute, s_PostProcessPipeline->GetLayout(), 0,
-            { s_PostProcessPipeline->GetDescriptorSet()->GetSet(
-                s_Swapchain->GetCurrentFrameInFlightIndex()
-            ) },
-            {}
-        );
-
-        const uint32_t groupSizeX = std::ceil(storageExtent.width / Shaders::PostProcessShaderGroupSizeX);
-        const uint32_t groupSizeY = std::ceil(storageExtent.height / Shaders::PostProcessShaderGroupSizeY);
-        commandBuffer.dispatch(groupSizeX, groupSizeY, 1);
-
-        Image::Transition(
-            commandBuffer, swapchainImage, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
-            vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::PipelineStageFlagBits2::eTransfer,
-            vk::AccessFlagBits2::eNone, vk::AccessFlagBits2::eTransferWrite
-        );
-
-        resources.PostProcessImage.Transition(
-            commandBuffer, vk::ImageLayout::eGeneral, vk::ImageLayout::eTransferSrcOptimal
-        );
-
-        auto srcarea = Image::GetMipLevelArea(storageExtent);
-        auto dstarea = Image::GetMipLevelArea(swapchainExtent);
-        vk::ImageSubresourceLayers subresource(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
-        vk::ImageBlit2 imageBlit(subresource, srcarea, subresource, dstarea);
-
-        vk::BlitImageInfo2 blitInfo(
-            resources.PostProcessImage.GetHandle(), vk::ImageLayout::eTransferSrcOptimal, swapchainImage,
-            vk::ImageLayout::eTransferDstOptimal, imageBlit, vk::Filter::eLinear
-        );
-
-        commandBuffer.blitImage2(blitInfo);
-
-        Image::Transition(
-            commandBuffer, swapchainImage, vk::ImageLayout::eTransferDstOptimal,
-            vk::ImageLayout::eAttachmentOptimal
-        );
-
-        resources.PostProcessImage.Transition(
-            commandBuffer, vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eGeneral
-        );
-    }
-
-    {
-        Utils::DebugLabel label(commandBuffer, "UI pass", { 0.24f, 0.34f, 0.93f, 1.0f });
-
-        std::array<vk::RenderingAttachmentInfo, 1> colorAttachments = {
-            vk::RenderingAttachmentInfo(linearImageView, vk::ImageLayout::eAttachmentOptimal)
-        };
-
-        commandBuffer.beginRendering(
-            vk::RenderingInfo(vk::RenderingFlags(), vk::Rect2D({}, swapchainExtent), 1, 0, colorAttachments)
-        );
-        UserInterface::OnRender(commandBuffer);
-        commandBuffer.endRendering();
-
-        Image::Transition(
-            commandBuffer, swapchainImage, vk::ImageLayout::eAttachmentOptimal, vk::ImageLayout::ePresentSrcKHR
-        );
-    }
+    s_RenderSettings = settings;
+    DeviceContext::GetGraphicsQueue().WaitIdle();
+    OnResize(settings.OutputInfo.Extent);
+    s_OutputImage = s_OutputSaver->RegisterOutput(s_RenderSettings.OutputInfo);
+    Application::ResetBackgroundTask(BackgroundTaskType::Rendering);
+    Application::AddBackgroundTask(BackgroundTaskType::Rendering, settings.MaxSampleCount);
 }
 
-void Renderer::UpdateAnimatedVertices(const RenderingResources &resources)
+void Renderer::RecordSkinningCommands(const RenderingResources &resources)
 {
-    if (!s_SceneData->Handle->HasSkeletalAnimations())
-        return;
-
-    resources.BoneTransformUniformBuffer.Upload(s_SceneData->Handle->GetBoneTransforms());
+    assert(s_SceneData->Handle->HasSkeletalAnimations());
 
     vk::CommandBuffer commandBuffer = resources.CommandBuffer;
     {
@@ -809,6 +719,152 @@ void Renderer::UpdateAnimatedVertices(const RenderingResources &resources)
             vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR
         );
     }
+}
+
+void Renderer::RecordPathTracingCommands(const RenderingResources &resources)
+{
+    vk::CommandBuffer commandBuffer = resources.CommandBuffer;
+    vk::Extent2D storageExtent = resources.AccumulationImage.GetExtent();
+
+    {
+        Utils::DebugLabel label(commandBuffer, "Path tracing pass", { 0.35f, 0.9f, 0.29f, 1.0f });
+
+        commandBuffer.bindPipeline(
+            vk::PipelineBindPoint::eRayTracingKHR, s_ActiveRayTracingPipeline->GetHandle()
+        );
+        commandBuffer.bindDescriptorSets(
+            vk::PipelineBindPoint::eRayTracingKHR, s_ActiveRayTracingPipeline->GetLayout(), 0,
+            { s_ActiveRayTracingPipeline->GetDescriptorSet()->GetSet(
+                s_Swapchain->GetCurrentFrameInFlightIndex()
+            ) },
+            {}
+        );
+
+        commandBuffer.traceRaysKHR(
+            s_SceneData->SceneShaderBindingTable->GetRaygenTableEntry(),
+            s_SceneData->SceneShaderBindingTable->GetMissTableEntry(),
+            s_SceneData->SceneShaderBindingTable->GetClosestHitTableEntry(),
+            vk::StridedDeviceAddressRegionKHR(), storageExtent.width, storageExtent.height, 1,
+            Application::GetDispatchLoader()
+        );
+
+        Image::Transition(
+            commandBuffer, resources.AccumulationImage.GetHandle(), vk::ImageLayout::eGeneral,
+            vk::ImageLayout::eGeneral, vk::PipelineStageFlagBits2::eRayTracingShaderKHR,
+            vk::PipelineStageFlagBits2::eComputeShader, vk::AccessFlagBits2::eShaderStorageWrite,
+            vk::AccessFlagBits2::eShaderStorageRead
+        );
+    }
+}
+
+void Renderer::RecordPostProcessCommands(const RenderingResources &resources)
+{
+    vk::CommandBuffer commandBuffer = resources.CommandBuffer;
+    vk::Image swapchainImage = s_Swapchain->GetCurrentFrame().Image;
+    vk::Extent2D swapchainExtent = s_Swapchain->GetExtent();
+    vk::Extent2D storageExtent = resources.AccumulationImage.GetExtent();
+    assert(storageExtent == resources.PostProcessImage.GetExtent());
+
+    {
+        Utils::DebugLabel label(commandBuffer, "Post Processing pass", { 0.92f, 0.05f, 0.16f, 1.0f });
+
+        commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, s_PostProcessPipeline->GetHandle());
+        commandBuffer.bindDescriptorSets(
+            vk::PipelineBindPoint::eCompute, s_PostProcessPipeline->GetLayout(), 0,
+            { s_PostProcessPipeline->GetDescriptorSet()->GetSet(
+                s_Swapchain->GetCurrentFrameInFlightIndex()
+            ) },
+            {}
+        );
+
+        const uint32_t groupSizeX =
+            std::ceil(static_cast<float>(storageExtent.width) / Shaders::PostProcessShaderGroupSizeX);
+        const uint32_t groupSizeY =
+            std::ceil(static_cast<float>(storageExtent.height) / Shaders::PostProcessShaderGroupSizeY);
+        commandBuffer.dispatch(groupSizeX, groupSizeY, 1);
+
+        Image::Transition(
+            commandBuffer, swapchainImage, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
+            vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::PipelineStageFlagBits2::eTransfer,
+            vk::AccessFlagBits2::eNone, vk::AccessFlagBits2::eTransferWrite
+        );
+
+        resources.PostProcessImage.Transition(
+            commandBuffer, vk::ImageLayout::eGeneral, vk::ImageLayout::eTransferSrcOptimal
+        );
+
+        auto srcarea = Image::GetMipLevelArea(storageExtent);
+        auto dstarea = Image::GetMipLevelArea(swapchainExtent);
+        vk::ImageSubresourceLayers subresource(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
+        vk::ImageBlit2 imageBlit(subresource, srcarea, subresource, dstarea);
+
+        vk::BlitImageInfo2 blitInfo(
+            resources.PostProcessImage.GetHandle(), vk::ImageLayout::eTransferSrcOptimal, swapchainImage,
+            vk::ImageLayout::eTransferDstOptimal, imageBlit, vk::Filter::eLinear
+        );
+
+        commandBuffer.blitImage2(blitInfo);
+    }
+}
+
+void Renderer::RecordUICommands(const RenderingResources &resources)
+{
+    vk::CommandBuffer commandBuffer = resources.CommandBuffer;
+    vk::ImageView linearImageView = s_Swapchain->GetCurrentFrame().LinearImageView;
+    vk::Extent2D swapchainExtent = s_Swapchain->GetExtent();
+    vk::Image swapchainImage = s_Swapchain->GetCurrentFrame().Image;
+
+    {
+        Utils::DebugLabel label(commandBuffer, "UI pass", { 0.24f, 0.34f, 0.93f, 1.0f });
+
+        std::array<vk::RenderingAttachmentInfo, 1> colorAttachments = {
+            vk::RenderingAttachmentInfo(linearImageView, vk::ImageLayout::eAttachmentOptimal)
+        };
+
+        Image::Transition(
+            commandBuffer, swapchainImage, vk::ImageLayout::eTransferDstOptimal,
+            vk::ImageLayout::eAttachmentOptimal
+        );
+
+        resources.PostProcessImage.Transition(
+            commandBuffer, vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eGeneral
+        );
+
+        commandBuffer.beginRendering(
+            vk::RenderingInfo(vk::RenderingFlags(), vk::Rect2D({}, swapchainExtent), 1, 0, colorAttachments)
+        );
+        UserInterface::OnRender(commandBuffer);
+        commandBuffer.endRendering();
+
+        Image::Transition(
+            commandBuffer, swapchainImage, vk::ImageLayout::eAttachmentOptimal,
+            vk::ImageLayout::ePresentSrcKHR
+        );
+    }
+}
+
+void Renderer::RecordSaveOutputCommands(const RenderingResources &resources)
+{
+    const Swapchain::SynchronizationObjects &sync = s_Swapchain->GetCurrentSyncObjects();
+    vk::CommandBuffer commandBuffer = resources.CommandBuffer;
+    vk::Extent2D storageExtent = resources.AccumulationImage.GetExtent();
+    
+    auto area = Image::GetMipLevelArea(storageExtent);
+    vk::ImageSubresourceLayers subresource(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
+    vk::ImageBlit2 imageBlit(subresource, area, subresource, area);
+
+    Image::Transition(
+        commandBuffer, s_OutputImage, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
+        vk::PipelineStageFlagBits2::eAllCommands, vk::PipelineStageFlagBits2::eTransfer,
+        vk::AccessFlagBits2::eNone, vk::AccessFlagBits2::eTransferWrite
+    );
+
+    vk::BlitImageInfo2 blitInfo(
+        resources.PostProcessImage.GetHandle(), vk::ImageLayout::eTransferSrcOptimal, s_OutputImage,
+        vk::ImageLayout::eTransferDstOptimal, imageBlit, vk::Filter::eLinear
+    );
+
+    commandBuffer.blitImage2(blitInfo);
 }
 
 void Renderer::CreateSceneRenderingResources(RenderingResources &res, uint32_t frameIndex)
@@ -904,6 +960,11 @@ void Renderer::OnResize(vk::Extent2D extent)
     {
         RenderingResources &res = s_RenderingResources[i];
         res.TotalSamples = 0;
+
+        assert(res.AccumulationImage.GetExtent() == res.PostProcessImage.GetExtent());
+        if (res.AccumulationImage.GetExtent() == extent)
+            continue;
+
         CreateImageResources(res, i, extent);
 
         std::lock_guard lock(s_DescriptorSetMutex);
@@ -1036,6 +1097,8 @@ void Renderer::OnUpdate(float timeStep)
     if (s_RenderingResources.size() < s_Swapchain->GetInFlightCount())
         OnInFlightCountChange();
 
+    s_RenderTimeSeconds += timeStep;
+
     // Keep the last MinRefreshRate frame times and their sum
     if (s_RefreshRate.Timings.size() == Application::GetConfig().MinRefreshRate)
     {
@@ -1100,12 +1163,22 @@ void Renderer::Render()
                                             s_PathTracingSettings.BounceCount, s_RefreshRate.SamplesPerFrame,
                                             res.TotalSamples };
     
-    bool resetAccumulationImage = res.TotalSamples == 0;
-    res.TotalSamples += s_RefreshRate.SamplesPerFrame;
-    if (s_ActiveRayTracingPipeline == s_DebugRayTracingPipeline.get())
+    bool resetAccumulationImage = false, saveOutput = false;
+    if (s_ActiveRayTracingPipeline != s_DebugRayTracingPipeline.get())
+    {
+        resetAccumulationImage |= res.TotalSamples == 0;
+        res.TotalSamples += s_RefreshRate.SamplesPerFrame;
+        if (Application::IsRendering())
+        {
+            saveOutput |= res.TotalSamples >= s_RenderSettings.MaxSampleCount;
+            saveOutput |= s_RenderTimeSeconds >= s_RenderSettings.MaxTime.count();
+            Application::IncrementBackgroundTaskDone(BackgroundTaskType::Rendering);
+        }
+    }
+    else
         res.TotalSamples = 1;
-    Shaders::PostProcessingUniformData postprocessData = { res.TotalSamples, s_PostProcessSettings.Exposure };
 
+    Shaders::PostProcessingUniformData postprocessData = { res.TotalSamples, s_PostProcessSettings.Exposure };
     res.RaygenUniformBuffer.Upload(&rgenData);
     res.PostProcessUniformBuffer.Upload(&postprocessData);
     res.LightUniformBuffer.Upload(ToByteSpan(res.LightCount));
@@ -1116,6 +1189,9 @@ void Renderer::Render()
         res.LightUniformBuffer.Upload(
             s_SceneData->Handle->GetPointLights(), RenderingResources::s_LightArrayOffset
         );
+
+    if (s_SceneData->Handle->HasSkeletalAnimations())
+        res.BoneTransformUniformBuffer.Upload(s_SceneData->Handle->GetBoneTransforms());
 
     res.CommandBuffer.reset();
     res.CommandBuffer.begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
@@ -1136,11 +1212,19 @@ void Renderer::Render()
         );
     }
 
-    UpdateAnimatedVertices(res);
+    if (s_SceneData->Handle->HasSkeletalAnimations())
+        RecordSkinningCommands(res);
 
-    res.SceneAccelerationStructure->Update(res.CommandBuffer);
+    if (s_SceneData->Handle->HasAnimations())
+        res.SceneAccelerationStructure->RecordUpdateCommands(res.CommandBuffer);
 
-    RecordCommandBuffer(res);
+    RecordPathTracingCommands(res);
+    RecordPostProcessCommands(res);
+
+    if (saveOutput)
+        RecordSaveOutputCommands(res);
+
+    RecordUICommands(res);
 
     res.CommandBuffer.end();
 
@@ -1148,14 +1232,31 @@ void Renderer::Render()
     vk::SemaphoreSubmitInfo waitInfo(
         sync.ImageAcquiredSemaphore, 0, vk::PipelineStageFlagBits2::eColorAttachmentOutput
     );
-    vk::SemaphoreSubmitInfo signalInfo(
-        sync.RenderCompleteSemaphore, 0, vk::PipelineStageFlagBits2::eColorAttachmentOutput
-    );
+    std::array<vk::SemaphoreSubmitInfo, 2> signalInfo = {
+        vk::SemaphoreSubmitInfo(
+            sync.RenderCompleteSemaphore, 0, vk::PipelineStageFlagBits2::eColorAttachmentOutput
+        ),
+        vk::SemaphoreSubmitInfo(
+            s_OutputSaver->GetSignalSemaphore(), 0, vk::PipelineStageFlagBits2::eAllCommands
+        ),
+    };
     vk::SubmitInfo2 submitInfo(vk::SubmitFlags(), waitInfo, cmdInfo, signalInfo);
+
+    submitInfo.setSignalSemaphoreInfoCount(saveOutput ? 2 : 1);
 
     {
         auto lock = DeviceContext::GetGraphicsQueue().GetLock();
         DeviceContext::GetGraphicsQueue().Handle.submit2({ submitInfo }, sync.InFlightFence);
+    }
+
+    if (saveOutput)
+    {
+        s_OutputSaver->StartOutputWait();
+        Application::EndOfflineRendering();
+        
+        Application::SetBackgroundTaskDone(BackgroundTaskType::Rendering);
+        DeviceContext::GetGraphicsQueue().WaitIdle();
+        OnResize(s_Swapchain->GetExtent());
     }
 }
 

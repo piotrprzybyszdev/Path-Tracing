@@ -143,11 +143,18 @@ public:
     }
     virtual ~Tab() = default;
 
-    void Render()
+    void Render(bool disabled = false)
     {
         if (ImGui::BeginTabItem(m_Name))
         {
+            if (disabled)
+                ImGui::BeginDisabled();
+
             RenderContent();
+
+            if (disabled)
+                ImGui::EndDisabled();
+
             ImGui::EndTabItem();
         }
     }

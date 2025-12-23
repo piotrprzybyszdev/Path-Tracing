@@ -104,19 +104,10 @@ void Buffer::UploadStaging(vk::CommandBuffer commandBuffer, const Buffer &stagin
     commandBuffer.copyBuffer(staging.GetHandle(), m_Handle, { vk::BufferCopy(0, 0, size) });
 }
 
-#ifdef PATH_TRACING_TESTS
-std::vector<std::byte> Buffer::Readback() const
+void Buffer::Readback(std::span<std::byte> output) const
 {
-    void *data;
-    vmaMapMemory(DeviceContext::GetAllocator(), m_Allocation, &data);
-    
-    std::byte *byteData = reinterpret_cast<std::byte *>(data);
-    std::vector<std::byte> content(byteData, byteData + m_Size);
-
-    vmaUnmapMemory(DeviceContext::GetAllocator(), m_Allocation);
-    return content;
+    vmaCopyAllocationToMemory(DeviceContext::GetAllocator(), m_Allocation, 0, output.data(), m_Size);
 }
-#endif
 
 vk::Buffer Buffer::GetHandle() const
 {

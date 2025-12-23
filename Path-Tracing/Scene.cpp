@@ -13,12 +13,14 @@ Scene::Scene(
     std::vector<Shaders::Vertex> &&vertices, std::vector<Shaders::AnimatedVertex> &&animatedVertices,
     std::vector<uint32_t> &&indices, std::vector<uint32_t> &&animatedIndices,
     std::vector<glm::mat3x4> &&transforms, std::vector<Geometry> &&geometries,
-    std::vector<Shaders::MetallicRoughnessMaterial> &&MetallicRoughnessMaterials, std::vector<TextureInfo> &&textures,
+    std::vector<Shaders::MetallicRoughnessMaterial> &&MetallicRoughnessMaterials,
+    std::vector<TextureInfo> &&textures,
     std::vector<Shaders::SpecularGlossinessMaterial> &&solidColorMaterials, std::vector<Model> &&models,
     std::vector<ModelInstance> &&modelInstances, std::vector<Bone> &&bones, SceneGraph &&sceneGraph,
-    std::vector<LightInfo> &&lightInfos, DirectionalLightInfo &&directionalLightInfo, std::vector<Shaders::PointLight> &&pointLights,
-    Shaders::DirectionalLight &&directionalLight, SkyboxVariant &&skybox,
-    const std::vector<CameraInfo> &cameraInfos, bool hasAnimatedInstances, bool hasDxNormalTextures
+    std::vector<LightInfo> &&lightInfos, DirectionalLightInfo &&directionalLightInfo,
+    std::vector<Shaders::PointLight> &&pointLights, Shaders::DirectionalLight &&directionalLight,
+    SkyboxVariant &&skybox, const std::vector<CameraInfo> &cameraInfos, bool hasAnimatedInstances,
+    bool hasDxNormalTextures, const std::string &name
 )
     : m_Vertices(std::move(vertices)), m_AnimatedVertices(std::move(animatedVertices)),
       m_Indices(std::move(indices)), m_AnimatedIndices(std::move(animatedIndices)),
@@ -30,7 +32,7 @@ Scene::Scene(
       m_PointLights(std::move(pointLights)), m_DirectionalLight(std::move(directionalLight)),
       m_DirectionalLightInfo(std::move(directionalLightInfo)), m_Skybox(std::move(skybox)),
       m_ActiveCameraId(g_InputCameraId), m_HasAnimatedInstances(hasAnimatedInstances),
-      m_HasDxNormalTextures(hasDxNormalTextures)
+      m_HasDxNormalTextures(hasDxNormalTextures), m_Name(name)
 {
     auto nodes = m_Graph.GetSceneNodes();
 
@@ -76,6 +78,11 @@ bool Scene::Update(float timeStep)
                                    nodes[m_DirectionalLightInfo.SceneNodeIndex].CurrentTransform;
 
     return updated;
+}
+
+const std::string &Scene::GetName() const
+{
+    return m_Name;
 }
 
 uint32_t SceneBuilder::AddSceneNode(SceneNode &&node)
@@ -232,7 +239,7 @@ void SceneBuilder::SetDxNormalTextures()
     m_HasDxNormalTextures = true;
 }
 
-std::shared_ptr<Scene> SceneBuilder::CreateSceneShared()
+std::shared_ptr<Scene> SceneBuilder::CreateSceneShared(const std::string &name)
 {
     std::vector<bool> isAnimated(m_SceneNodes.size(), false);
     for (const Animation &animation: m_Animations)
@@ -262,8 +269,8 @@ std::shared_ptr<Scene> SceneBuilder::CreateSceneShared()
         std::move(m_SpecularGlossinessMaterials), std::move(m_Models), std::move(modelInstances),
         std::move(m_Bones), SceneGraph(std::move(m_SceneNodes), std::move(m_IsRelativeTransform),
         std::move(m_Animations)), std::move(m_LightInfos), std::move(m_DirectionalLightInfo),
-        std::move(m_PointLights), std::move(m_DirectionalLight), std::move(m_Skybox),
-        std::move(m_CameraInfos), hasAnimatedInstances, m_HasDxNormalTextures
+        std::move(m_PointLights), std::move(m_DirectionalLight), std::move(m_Skybox), std::move(m_CameraInfos), hasAnimatedInstances,
+        m_HasDxNormalTextures, name
     );
 
     m_MeshOffset = 0;

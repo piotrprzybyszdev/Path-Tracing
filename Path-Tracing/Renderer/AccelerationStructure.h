@@ -26,7 +26,7 @@ public:
     AccelerationStructure(const AccelerationStructure &) = delete;
     AccelerationStructure &operator=(const AccelerationStructure &) = delete;
 
-    void Update(vk::CommandBuffer commandBuffer);
+    void RecordUpdateCommands(vk::CommandBuffer commandBuffer);
 
     [[nodiscard]] vk::AccelerationStructureKHR GetTlas() const;
 

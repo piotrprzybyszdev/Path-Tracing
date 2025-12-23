@@ -45,10 +45,9 @@ AccelerationStructure::~AccelerationStructure()
     );
 }
 
-void AccelerationStructure::Update(vk::CommandBuffer commandBuffer)
+void AccelerationStructure::RecordUpdateCommands(vk::CommandBuffer commandBuffer)
 {
-    if (!m_Scene->HasAnimations())
-        return;
+    assert(m_Scene->HasAnimations());
 
     Timer timer("Acceleration Structure Update");
     BuildBlases(commandBuffer, vk::BuildAccelerationStructureModeKHR::eUpdate);
