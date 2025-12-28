@@ -13,23 +13,24 @@ Scene::Scene(
     std::vector<Shaders::Vertex> &&vertices, std::vector<Shaders::AnimatedVertex> &&animatedVertices,
     std::vector<uint32_t> &&indices, std::vector<uint32_t> &&animatedIndices,
     std::vector<glm::mat3x4> &&transforms, std::vector<Geometry> &&geometries,
-    std::vector<Shaders::MetalicRoughnessMaterial> &&MetalicRoughnessMaterials, std::vector<TextureInfo> &&textures,
+    std::vector<Shaders::MetallicRoughnessMaterial> &&MetallicRoughnessMaterials, std::vector<TextureInfo> &&textures,
     std::vector<Shaders::SpecularGlossinessMaterial> &&solidColorMaterials, std::vector<Model> &&models,
     std::vector<ModelInstance> &&modelInstances, std::vector<Bone> &&bones, SceneGraph &&sceneGraph,
-    std::vector<LightInfo> &&lightInfos, std::vector<Shaders::PointLight> &&pointLights,
+    std::vector<LightInfo> &&lightInfos, DirectionalLightInfo &&directionalLightInfo, std::vector<Shaders::PointLight> &&pointLights,
     Shaders::DirectionalLight &&directionalLight, SkyboxVariant &&skybox,
-    const std::vector<CameraInfo> &cameraInfos, bool hasAnimatedInstances
+    const std::vector<CameraInfo> &cameraInfos, bool hasAnimatedInstances, bool hasDxNormalTextures
 )
     : m_Vertices(std::move(vertices)), m_AnimatedVertices(std::move(animatedVertices)),
       m_Indices(std::move(indices)), m_AnimatedIndices(std::move(animatedIndices)),
       m_Transforms(std::move(transforms)), m_Geometries(std::move(geometries)),
-      m_MetalicRoughnessMaterials(std::move(MetalicRoughnessMaterials)), m_Textures(std::move(textures)),
+      m_MetallicRoughnessMaterials(std::move(MetallicRoughnessMaterials)), m_Textures(std::move(textures)),
       m_SpecularGlossinessMaterials(std::move(solidColorMaterials)), m_Models(std::move(models)),
       m_ModelInstances(std::move(modelInstances)), m_Bones(std::move(bones)),
       m_BoneTransforms(m_Bones.size()), m_Graph(std::move(sceneGraph)), m_LightInfos(std::move(lightInfos)),
       m_PointLights(std::move(pointLights)), m_DirectionalLight(std::move(directionalLight)),
-      m_Skybox(std::move(skybox)), m_ActiveCameraId(g_InputCameraId),
-      m_HasAnimatedInstances(hasAnimatedInstances)
+      m_DirectionalLightInfo(std::move(directionalLightInfo)), m_Skybox(std::move(skybox)),
+      m_ActiveCameraId(g_InputCameraId), m_HasAnimatedInstances(hasAnimatedInstances),
+      m_HasDxNormalTextures(hasDxNormalTextures)
 {
     auto nodes = m_Graph.GetSceneNodes();
 
@@ -70,6 +71,9 @@ bool Scene::Update(float timeStep)
     for (int i = 0; i < m_LightInfos.size(); i++)
         m_PointLights[i].Position = glm::vec4(m_LightInfos[i].Position, 1.0f) *
                                     nodes[m_LightInfos[i].SceneNodeIndex].CurrentTransform;
+
+    m_DirectionalLight.Direction = glm::vec4(m_DirectionalLightInfo.Direction, 0.0f) *
+                                   nodes[m_DirectionalLightInfo.SceneNodeIndex].CurrentTransform;
 
     return updated;
 }
@@ -126,19 +130,19 @@ uint32_t SceneBuilder::AddTexture(TextureInfo &&texture)
     return textureIndex;
 }
 
-Shaders::MaterialId SceneBuilder::AddMaterial(std::string name, Shaders::MetalicRoughnessMaterial material)
+Shaders::MaterialId SceneBuilder::AddMaterial(std::string name, Shaders::MetallicRoughnessMaterial material)
 {
-    if (m_MetalicRoughnessMaterialIds.contains(name))
-        return m_MetalicRoughnessMaterialIds[name];
+    if (m_MetallicRoughnessMaterialIds.contains(name))
+        return m_MetallicRoughnessMaterialIds[name];
 
-    assert(m_MetalicRoughnessMaterials.size() < Shaders::MaxMaterialCount);
-    m_MetalicRoughnessMaterials.push_back(material);
+    assert(m_MetallicRoughnessMaterials.size() < Shaders::MaxMaterialCount);
+    m_MetallicRoughnessMaterials.push_back(material);
 
     Shaders::MaterialId materialId = Shaders::CreateMaterialId(
-        m_MetalicRoughnessMaterials.size() - 1, Shaders::MaterialTypeMetalicRoughness
+        m_MetallicRoughnessMaterials.size() - 1, Shaders::MaterialTypeMetallicRoughness
     );
     
-    m_MetalicRoughnessMaterialIds[std::move(name)] = materialId;
+    m_MetallicRoughnessMaterialIds[std::move(name)] = materialId;
     logger::trace("Added textured material {} to Scene", name);
 
     return materialId;
@@ -204,7 +208,7 @@ void SceneBuilder::AddLight(Shaders::PointLight &&light, uint32_t sceneNodeIndex
 
 void SceneBuilder::SetDirectionalLight(Shaders::DirectionalLight &&light, uint32_t sceneNodeIndex)
 {
-    light.Direction = glm::vec4(light.Direction, 0.0f) * m_SceneNodes[sceneNodeIndex].Transform;
+    m_DirectionalLightInfo = { sceneNodeIndex, light.Direction };
     m_DirectionalLight = std::move(light);
 }
 
@@ -221,6 +225,11 @@ void SceneBuilder::SetSkybox(SkyboxCube &&skybox)
 void SceneBuilder::AddCamera(CameraInfo &&camera)
 {
     m_CameraInfos.push_back(camera);
+}
+
+void SceneBuilder::SetDxNormalTextures()
+{
+    m_HasDxNormalTextures = true;
 }
 
 std::shared_ptr<Scene> SceneBuilder::CreateSceneShared()
@@ -249,11 +258,12 @@ std::shared_ptr<Scene> SceneBuilder::CreateSceneShared()
     auto scene = std::make_shared<Scene>(
         std::move(m_Vertices), std::move(m_AnimatedVertices), std::move(m_Indices),
         std::move(m_AnimatedIndices), std::move(m_Transforms), std::move(m_Geometries),
-        std::move(m_MetalicRoughnessMaterials), std::move(m_Textures), std::move(m_SpecularGlossinessMaterials),
-        std::move(m_Models), std::move(modelInstances), std::move(m_Bones),
-        SceneGraph(std::move(m_SceneNodes), std::move(m_IsRelativeTransform), std::move(m_Animations)),
-        std::move(m_LightInfos), std::move(m_PointLights), std::move(m_DirectionalLight), std::move(m_Skybox),
-        std::move(m_CameraInfos), hasAnimatedInstances
+        std::move(m_MetallicRoughnessMaterials), std::move(m_Textures),
+        std::move(m_SpecularGlossinessMaterials), std::move(m_Models), std::move(modelInstances),
+        std::move(m_Bones), SceneGraph(std::move(m_SceneNodes), std::move(m_IsRelativeTransform),
+        std::move(m_Animations)), std::move(m_LightInfos), std::move(m_DirectionalLightInfo),
+        std::move(m_PointLights), std::move(m_DirectionalLight), std::move(m_Skybox),
+        std::move(m_CameraInfos), hasAnimatedInstances, m_HasDxNormalTextures
     );
 
     m_MeshOffset = 0;
@@ -263,8 +273,8 @@ std::shared_ptr<Scene> SceneBuilder::CreateSceneShared()
     m_AnimatedIndices.clear();
     m_Transforms = { glm::mat3x4(1.0f) };
     m_Geometries.clear();
-    m_MetalicRoughnessMaterials.clear();
-    m_MetalicRoughnessMaterialIds.clear();
+    m_MetallicRoughnessMaterials.clear();
+    m_MetallicRoughnessMaterialIds.clear();
     m_SpecularGlossinessMaterials.clear();
     m_SpecularGlossinessMaterialIds.clear();
     m_Textures.clear();
@@ -280,8 +290,10 @@ std::shared_ptr<Scene> SceneBuilder::CreateSceneShared()
     m_LightInfos.clear();
     m_PointLights.clear();
     m_DirectionalLight = g_DefaultLight;
+    m_DirectionalLightInfo = { RootNodeIndex, g_DefaultLight.Direction };
     m_Skybox = SkyboxClearColor {};
     m_CameraInfos.clear();
+    m_HasDxNormalTextures = false;
 
     return scene;
 }
@@ -336,9 +348,9 @@ std::span<const Geometry> Scene::GetGeometries() const
     return m_Geometries;
 }
 
-std::span<const Shaders::MetalicRoughnessMaterial> Scene::GetMetalicRoughnessMaterials() const
+std::span<const Shaders::MetallicRoughnessMaterial> Scene::GetMetallicRoughnessMaterials() const
 {
-    return m_MetalicRoughnessMaterials;
+    return m_MetallicRoughnessMaterials;
 }
 
 std::span<const Shaders::SpecularGlossinessMaterial> Scene::GetSpecularGlossinessMaterials() const
@@ -364,6 +376,11 @@ std::span<const ModelInstance> Scene::GetModelInstances() const
 std::span<const glm::mat3x4> Scene::GetBoneTransforms() const
 {
     return m_BoneTransforms;
+}
+
+bool Scene::HasDxNormalTextures() const
+{
+    return m_HasDxNormalTextures;
 }
 
 bool Scene::HasAnimations() const
@@ -438,8 +455,8 @@ uint32_t Scene::GetDefaultTextureIndex(TextureType type)
         return Shaders::DefaultNormalTextureIndex;
     case TextureType::Roughness:
         return Shaders::DefaultRoughnessTextureIndex;
-    case TextureType::Metalic:
-        return Shaders::DefaultMetalicTextureIndex;
+    case TextureType::Metallic:
+        return Shaders::DefaultMetallicTextureIndex;
     case TextureType::Emisive:
         return Shaders::DefaultEmissiveTextureIndex;
     case TextureType::Specular:

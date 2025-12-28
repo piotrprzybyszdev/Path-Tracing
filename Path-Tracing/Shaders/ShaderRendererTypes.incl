@@ -73,11 +73,16 @@ struct PostProcessingUniformData
 };
 
 const uint MissFlagsConstantId              = 0u;
+const uint HitFlagsConstantId               = 1u;
 
 const uint MissFlagsNone                    = 0x0u;
 const uint MissFlagsSkybox2D                = 0x1u;
 const uint MissFlagsSkyboxCube              = 0x2u;
 const uint MissFlagsAll                     = 0x3u;
+
+const uint HitFlagsNone                     = 0x0u;
+const uint HitFlagsDxNormalTextures         = 0x1u;
+const uint HitFlagsAll                      = 0x1u;
 
 struct Payload
 {
@@ -90,9 +95,9 @@ struct Payload
     vec3 Emissive;
     uint RngState;
     vec3 DirectLight;
-    float DirectLightPdf;
-    vec3 LightDirection;
-    float LightDistance;
+    float DirectLightPdf;  // DecalDist
+    vec3 LightDirection;   // DecalAlbedo
+    float LightDistance;   // DecalAlpha
     vec3 RxOrigin;
     float pad2;
     vec3 RxDirection;
@@ -112,11 +117,6 @@ const uint PrimaryRayMissGroupIndex         = 0u;
 const uint OcclusionRayHitGroupIndex        = 1u;
 const uint OcclusionRayMissGroupIndex       = 1u;
 
-const uint BsdfTypeDiffuse                  = 0u;
-const uint BsdfTypeGloss                    = 1u;
-const uint BsdfTypeMetalic                  = 2u;
-
-const uint MinBounces                       = 4u;
 
 #ifndef GL_core_profile
 

@@ -25,7 +25,7 @@ enum class TextureType : uint8_t
     Color,
     Normal,
     Roughness,
-    Metalic,
+    Metallic,
     Specular,
     Skybox,
 };
@@ -70,7 +70,7 @@ struct Geometry
 
 enum class MaterialType : uint8_t
 {
-    MetalicRoughness,
+    MetallicRoughness,
     SpecularGlossiness,
 };
 
@@ -115,6 +115,12 @@ struct LightInfo
     glm::vec3 Position;
 };
 
+struct DirectionalLightInfo
+{
+    uint32_t SceneNodeIndex;
+    glm::vec3 Direction;
+};
+
 struct SkyboxClearColor
 {
 };
@@ -155,12 +161,13 @@ public:
         std::vector<Shaders::Vertex> &&vertices, std::vector<Shaders::AnimatedVertex> &&animatedVertices,
         std::vector<uint32_t> &&indices, std::vector<uint32_t> &&animatedIndices,
         std::vector<glm::mat3x4> &&transforms, std::vector<Geometry> &&geometries,
-        std::vector<Shaders::MetalicRoughnessMaterial> &&MetalicRoughnessMaterials, std::vector<TextureInfo> &&textures,
+        std::vector<Shaders::MetallicRoughnessMaterial> &&MetallicRoughnessMaterials,
+        std::vector<TextureInfo> &&textures,
         std::vector<Shaders::SpecularGlossinessMaterial> &&solidColorMaterials, std::vector<Model> &&models,
         std::vector<ModelInstance> &&modelInstances, std::vector<Bone> &&bones, SceneGraph &&sceneGraph,
-        std::vector<LightInfo> &&lightInfos, std::vector<Shaders::PointLight> &&pointLights,
+        std::vector<LightInfo> &&lightInfos, DirectionalLightInfo &&directionalLightInfo, std::vector<Shaders::PointLight> &&pointLights,
         Shaders::DirectionalLight &&directionalLight, SkyboxVariant &&skybox,
-        const std::vector<CameraInfo> &cameraInfos, bool hasAnimatedInstances
+        const std::vector<CameraInfo> &cameraInfos, bool hasAnimatedInstances, bool hasDxNormalTextures
     );
 
     bool Update(float timeStep);
@@ -171,7 +178,7 @@ public:
     [[nodiscard]] std::span<const uint32_t> GetAnimatedIndices() const;
     [[nodiscard]] std::span<const glm::mat3x4> GetTransforms() const;
     [[nodiscard]] std::span<const Geometry> GetGeometries() const;
-    [[nodiscard]] std::span<const Shaders::MetalicRoughnessMaterial> GetMetalicRoughnessMaterials() const;
+    [[nodiscard]] std::span<const Shaders::MetallicRoughnessMaterial> GetMetallicRoughnessMaterials() const;
     [[nodiscard]] std::span<const Shaders::SpecularGlossinessMaterial> GetSpecularGlossinessMaterials() const;
     [[nodiscard]] std::span<const TextureInfo> GetTextures() const;
 
@@ -180,6 +187,7 @@ public:
 
     [[nodiscard]] std::span<const glm::mat3x4> GetBoneTransforms() const;
 
+    [[nodiscard]] bool HasDxNormalTextures() const;
     [[nodiscard]] bool HasAnimations() const;
     [[nodiscard]] bool HasSkeletalAnimations() const;
 
@@ -210,10 +218,12 @@ private:
 
     std::vector<Geometry> m_Geometries;
 
-    std::vector<Shaders::MetalicRoughnessMaterial> m_MetalicRoughnessMaterials;
+    std::vector<Shaders::MetallicRoughnessMaterial> m_MetallicRoughnessMaterials;
     std::vector<Shaders::SpecularGlossinessMaterial> m_SpecularGlossinessMaterials;
 
     std::vector<TextureInfo> m_Textures;
+
+    const bool m_HasDxNormalTextures = false;
 
     std::vector<Model> m_Models;
     std::vector<ModelInstance> m_ModelInstances;
@@ -227,6 +237,7 @@ private:
 
     std::vector<LightInfo> m_LightInfos;
     std::vector<Shaders::PointLight> m_PointLights;
+    DirectionalLightInfo m_DirectionalLightInfo;
     Shaders::DirectionalLight m_DirectionalLight;
 
     SkyboxVariant m_Skybox = SkyboxClearColor {};
@@ -252,7 +263,7 @@ public:
     uint32_t AddModelInstance(uint32_t modelIndex, uint32_t sceneNodeIndex);
 
     uint32_t AddTexture(TextureInfo &&texture);
-    Shaders::MaterialId AddMaterial(std::string name, Shaders::MetalicRoughnessMaterial material);
+    Shaders::MaterialId AddMaterial(std::string name, Shaders::MetallicRoughnessMaterial material);
     Shaders::MaterialId AddMaterial(std::string name, Shaders::SpecularGlossinessMaterial material);
 
     std::vector<Shaders::Vertex> &GetVertices();
@@ -272,6 +283,7 @@ public:
 
     void AddCamera(CameraInfo &&camera);
 
+    void SetDxNormalTextures();
     [[nodiscard]] std::shared_ptr<Scene> CreateSceneShared();
 
 public:
@@ -288,14 +300,15 @@ private:
 
     std::vector<Geometry> m_Geometries;
 
-    std::vector<Shaders::MetalicRoughnessMaterial> m_MetalicRoughnessMaterials;
-    std::unordered_map<std::string, uint32_t> m_MetalicRoughnessMaterialIds;
+    std::vector<Shaders::MetallicRoughnessMaterial> m_MetallicRoughnessMaterials;
+    std::unordered_map<std::string, uint32_t> m_MetallicRoughnessMaterialIds;
 
     std::vector<Shaders::SpecularGlossinessMaterial> m_SpecularGlossinessMaterials;
     std::unordered_map<std::string, uint32_t> m_SpecularGlossinessMaterialIds;
 
     std::vector<TextureInfo> m_Textures;
     std::unordered_map<std::string, uint32_t> m_TextureIndices;
+    bool m_HasDxNormalTextures = false;
 
     std::vector<Model> m_Models;
     std::vector<std::pair<uint32_t, uint32_t>> m_ModelInstanceInfos;
@@ -308,6 +321,7 @@ private:
 
     std::vector<LightInfo> m_LightInfos;
     std::vector<Shaders::PointLight> m_PointLights;
+    DirectionalLightInfo m_DirectionalLightInfo = { RootNodeIndex, g_DefaultLight.Direction };
     Shaders::DirectionalLight m_DirectionalLight = g_DefaultLight;
 
     SkyboxVariant m_Skybox = SkyboxClearColor {};

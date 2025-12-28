@@ -649,7 +649,7 @@ private:
         { Shaders::HitGroupFlagsDisableColorTexture, "Disable Color Texture" },
         { Shaders::HitGroupFlagsDisableNormalTexture, "Disable Normal Texture" },
         { Shaders::HitGroupFlagsDisableRoughnessTexture, "Disable Roughness Texture" },
-        { Shaders::HitGroupFlagsDisableMetalicTexture, "Disable Metalic Texture" },
+        { Shaders::HitGroupFlagsDisableMetallicTexture, "Disable Metallic Texture" },
         { Shaders::HitGroupFlagsDisableMipMaps, "Disable Mip Maps" },
         { Shaders::HitGroupFlagsDisableShadows, "Disable Shadows" },
     } };

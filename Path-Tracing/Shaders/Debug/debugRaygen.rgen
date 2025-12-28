@@ -4,7 +4,6 @@
 #extension GL_EXT_nonuniform_qualifier : require
 
 #include "ShaderRendererTypes.incl"
-#include "DebugShaderRendererTypes.incl"
 #include "DebugShaderTypes.incl"
 
 layout(constant_id = DebugRenderModeConstantId) const uint s_RenderMode = RenderModeColor;
@@ -26,6 +25,8 @@ void main()
     const Ray ray = constructPrimaryRay(gl_LaunchIDEXT.xy, gl_LaunchSizeEXT.xy, mainUniform.MainCamera, rx, ry);
     payload.RxDirection = rx.Direction;
     payload.RyDirection = ry.Direction;
+    payload.DecalDist = -1.0f;
+    payload.Color = vec4(0.0f);
 
     uint flags = gl_RayFlagsNoneEXT;
     if ((s_RaygenFlags & RaygenFlagsForceOpaque) != RaygenFlagsNone)
@@ -35,5 +36,5 @@ void main()
 
     traceRayEXT(u_TopLevelAS, flags, 0xff, PrimaryRayHitGroupIndex, 2, PrimaryRayMissGroupIndex, ray.Origin, ray.tmin, ray.Direction, ray.tmax, 0);
   
-    imageStore(u_Image, ivec2(gl_LaunchIDEXT.xy), vec4(payload.hitValue, 1.0f));
+    imageStore(u_Image, ivec2(gl_LaunchIDEXT.xy), payload.Color);
 }

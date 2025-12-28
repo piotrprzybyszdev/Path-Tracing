@@ -43,6 +43,9 @@ void main()
         for (int bounce = 0; bounce < mainUniform.BounceCount; bounce++)
         {
             payload.RngState = rngState;
+            payload.DirectLightPdf = -1.0f;
+            payload.LightDirection = vec3(0.0f);
+            payload.LightDistance = 0.0f;
             traceRayEXT(u_TopLevelAS, gl_RayFlagsNoneEXT, 0xff, PrimaryRayHitGroupIndex, 2, PrimaryRayMissGroupIndex, ray.Origin, ray.tmin, ray.Direction, ray.tmax, 0);
             rngState = payload.RngState;
 

@@ -4,7 +4,6 @@
 #extension GL_EXT_nonuniform_qualifier : require
 
 #include "ShaderRendererTypes.incl"
-#include "DebugShaderRendererTypes.incl"
 #include "DebugShaderTypes.incl"
 
 layout(constant_id = DebugRenderModeConstantId) const uint s_RenderMode = RenderModeColor;
@@ -22,8 +21,8 @@ layout(binding = 5, set = 0) readonly buffer GeometryBuffer {
     Geometry[] geometries;
 };
 
-layout(binding = 6, set = 0) readonly buffer MetalicRoughnessMaterialBuffer {
-    MetalicRoughnessMaterial[] metalicRoughnessMaterials;
+layout(binding = 6, set = 0) readonly buffer MetallicRoughnessMaterialBuffer {
+    MetallicRoughnessMaterial[] metallicRoughnessMaterials;
 };
 
 layout(binding = 7, set = 0) readonly buffer SpecularGlossinessMaterialBuffer {
@@ -166,7 +165,6 @@ void main()
     const Vertex originalVertex = getInterpolatedVertex(vertices, indices, gl_PrimitiveID * 3, barycentricCoords);
     const Vertex vertex = transform(originalVertex, sbt.TransformIndex);
 
-    // TODO: Calculate the LOD properly
     const vec3 origin = gl_WorldRayOriginEXT;
     const vec3 viewDir = gl_WorldRayDirectionEXT;
     
@@ -184,14 +182,15 @@ void main()
 
     vec3 dpdx, dpdy;
     ComputeDpDxy(vertex.Position, origin, normalize(viewDir), origin, payload.RxDirection, origin, payload.RyDirection, vertex.Normal, dpdx, dpdy);
-    const vec4 derivatives = ComputeDerivatives(dpdx, dpdy, dpdu, dpdv);
+    const vec4 derivatives = (s_HitGroupFlags & HitGroupFlagsDisableMipMaps) != HitGroupFlagsNone ? vec4(0.0f) : ComputeDerivatives(dpdx, dpdy, dpdu, dpdv);
 
-    const float lod = (s_HitGroupFlags & HitGroupFlagsDisableMipMaps) != HitGroupFlagsNone ? 0.0f : ComputeLod(derivatives);
+    const bool flipYNormal = (s_HitGroupFlags & HitGroupFlagsDxNormalTextures) != HitFlagsNone;
 
-    MaterialSample material = (s_HitGroupFlags & HitGroupFlagsDisableMipMaps) != HitGroupFlagsNone
-        ? SampleMaterial(sbt.MaterialId, vertex.TexCoords, 0.0f, 0)
-        : SampleMaterial(sbt.MaterialId, vertex.TexCoords, derivatives, 0);
+    MaterialSample material = SampleMaterial(sbt.MaterialId, vertex.TexCoords, derivatives, 0, flipYNormal);
 
+    if (payload.DecalDist != -1.0f && gl_RayTmaxEXT > payload.DecalDist)
+        material.Color = mix(material.Color, payload.Color.rgb, payload.Color.a);
+    
     const vec3 V = -normalize(viewDir);
     const mat3 TBN = mat3(vertex.Tangent, vertex.Bitangent, vertex.Normal);
     const vec3 N = normalize(vertex.Normal + TBN * material.Normal);
@@ -220,28 +219,28 @@ void main()
     switch (s_RenderMode)
     {
     case RenderModeColor:
-        payload.hitValue = totalLight;
+        payload.Color = vec4(totalLight, 1.0f);
         break;
     case RenderModeWorldPosition:
-        payload.hitValue = vertex.Position;
+        payload.Color = vec4(vertex.Position, 1.0f);
         break;
     case RenderModeNormal:
-        payload.hitValue = N;
+        payload.Color = vec4(N, 1.0f);
         break;
     case RenderModeTextureCoords:
-        payload.hitValue = vec3(vertex.TexCoords, 0.0f);
+        payload.Color = vec4(vertex.TexCoords, 0.0f, 1.0f);
         break;
     case RenderModeMips:
-        payload.hitValue = vec3(0.1f * lod + 1.0f);
+        payload.Color = vec4(vec3(0.1f * ComputeLod(derivatives) + 1.0f), 1.0f);
         break;
     case RenderModeGeometry:
-        payload.hitValue = getRandomColor(gl_GeometryIndexEXT);
+        payload.Color = vec4(getRandomColor(gl_GeometryIndexEXT), 1.0f);
         break;
     case RenderModePrimitive:
-        payload.hitValue = getRandomColor(gl_PrimitiveID);
+        payload.Color = vec4(getRandomColor(gl_PrimitiveID), 1.0f);
         break;
     case RenderModeInstance:
-        payload.hitValue = getRandomColor(gl_InstanceID);
+        payload.Color = vec4(getRandomColor(gl_InstanceID), 1.0f);
         break;
     }
 }

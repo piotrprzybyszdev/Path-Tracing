@@ -5,21 +5,21 @@
 
 uint SampleValue(uint flags, uint disableFlag, uint value, uint defaultValue)
 {
-    if ((flags & HitGroupFlagsDisableColorTexture) == 0)
+    if ((flags & disableFlag) == 0)
         return value;
     return defaultValue;
 }
 
 float SampleValue(uint flags, uint disableFlag, float value, float defaultValue)
 {
-    if ((flags & HitGroupFlagsDisableColorTexture) == 0)
+    if ((flags & disableFlag) == 0)
         return value;
     return defaultValue;
 }
 
 vec3 SampleValue(uint flags, uint disableFlag, vec3 value, vec3 defaultValue)
 {
-    if ((flags & HitGroupFlagsDisableColorTexture) == 0)
+    if ((flags & disableFlag) == 0)
         return value;
     return defaultValue;
 }
@@ -80,6 +80,14 @@ void ComputeDpDxy(vec3 p, vec3 origin, vec3 direction, vec3 rxOrigin, vec3 rxDir
     dpdy = py - p;
 }
 
+float DifferenceOfProducts(float a, float b, float c, float d)
+{
+    float cd = c * d;
+    float differenceOfProducts = fma(a, b, -cd);
+    float error = fma(-c, d, cd);
+    return differenceOfProducts + error;
+}
+
 vec4 ComputeDerivatives(vec3 dpdx, vec3 dpdy, vec3 dpdu, vec3 dpdv)
 {
     float ata00 = dot(dpdu, dpdu);
@@ -136,7 +144,7 @@ void ComputeReflectedDifferentialRays(vec4 derivatives, vec3 n, vec3 p, vec3 vie
     ryDirection = reflectedDir - dwody + 2 * (dot(viewDir, n) * dndy + dwoDotn_dy * n);
 }
 
-MaterialSample SampleMaterial(MetalicRoughnessMaterial material, vec2 texCoords, vec4 derivatives, uint flags)
+MaterialSample SampleMaterial(MetallicRoughnessMaterial material, vec2 texCoords, vec4 derivatives, uint flags)
 {
     MaterialSample ret;
 
@@ -146,13 +154,13 @@ MaterialSample SampleMaterial(MetalicRoughnessMaterial material, vec2 texCoords,
     uint colorIdx = SampleValue(flags, HitGroupFlagsDisableColorTexture, material.ColorIdx, DefaultColorTextureIndex);
     uint normalIdx = SampleValue(flags, HitGroupFlagsDisableNormalTexture, material.NormalIdx, DefaultNormalTextureIndex);
     uint roughnessIdx = SampleValue(flags, HitGroupFlagsDisableRoughnessTexture, material.RoughnessIdx, DefaultRoughnessTextureIndex);
-    uint metalicIdx = SampleValue(flags, HitGroupFlagsDisableMetalicTexture, material.MetalicIdx, DefaultMetalicTextureIndex);
+    uint metallicIdx = SampleValue(flags, HitGroupFlagsDisableMetallicTexture, material.MetallicIdx, DefaultMetallicTextureIndex);
 
     ret.EmissiveColor = (textureGrad(textures[material.EmissiveIdx], texCoords, dpdx, dpdy).rgb + material.EmissiveColor) * material.EmissiveIntensity;
-    ret.Color = textureGrad(textures[colorIdx], texCoords, dpdx, dpdy).rgb * material.Color;
+    ret.Color = textureGrad(textures[colorIdx], texCoords, dpdx, dpdy).rgb * material.Color.rgb;
     ret.Normal = ReconstructNormalFromXY(textureGrad(textures[normalIdx], texCoords, dpdx, dpdy).rgb);
     ret.Roughness = textureGrad(textures[roughnessIdx], texCoords, dpdx, dpdy).g * material.Roughness;
-    ret.Metalness = textureGrad(textures[metalicIdx], texCoords, dpdx, dpdy).b * material.Metalness;
+    ret.Metalness = textureGrad(textures[metallicIdx], texCoords, dpdx, dpdy).b * material.Metalness;
 
     return ret;
 }
@@ -171,66 +179,21 @@ MaterialSample SampleMaterial(SpecularGlossinessMaterial material, vec2 texCoord
     return ret;
 }
 
-MaterialSample SampleMaterial(uint materialId, vec2 texCoords, vec4 derivatives, uint flags)
+MaterialSample SampleMaterial(uint materialId, vec2 texCoords, vec4 derivatives, uint flags, bool flipNormalY)
 {
     uint materialType;
     uint materialIndex = unpackMaterialId(materialId, materialType);
 
-    if (materialType == MaterialTypeMetalicRoughness)
-    {
-        return SampleMaterial(metalicRoughnessMaterials[materialIndex], texCoords, derivatives, flags);
-    }
-    else
-    {
-        return SampleMaterial(specularGlossinessMaterials[materialIndex], texCoords, derivatives, flags);
-    }
-}
-
-MaterialSample SampleMaterial(MetalicRoughnessMaterial material, vec2 texCoords, float lod, uint flags)
-{
     MaterialSample ret;
+    if (materialType == MaterialTypeMetallicRoughness)
+        ret = SampleMaterial(metallicRoughnessMaterials[materialIndex], texCoords, derivatives, flags);
+    else
+        ret = SampleMaterial(specularGlossinessMaterials[materialIndex], texCoords, derivatives, flags);
 
-    uint colorIdx = SampleValue(flags, HitGroupFlagsDisableColorTexture, material.ColorIdx, DefaultColorTextureIndex);
-    uint normalIdx = SampleValue(flags, HitGroupFlagsDisableNormalTexture, material.NormalIdx, DefaultNormalTextureIndex);
-    uint roughnessIdx = SampleValue(flags, HitGroupFlagsDisableRoughnessTexture, material.RoughnessIdx, DefaultRoughnessTextureIndex);
-    uint metalicIdx = SampleValue(flags, HitGroupFlagsDisableMetalicTexture, material.MetalicIdx, DefaultMetalicTextureIndex);
-
-    ret.EmissiveColor = (textureLod(textures[material.EmissiveIdx], texCoords, lod).rgb + material.EmissiveColor) * material.EmissiveIntensity;
-    ret.Color = textureLod(textures[colorIdx], texCoords, lod).rgb * material.Color;
-    ret.Normal = ReconstructNormalFromXY(textureLod(textures[normalIdx], texCoords, lod).rgb);
-    ret.Roughness = textureLod(textures[roughnessIdx], texCoords, lod).g * material.Roughness;
-    ret.Metalness = textureLod(textures[metalicIdx], texCoords, lod).b * material.Metalness;
+    if (flipNormalY)
+        ret.Normal.y *= -1;
 
     return ret;
-}
-
-MaterialSample SampleMaterial(SpecularGlossinessMaterial material, vec2 texCoords, float lod, uint flags)
-{
-    MaterialSample ret;
-
-    // TODO
-    ret.EmissiveColor = vec3(0.0f);
-    ret.Color = DefaultColor;
-    ret.Normal = DefaultNormal;
-    ret.Roughness = DefaultRoughness;
-    ret.Metalness = DefaultMetalness;
-
-    return ret;
-}
-
-MaterialSample SampleMaterial(uint materialId, vec2 texCoords, float lod, uint flags)
-{
-    uint materialType;
-    uint materialIndex = unpackMaterialId(materialId, materialType);
-
-    if (materialType == MaterialTypeMetalicRoughness)
-    {
-        return SampleMaterial(metalicRoughnessMaterials[materialIndex], texCoords, lod, flags);
-    }
-    else
-    {
-        return SampleMaterial(specularGlossinessMaterials[materialIndex], texCoords, lod, flags);
-    }
 }
 
 vec3 EvaluateReflection(vec3 V, vec3 L, vec3 F, float alpha, out float pdf)
@@ -285,5 +248,5 @@ float ComputeLod(vec4 derivatives)
     float sx = sqrt(dudx * dudx + dvdx * dvdx);
     float sy = sqrt(dudy * dudy + dvdy * dvdy);
     float smax = max(sx, sy);
-    return log2(smax);
+    return smax == 0.0f ? 0.0f : log2(smax);
 }

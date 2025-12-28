@@ -37,7 +37,7 @@ std::span<const aiTextureType> GetTextureTypes(TextureType type)
                                                               aiTextureType_DIFFUSE };
     static std::array<aiTextureType, 1> normalTextureTypes = { aiTextureType_NORMALS };
     static std::array<aiTextureType, 1> roughnessTextureTypes = { aiTextureType_DIFFUSE_ROUGHNESS };
-    static std::array<aiTextureType, 1> metalicTextureTypes = { aiTextureType_METALNESS };
+    static std::array<aiTextureType, 1> metallicTextureTypes = { aiTextureType_METALNESS };
     static std::array<aiTextureType, 1> emissiveTextureTypes = { aiTextureType_EMISSIVE };
     static std::array<aiTextureType, 1> specularTextureTypes = { aiTextureType_SPECULAR };
 
@@ -49,8 +49,8 @@ std::span<const aiTextureType> GetTextureTypes(TextureType type)
         return normalTextureTypes;
     case TextureType::Roughness:
         return roughnessTextureTypes;
-    case TextureType::Metalic:
-        return metalicTextureTypes;
+    case TextureType::Metallic:
+        return metallicTextureTypes;
     case TextureType::Emisive:
         return emissiveTextureTypes;
     case TextureType::Specular:
@@ -141,12 +141,12 @@ struct MaterialInfo
     bool IsOpaque;
 };
 
-MaterialInfo LoadMetalicRoughnessMaterial(
+MaterialInfo LoadMetallicRoughnessMaterial(
     const std::filesystem::path &path, SceneBuilder &sceneBuilder, const aiMaterial *material,
-    const std::string &materialName, MetalicRoughnessTextureMapping mapping
+    const std::string &materialName, MetallicRoughnessTextureMapping mapping
 )
 {
-    aiColor3D color = aiColor3D(1.0f, 1.0f, 1.0f);
+    aiColor4D color = aiColor4D(1.0f, 1.0f, 1.0f, 1.0f);
     float roughness = 1.0f, metalness = 1.0f;
 
     material->Get(AI_MATKEY_BASE_COLOR, color);
@@ -156,10 +156,10 @@ MaterialInfo LoadMetalicRoughnessMaterial(
     EmissiveInfo emissive = LoadEmissive(path, sceneBuilder, material);
 
     bool hasTransparency;
-    Shaders::MetalicRoughnessMaterial outMaterial = {
+    Shaders::MetallicRoughnessMaterial outMaterial = {
         .EmissiveColor = emissive.Color,
         .EmissiveIntensity = emissive.Intensity,
-        .Color = TrivialCopyUnsafe<aiColor3D, glm::vec3>(color),
+        .Color = TrivialCopyUnsafe<aiColor4D, glm::vec4>(color),
         .Roughness = roughness,
         .Metalness = metalness,
         .EmissiveIdx = emissive.TextureIdx,
@@ -169,12 +169,12 @@ MaterialInfo LoadMetalicRoughnessMaterial(
         .NormalIdx = AddTexture(sceneBuilder, path.parent_path(), material, mapping.NormalTexture),
         .RoughnessIdx =
             AddTexture(sceneBuilder, path.parent_path(), material, mapping.RoughnessTexture),
-        .MetalicIdx = AddTexture(sceneBuilder, path.parent_path(), material, mapping.MetalicTexture),
+        .MetallicIdx = AddTexture(sceneBuilder, path.parent_path(), material, mapping.MetallicTexture),
     };
 
     return MaterialInfo {
         .MaterialIndex = sceneBuilder.AddMaterial(materialName, outMaterial),
-        .Type = MaterialType::MetalicRoughness,
+        .Type = MaterialType::MetallicRoughness,
         .IsOpaque = !hasTransparency,
     };
 }
@@ -210,14 +210,14 @@ std::vector<MaterialInfo> LoadMaterials(
     TextureMapping textureMapping
 )
 {
-    static const MetalicRoughnessTextureMapping defaultMetalicRoughnessMapping = {
+    static const MetallicRoughnessTextureMapping defaultMetallicRoughnessMapping = {
         .ColorTexture = TextureType::Color,
         .NormalTexture = TextureType::Normal,
         .RoughnessTexture = TextureType::Roughness,
-        .MetalicTexture = TextureType::Metalic,
+        .MetallicTexture = TextureType::Metallic,
     };
 
-    const MetalicRoughnessTextureMapping *metalicRoughnessMapping = &defaultMetalicRoughnessMapping;
+    const MetallicRoughnessTextureMapping *metallicRoughnessMapping = &defaultMetallicRoughnessMapping;
 
     std::vector<MaterialInfo> materialInfoMap(scene->mNumMaterials);
 
@@ -231,20 +231,20 @@ std::vector<MaterialInfo> LoadMaterials(
         float factor;
         MaterialType materialType =
             material->Get(AI_MATKEY_METALLIC_FACTOR, factor) == aiReturn::aiReturn_SUCCESS
-                ? MaterialType::MetalicRoughness
+                ? MaterialType::MetallicRoughness
                 : MaterialType::SpecularGlossiness;
 
-        if (const auto *mapping = std::get_if<MetalicRoughnessTextureMapping>(&textureMapping))
+        if (const auto *mapping = std::get_if<MetallicRoughnessTextureMapping>(&textureMapping))
         {
-            materialType = MaterialType::MetalicRoughness;
-            metalicRoughnessMapping = mapping;
+            materialType = MaterialType::MetallicRoughness;
+            metallicRoughnessMapping = mapping;
         }
 
         switch (materialType)
         {
-        case MaterialType::MetalicRoughness:
-            materialInfoMap[i] = LoadMetalicRoughnessMaterial(
-                path, sceneBuilder, material, materialName, *metalicRoughnessMapping
+        case MaterialType::MetallicRoughness:
+            materialInfoMap[i] = LoadMetallicRoughnessMaterial(
+                path, sceneBuilder, material, materialName, *metallicRoughnessMapping
             );
             break;
         case MaterialType::SpecularGlossiness:

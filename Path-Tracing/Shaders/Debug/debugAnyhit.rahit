@@ -4,6 +4,7 @@
 #extension GL_EXT_nonuniform_qualifier : require
 
 #include "ShaderRendererTypes.incl"
+#include "DebugShaderTypes.incl"
 #include "common.glsl"
 
 layout(binding = 3, set = 0) uniform sampler2D textures[];
@@ -24,7 +25,7 @@ layout(shaderRecordEXT, std430) buffer SBT {
     SBTBuffer sbt;
 };
 
-layout(location = 0) rayPayloadInEXT Payload payload;
+layout(location = 0) rayPayloadInEXT DebugPayload payload;
 hitAttributeEXT vec3 attribs;
 
 vec2 getTexCoords(VertexBuffer vertices, IndexBuffer indices, uint offset)
@@ -55,15 +56,13 @@ void main()
 
     const vec4 color = texture(textures[colorTextureIdx], vertex.TexCoords) * colorFactor;
 
-    // Handling decals
     const float dist = gl_RayTmaxEXT;
     if (color.a < 0.5f)
     {
-        if (payload.DirectLightPdf == -1.0f || dist < payload.DirectLightPdf)
+        if (payload.DecalDist == -1.0f || dist < payload.DecalDist)
         {
-            payload.LightDirection = color.rgb;
-            payload.LightDistance = color.a;
-            payload.DirectLightPdf = dist;
+            payload.Color = color;
+            payload.DecalDist = dist;
         }
         ignoreIntersectionEXT;
     }

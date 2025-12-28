@@ -24,7 +24,6 @@ layout(shaderRecordEXT, std430) buffer SBT {
     SBTBuffer sbt;
 };
 
-layout(location = 0) rayPayloadInEXT Payload payload;
 hitAttributeEXT vec3 attribs;
 
 vec2 getTexCoords(VertexBuffer vertices, IndexBuffer indices, uint offset)
@@ -50,21 +49,11 @@ void main()
 
     const uint colorTextureIdx = materialType == MaterialTypeMetallicRoughness ?
         metallicRoughnessMaterials[materialIndex].ColorIdx : specularGlossinessMaterials[materialIndex].DiffuseIdx;
-    const vec4 colorFactor = materialType == MaterialTypeMetallicRoughness ?
-        metallicRoughnessMaterials[materialIndex].Color : vec4(1.0f);
+    const float alphaFactor = materialType == MaterialTypeMetallicRoughness ?
+        metallicRoughnessMaterials[materialIndex].Color.a : 1.0f;
 
-    const vec4 color = texture(textures[colorTextureIdx], vertex.TexCoords) * colorFactor;
+    const float alpha = texture(textures[colorTextureIdx], vertex.TexCoords).a * alphaFactor;
 
-    // Handling decals
-    const float dist = gl_RayTmaxEXT;
-    if (color.a < 0.5f)
-    {
-        if (payload.DirectLightPdf == -1.0f || dist < payload.DirectLightPdf)
-        {
-            payload.LightDirection = color.rgb;
-            payload.LightDistance = color.a;
-            payload.DirectLightPdf = dist;
-        }
+    if (alpha < 1.0f)
         ignoreIntersectionEXT;
-    }
 }

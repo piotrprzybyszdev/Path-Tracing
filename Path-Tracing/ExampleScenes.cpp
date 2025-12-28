@@ -26,7 +26,7 @@ public:
 };
 
 void CreateDefaultScene(SceneBuilder &sceneBuilder);
-void CreateMetalicRoughnessCubesScene(SceneBuilder &sceneBuilder);
+void CreateMetallicRoughnessCubesScene(SceneBuilder &sceneBuilder);
 void CreateReuseMeshCubesScene(SceneBuilder &sceneBuilder);
 void CreateRoughnessTestCubesScene(SceneBuilder &sceneBuilder);
 
@@ -66,6 +66,7 @@ struct SceneDescription
     std::vector<std::filesystem::path> ComponentPaths;
     std::optional<std::filesystem::path> SkyboxPath;
     TextureMapping Mapping;
+    bool HasDxNormalTextures = false;
 
     [[nodiscard]] std::unique_ptr<CombinedSceneLoader> ToLoader() const;
 };
@@ -90,6 +91,9 @@ std::unique_ptr<CombinedSceneLoader> SceneDescription::ToLoader() const
         else
             logger::warn("Skybox file not found: {}", SkyboxPath.value().string());
     }
+
+    if (HasDxNormalTextures)
+        loader->SetDxNormalTextures();
 
     return loader;
 }
@@ -117,6 +121,7 @@ static void AddHighQualityScenes(std::map<std::string, SceneGroup> &scenes)
             base / "IntelSponzaIvy" / "pkg_b_ivy" / "NewSponza_IvyGrowth_glTF.gltf",
         },
         .SkyboxPath = base / "IntelSponzaMain" / "main_sponza" / "textures" / "kloppenheim_05_4k.hdr",
+        .HasDxNormalTextures = true,
     };
 
     /* NOTE:
@@ -133,17 +138,18 @@ static void AddHighQualityScenes(std::map<std::string, SceneGroup> &scenes)
      *
      * Hence - The need for the below mapping
      */
-    static const MetalicRoughnessTextureMapping NVIDIAOrcaTextureMapping = {
+    static const MetallicRoughnessTextureMapping NVIDIAOrcaTextureMapping = {
         .ColorTexture = TextureType::Color,
         .NormalTexture = TextureType::Normal,
         .RoughnessTexture = TextureType::Specular,
-        .MetalicTexture = TextureType::Specular,
+        .MetallicTexture = TextureType::Specular,
     };
 
     SceneDescription ue4SunTempleDescription = {
         .ComponentPaths = { base / "UE4SunTemple" / "SunTemple_v4" / "SunTemple" / "SunTemple.fbx" },
         .SkyboxPath = { base / "UE4SunTemple" / "SunTemple_v4" / "SunTemple" / "SunTemple_Skybox.hdr" },
         .Mapping = NVIDIAOrcaTextureMapping,
+        .HasDxNormalTextures = true,
     };
 
     SceneDescription amazonBistroDescription = {
@@ -153,6 +159,7 @@ static void AddHighQualityScenes(std::map<std::string, SceneGroup> &scenes)
         },
         .SkyboxPath = base / "AmazonBistro" / "Bistro_v5_2" / "san_giuseppe_bridge_4k.hdr",
         .Mapping = NVIDIAOrcaTextureMapping,
+        .HasDxNormalTextures = true,
     };
 
     SceneDescription amazonBistroWineDescription = {
@@ -162,6 +169,7 @@ static void AddHighQualityScenes(std::map<std::string, SceneGroup> &scenes)
         },
         .SkyboxPath = base / "AmazonBistro" / "Bistro_v5_2" / "san_giuseppe_bridge_4k.hdr",
         .Mapping = NVIDIAOrcaTextureMapping,
+        .HasDxNormalTextures = true,
     };
 
     AddSceneByDescription(group, "Intel Sponza", std::move(intelSponzaDescription));
@@ -177,9 +185,9 @@ static void AddTestScenes(std::map<std::string, SceneGroup> &scenes)
         "Roughness Test Cubes", std::make_unique<CustomSceneLoader<CreateRoughnessTestCubesScene>>()
     );
     group.emplace(
-        "MetalicRoughness Cubes", std::make_unique<CustomSceneLoader<CreateMetalicRoughnessCubesScene>>()
+        "MetallicRoughness Cubes", std::make_unique<CustomSceneLoader<CreateMetallicRoughnessCubesScene>>()
     );
-    group.emplace("Reuse Mesh", std::make_unique<CustomSceneLoader<CreateMetalicRoughnessCubesScene>>());
+    group.emplace("Reuse Mesh", std::make_unique<CustomSceneLoader<CreateMetallicRoughnessCubesScene>>());
     group.emplace("Default", std::make_unique<CustomSceneLoader<CreateDefaultScene>>());
 }
 
@@ -255,19 +263,19 @@ static std::array<uint32_t, 6> AddCube(SceneBuilder &sceneBuilder)
 void CreateDefaultScene(SceneBuilder &sceneBuilder)
 {
     auto makeMaterialFromColor = [](glm::vec3 color, float roughness = 1.0f) {
-        return Shaders::MetalicRoughnessMaterial {
-            .Color = color,
+        return Shaders::MetallicRoughnessMaterial {
+            .Color = glm::vec4(color, 1.0f),
             .Roughness = roughness,
             .Metalness = 0.0f,
             .EmissiveIdx = Scene::GetDefaultTextureIndex(TextureType::Emisive),
             .ColorIdx = Scene::GetDefaultTextureIndex(TextureType::Color),
             .NormalIdx = Scene::GetDefaultTextureIndex(TextureType::Normal),
             .RoughnessIdx = Scene::GetDefaultTextureIndex(TextureType::Roughness),
-            .MetalicIdx = Scene::GetDefaultTextureIndex(TextureType::Metalic),
+            .MetallicIdx = Scene::GetDefaultTextureIndex(TextureType::Metallic),
         };
     };
     auto makeMaterialFromEmissiveColor = [](glm::vec3 color) {
-        return Shaders::MetalicRoughnessMaterial {
+        return Shaders::MetallicRoughnessMaterial {
             .EmissiveColor = color,
             .EmissiveIntensity = 1.0f,
             .Roughness = 1.0f,
@@ -276,12 +284,12 @@ void CreateDefaultScene(SceneBuilder &sceneBuilder)
             .ColorIdx = Scene::GetDefaultTextureIndex(TextureType::Color),
             .NormalIdx = Scene::GetDefaultTextureIndex(TextureType::Normal),
             .RoughnessIdx = Scene::GetDefaultTextureIndex(TextureType::Roughness),
-            .MetalicIdx = Scene::GetDefaultTextureIndex(TextureType::Metalic),
+            .MetallicIdx = Scene::GetDefaultTextureIndex(TextureType::Metallic),
         };
     };
     auto makeMaterialFromTexture = [&](std::span<const uint8_t>) {
-        return Shaders::MetalicRoughnessMaterial {
-            .Color = glm::vec3(1.0f),
+        return Shaders::MetallicRoughnessMaterial {
+            .Color = glm::vec4(1.0f),
             .Roughness = 1.0f,
             .Metalness = 0.0f,
             .EmissiveIdx = Scene::GetDefaultTextureIndex(TextureType::Emisive),
@@ -292,7 +300,7 @@ void CreateDefaultScene(SceneBuilder &sceneBuilder)
             ),
             .NormalIdx = Scene::GetDefaultTextureIndex(TextureType::Normal),
             .RoughnessIdx = Scene::GetDefaultTextureIndex(TextureType::Roughness),
-            .MetalicIdx = Scene::GetDefaultTextureIndex(TextureType::Metalic),
+            .MetallicIdx = Scene::GetDefaultTextureIndex(TextureType::Metallic),
         };
     };
 
@@ -349,22 +357,22 @@ void CreateDefaultScene(SceneBuilder &sceneBuilder)
     }
 
     std::array<MeshInfo, 5> meshes = { {
-        { 0, redMaterial, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
-        { 1, greenMaterial, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
-        { 2, logoMaterial, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
-        { 3, whiteMaterial, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
-        { 4, whiteMaterial, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
+        { 0, redMaterial, MaterialType::MetallicRoughness, glm::mat4(1.0f) },
+        { 1, greenMaterial, MaterialType::MetallicRoughness, glm::mat4(1.0f) },
+        { 2, logoMaterial, MaterialType::MetallicRoughness, glm::mat4(1.0f) },
+        { 3, whiteMaterial, MaterialType::MetallicRoughness, glm::mat4(1.0f) },
+        { 4, whiteMaterial, MaterialType::MetallicRoughness, glm::mat4(1.0f) },
     } };
 
     std::array<uint32_t, 6> geometryIndices = AddCube(sceneBuilder);
 
     std::array<MeshInfo, 6> cubeMeshes = { {
-        { geometryIndices[0], whiteMaterial, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
-        { geometryIndices[1], whiteMaterial, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
-        { geometryIndices[2], whiteMaterial, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
-        { geometryIndices[3], whiteMaterial, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
-        { geometryIndices[4], whiteMaterial, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
-        { geometryIndices[5], whiteMaterial, MaterialType::MetalicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[0], whiteMaterial, MaterialType::MetallicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[1], whiteMaterial, MaterialType::MetallicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[2], whiteMaterial, MaterialType::MetallicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[3], whiteMaterial, MaterialType::MetallicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[4], whiteMaterial, MaterialType::MetallicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[5], whiteMaterial, MaterialType::MetallicRoughness, glm::mat4(1.0f) },
     } };
 
     const uint32_t lightVertexOffset = vertices.size();
@@ -392,7 +400,7 @@ void CreateDefaultScene(SceneBuilder &sceneBuilder)
         MeshInfo {
             .GeometryIndex = lightGeometry,
             .MaterialIndex = lightMaterial,
-            .ShaderMaterialType = MaterialType::MetalicRoughness,
+            .ShaderMaterialType = MaterialType::MetallicRoughness,
             .Transform = glm::mat4(1.0f),
         },
     };
@@ -442,7 +450,7 @@ void CreateDefaultScene(SceneBuilder &sceneBuilder)
     sceneBuilder.AddModelInstance(light, lightNode);
 }
 
-void CreateMetalicRoughnessCubesScene(SceneBuilder &sceneBuilder)
+void CreateMetallicRoughnessCubesScene(SceneBuilder &sceneBuilder)
 {
     const std::filesystem::path base = Application::GetConfig().AssetDirectoryPath / "textures";
     const std::array<std::string, 3> assetNames = { "Metal", "PavingStones", "Logs" };
@@ -466,14 +474,14 @@ void CreateMetalicRoughnessCubesScene(SceneBuilder &sceneBuilder)
         const std::string &material = materials[i];
         materialIds[i] = sceneBuilder.AddMaterial(
             assetNames[i],
-            Shaders::MetalicRoughnessMaterial {
-                .Color = glm::vec3(1.0f),
+            Shaders::MetallicRoughnessMaterial {
+                .Color = glm::vec4(1.0f),
                 .Roughness = 1.0f,
                 .Metalness = 1.0f,
                 .ColorIdx = addTexture(materialPath, material + "_Color.jpg", TextureType::Color),
                 .NormalIdx = addTexture(materialPath, material + "_NormalGL.jpg", TextureType::Normal),
                 .RoughnessIdx = addTexture(materialPath, material + "_Roughness.jpg", TextureType::Roughness),
-                .MetalicIdx = addTexture(materialPath, material + "_Roughness.jpg", TextureType::Metalic),
+                .MetallicIdx = addTexture(materialPath, material + "_Roughness.jpg", TextureType::Metallic),
             }
         );
     }
@@ -481,21 +489,21 @@ void CreateMetalicRoughnessCubesScene(SceneBuilder &sceneBuilder)
     std::array<uint32_t, 6> geometryIndices = AddCube(sceneBuilder);
 
     std::array<MeshInfo, 6> m1 = { {
-        { geometryIndices[0], materialIds[0], MaterialType::MetalicRoughness, glm::mat4(1.0f) },
-        { geometryIndices[1], materialIds[0], MaterialType::MetalicRoughness, glm::mat4(1.0f) },
-        { geometryIndices[2], materialIds[1], MaterialType::MetalicRoughness, glm::mat4(1.0f) },
-        { geometryIndices[3], materialIds[1], MaterialType::MetalicRoughness, glm::mat4(1.0f) },
-        { geometryIndices[4], materialIds[2], MaterialType::MetalicRoughness, glm::mat4(1.0f) },
-        { geometryIndices[5], materialIds[2], MaterialType::MetalicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[0], materialIds[0], MaterialType::MetallicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[1], materialIds[0], MaterialType::MetallicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[2], materialIds[1], MaterialType::MetallicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[3], materialIds[1], MaterialType::MetallicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[4], materialIds[2], MaterialType::MetallicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[5], materialIds[2], MaterialType::MetallicRoughness, glm::mat4(1.0f) },
     } };
 
     std::array<MeshInfo, 6> m2 = { {
-        { geometryIndices[0], materialIds[0], MaterialType::MetalicRoughness, glm::mat4(1.0f) },
-        { geometryIndices[1], materialIds[0], MaterialType::MetalicRoughness, glm::mat4(1.0f) },
-        { geometryIndices[2], materialIds[0], MaterialType::MetalicRoughness, glm::mat4(1.0f) },
-        { geometryIndices[3], materialIds[0], MaterialType::MetalicRoughness, glm::mat4(1.0f) },
-        { geometryIndices[4], materialIds[0], MaterialType::MetalicRoughness, glm::mat4(1.0f) },
-        { geometryIndices[5], materialIds[0], MaterialType::MetalicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[0], materialIds[0], MaterialType::MetallicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[1], materialIds[0], MaterialType::MetallicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[2], materialIds[0], MaterialType::MetallicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[3], materialIds[0], MaterialType::MetallicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[4], materialIds[0], MaterialType::MetallicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[5], materialIds[0], MaterialType::MetallicRoughness, glm::mat4(1.0f) },
     } };
 
     const uint32_t cube1 = sceneBuilder.AddModel(m1);
@@ -576,14 +584,14 @@ void CreateReuseMeshCubesScene(SceneBuilder &sceneBuilder)
         const std::string &material = materials[i];
         materialIds[i] = sceneBuilder.AddMaterial(
             assetNames[i],
-            Shaders::MetalicRoughnessMaterial {
-                .Color = glm::vec3(1.0f),
+            Shaders::MetallicRoughnessMaterial {
+                .Color = glm::vec4(1.0f),
                 .Roughness = 1.0f,
                 .Metalness = 1.0f,
                 .ColorIdx = addTexture(materialPath, material + "_Color.jpg", TextureType::Color),
                 .NormalIdx = addTexture(materialPath, material + "_NormalGL.jpg", TextureType::Normal),
                 .RoughnessIdx = addTexture(materialPath, material + "_Roughness.jpg", TextureType::Roughness),
-                .MetalicIdx = addTexture(materialPath, material + "_Roughness.jpg", TextureType::Metalic),
+                .MetallicIdx = addTexture(materialPath, material + "_Roughness.jpg", TextureType::Metallic),
             }
         );
     }
@@ -620,14 +628,14 @@ void CreateReuseMeshCubesScene(SceneBuilder &sceneBuilder)
     }
 
     std::array<MeshInfo, 6> m = { {
-        { geometryIndices[0], materialIds[1], MaterialType::MetalicRoughness, glm::mat4(1.0f) },
-        { geometryIndices[0], materialIds[1], MaterialType::MetalicRoughness,
+        { geometryIndices[0], materialIds[1], MaterialType::MetallicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[0], materialIds[1], MaterialType::MetallicRoughness,
           glm::transpose(glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f))) },
-        { geometryIndices[1], materialIds[1], MaterialType::MetalicRoughness, glm::mat4(1.0f) },
-        { geometryIndices[1], materialIds[2], MaterialType::MetalicRoughness,
+        { geometryIndices[1], materialIds[1], MaterialType::MetallicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[1], materialIds[2], MaterialType::MetallicRoughness,
           glm::transpose(glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(0.0f, 1.0f, 0.0f))) },
-        { geometryIndices[2], materialIds[2], MaterialType::MetalicRoughness, glm::mat4(1.0f) },
-        { geometryIndices[2], materialIds[2], MaterialType::MetalicRoughness,
+        { geometryIndices[2], materialIds[2], MaterialType::MetallicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[2], materialIds[2], MaterialType::MetallicRoughness,
           glm::transpose(glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(0.0f, 0.0f, 1.0f))) },
     } };
 
@@ -653,21 +661,21 @@ void CreateRoughnessTestCubesScene(SceneBuilder &sceneBuilder)
     const std::filesystem::path base = Application::GetConfig().AssetDirectoryPath / "textures";
 
     auto makeMaterialFromColor = [](glm::vec3 color, float roughness, float metalness) {
-        return Shaders::MetalicRoughnessMaterial
+        return Shaders::MetallicRoughnessMaterial
         {
-            .Color = color,
+            .Color = glm::vec4(color, 1.0f),
             .Roughness = roughness,
             .Metalness = metalness,
             .EmissiveIdx = Scene::GetDefaultTextureIndex(TextureType::Emisive),
             .ColorIdx = Scene::GetDefaultTextureIndex(TextureType::Color),
             .NormalIdx = Scene::GetDefaultTextureIndex(TextureType::Normal),
             .RoughnessIdx = Scene::GetDefaultTextureIndex(TextureType::Roughness),
-            .MetalicIdx = Scene::GetDefaultTextureIndex(TextureType::Metalic),
+            .MetallicIdx = Scene::GetDefaultTextureIndex(TextureType::Metallic),
         };
     };
     auto makeMaterialFromTexture = [&](std::span<const uint8_t>) {
-        return Shaders::MetalicRoughnessMaterial {
-            .Color = glm::vec3(1.0f),
+        return Shaders::MetallicRoughnessMaterial {
+            .Color = glm::vec4(1.0f),
             .Roughness = 1.0f,
             .Metalness = 0.0f,
             .EmissiveIdx = Scene::GetDefaultTextureIndex(TextureType::Emisive),
@@ -678,7 +686,7 @@ void CreateRoughnessTestCubesScene(SceneBuilder &sceneBuilder)
             ),
             .NormalIdx = Scene::GetDefaultTextureIndex(TextureType::Normal),
             .RoughnessIdx = Scene::GetDefaultTextureIndex(TextureType::Roughness),
-            .MetalicIdx = Scene::GetDefaultTextureIndex(TextureType::Metalic),
+            .MetallicIdx = Scene::GetDefaultTextureIndex(TextureType::Metallic),
         };
     };
 
@@ -702,7 +710,7 @@ void CreateRoughnessTestCubesScene(SceneBuilder &sceneBuilder)
                 cubeMeshes[i * 6 + j][k] = MeshInfo {
                     .GeometryIndex = geometryIndices[k],
                     .MaterialIndex = whiteMaterials[i][j],
-                    .ShaderMaterialType = MaterialType::MetalicRoughness,
+                    .ShaderMaterialType = MaterialType::MetallicRoughness,
                     .Transform = glm::mat4(1.0f),
                 };
             }

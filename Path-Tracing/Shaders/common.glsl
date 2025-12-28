@@ -153,32 +153,3 @@ float rand(inout uint rngState)
 {
     return uintToFloat(xorshift(rngState));
 }
-
-vec4 getRotationToZAxis(vec3 v) {
-
-	// Handle special case when input is exact or near opposite of (0, 0, 1)
-	if (v.z < -0.99999f) return vec4(1.0f, 0.0f, 0.0f, 0.0f);
-
-	return normalize(vec4(v.y, -v.x, 0.0f, 1.0f + v.z));
-}
-
-// Returns the quaternion with inverted rotation
-vec4 invertRotation(vec4 q)
-{
-	return vec4(-q.x, -q.y, -q.z, q.w);
-}
-
-// Optimized point rotation using quaternion
-// Source: https://gamedev.stackexchange.com/questions/28395/rotating-vector3-by-a-quaternion
-vec3 rotatePoint(vec4 q, vec3 v) {
-	const vec3 qAxis = vec3(q.x, q.y, q.z);
-	return 2.0f * dot(qAxis, v) * qAxis + (q.w * q.w - dot(qAxis, qAxis)) * v + 2.0f * q.w * cross(qAxis, v);
-}
-
-float DifferenceOfProducts(float a, float b, float c, float d)
-{
-    float cd = c * d;
-    float differenceOfProducts = fma(a, b, -cd);
-    float error = fma(-c, d, cd);
-    return differenceOfProducts + error;
-}

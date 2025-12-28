@@ -31,6 +31,7 @@ public:
     void AddComponent(const std::filesystem::path &path);
     void AddComponents(std::span<const std::filesystem::path> paths);
     void AddSkybox2D(const std::filesystem::path &path);
+    void SetDxNormalTextures();
 
     [[nodiscard]] bool HasContent() const;
     void Load(SceneBuilder &sceneBuilder) override;
@@ -39,6 +40,7 @@ private:
     TextureMapping m_TextureMapping;
     std::vector<std::filesystem::path> m_ComponentPaths;
     std::optional<std::filesystem::path> m_SkyboxPath;
+    bool m_HasDxNormalTextures = false;
 };
 
 using SceneGroup = std::map<std::string, std::unique_ptr<SceneLoader>>;

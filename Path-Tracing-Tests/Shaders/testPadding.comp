@@ -11,7 +11,7 @@ layout (local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 
 BUFFER_POINTER(VoidBuffer, bool);
 BUFFER_POINTER(SpecularGlossinessMaterialBuffer, SpecularGlossinessMaterial);
-BUFFER_POINTER(MetalicRoughnessMaterialBuffer, MetalicRoughnessMaterial);
+BUFFER_POINTER(MetallicRoughnessMaterialBuffer, MetallicRoughnessMaterial);
 BUFFER_POINTER(DirectionalLightBuffer, DirectionalLight);
 BUFFER_POINTER(PointLightBuffer, PointLight);
 
@@ -28,10 +28,10 @@ void testSpecularGlossinessMaterial(uint index)
     outputBuffer.v[index] = inputBuffer.v[index];
 }
 
-void testMetalicRoughnessMaterial(uint index)
+void testMetallicRoughnessMaterial(uint index)
 {
-    MetalicRoughnessMaterialBuffer inputBuffer = MetalicRoughnessMaterialBuffer(pc_InputBuffer);
-    MetalicRoughnessMaterialBuffer outputBuffer = MetalicRoughnessMaterialBuffer(pc_OutputBuffer);
+    MetallicRoughnessMaterialBuffer inputBuffer = MetallicRoughnessMaterialBuffer(pc_InputBuffer);
+    MetallicRoughnessMaterialBuffer outputBuffer = MetallicRoughnessMaterialBuffer(pc_OutputBuffer);
 
     outputBuffer.v[index] = inputBuffer.v[index];
 }
@@ -61,8 +61,8 @@ void main()
     case PaddingTestModeSpecularGlossinessMaterial:
         testSpecularGlossinessMaterial(index);
         break;
-    case PaddingTestModeMetalicRoughnessMaterial:
-        testMetalicRoughnessMaterial(index);
+    case PaddingTestModeMetallicRoughnessMaterial:
+        testMetallicRoughnessMaterial(index);
         break;
     case PaddingTestModeDirectionalLight:
         testDirectionalLight(index);

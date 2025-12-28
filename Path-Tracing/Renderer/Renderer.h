@@ -24,7 +24,7 @@
 namespace PathTracing
 {
 
-using PathTracingPipelineConfig = PipelineConfig<1>;
+using PathTracingPipelineConfig = PipelineConfig<2>;
 using DebugRaytracingPipelineConfig = PipelineConfig<4>;
 using SkinningPipelineConfig = PipelineConfig<0>;
 using PostProcessPipelineConfig = PipelineConfig<0>;
@@ -73,16 +73,18 @@ private:
     {
         ShaderId Raygen = ShaderLibrary::g_UnusedShaderId;
         ShaderId Miss = ShaderLibrary::g_UnusedShaderId;
-        ShaderId MetalicRoughnessClosestHit = ShaderLibrary::g_UnusedShaderId;
+        ShaderId MetallicRoughnessClosestHit = ShaderLibrary::g_UnusedShaderId;
         ShaderId SpecularGlossinessClosestHit = ShaderLibrary::g_UnusedShaderId;
         ShaderId AnyHit = ShaderLibrary::g_UnusedShaderId;
         ShaderId OcclusionMiss = ShaderLibrary::g_UnusedShaderId;
+        ShaderId OcclusionAnyHit = ShaderLibrary::g_UnusedShaderId;
         ShaderId SkinningCompute = ShaderLibrary::g_UnusedShaderId;
         ShaderId PostProcessCompute = ShaderLibrary::g_UnusedShaderId;
 
         ShaderId DebugRaygen = ShaderLibrary::g_UnusedShaderId;
         ShaderId DebugMiss = ShaderLibrary::g_UnusedShaderId;
         ShaderId DebugClosestHit = ShaderLibrary::g_UnusedShaderId;
+        ShaderId DebugAnyHit = ShaderLibrary::g_UnusedShaderId;
     } s_Shaders;
 
     static struct ShaderConfig
@@ -90,7 +92,7 @@ private:
         uint32_t RaygenGroupIndex = -1;
         uint32_t PrimaryRayMissIndex = -1;
         uint32_t OcclusionRayMissIndex = -1;
-        uint32_t PrimaryRayMetalicRoughnessHitIndex = -1;
+        uint32_t PrimaryRayMetallicRoughnessHitIndex = -1;
         uint32_t PrimaryRaySpecularGlossinessHitIndex = -1;
         uint32_t OcclusionRayHitIndex = -1;
         uint32_t HitGroupCount = 2;
@@ -155,7 +157,7 @@ private:
         Buffer AnimatedIndexBuffer;
         
         Buffer TransformBuffer;
-        Buffer MetalicRoughnessMaterialBuffer;
+        Buffer MetallicRoughnessMaterialBuffer;
         Buffer SpecularGlossinessMaterialBuffer;
 
         Image Skybox;
@@ -195,6 +197,7 @@ private:
     );
     static uint32_t AddTexture(std::span<const uint8_t> data, TextureType type, std::string &&name);
 
+    static void UpdateScenePipelineConfig();
     static void UpdatePipelineSpecializations();
     static void CreatePipelines();
     static void UpdateShaderBindingTable();

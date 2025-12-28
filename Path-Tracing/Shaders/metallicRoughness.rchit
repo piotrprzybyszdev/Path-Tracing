@@ -7,6 +7,8 @@
 #include "common.glsl"
 #include "shading.glsl"
 
+layout(constant_id = HitFlagsConstantId) const uint s_HitFlags = HitFlagsNone;
+
 layout(binding = 3, set = 0) uniform sampler2D textures[];
 
 layout(binding = 4, set = 0) readonly buffer TransformBuffer {
@@ -17,8 +19,8 @@ layout(binding = 5, set = 0) readonly buffer GeometryBuffer {
     Geometry[] geometries;
 };
 
-layout(binding = 6, set = 0) readonly buffer MetalicRoughnessMaterialBuffer {
-    MetalicRoughnessMaterial[] metalicRoughnessMaterials;
+layout(binding = 6, set = 0) readonly buffer MetallicRoughnessMaterialBuffer {
+    MetallicRoughnessMaterial[] metallicRoughnessMaterials;
 };
 
 layout(binding = 7, set = 0) readonly buffer SpecularGlossinessMaterialBuffer {
@@ -131,25 +133,24 @@ vec3 SampleDiffuseBRDF(MaterialSample material, vec2 u)
     return SampleCosineHemisphere(u);
 }
 
-vec3 EvaluateGlossBRDF(MaterialSample material, vec3 V, vec3 L, out float pdf)
+vec3 EvaluateGlossyBSDF(MaterialSample material, vec3 V, vec3 L, out float pdf)
 {
     return EvaluateReflection(V, L, vec3(1.0f), material.Roughness * material.Roughness, pdf);
 }
 
-// TODO: Is this the correct name?
-vec3 SampleGlossBSDF(MaterialSample material, vec3 H, vec3 V)
+vec3 SampleGlossyBSDF(MaterialSample material, vec3 H, vec3 V)
 {
     return normalize(reflect(-V, H));
 }
 
-vec3 EvaluateMetalicBRDF(MaterialSample material, vec3 V, vec3 L, out float pdf)
+vec3 EvaluateMetallicBRDF(MaterialSample material, vec3 V, vec3 L, out float pdf)
 {
     const vec3 H = normalize(V + L);
     const vec3 F0 = mix(material.Color, vec3(1.0f), SchlickFresnel(dot(V, H)));
     return EvaluateReflection(V, L, F0, material.Roughness * material.Roughness, pdf);
 }
 
-vec3 SampleMetalicBRDF(MaterialSample material, vec3 H, vec3 V)
+vec3 SampleMetallicBRDF(MaterialSample material, vec3 H, vec3 V)
 {
     return normalize(reflect(-V, H));
 }
@@ -157,16 +158,16 @@ vec3 SampleMetalicBRDF(MaterialSample material, vec3 H, vec3 V)
 struct LobePdfs
 {
     float Diffuse;
-    float Gloss;
-    float Metalic;
+    float Glossy;
+    float Metallic;
 };
 
 LobePdfs SampleLobePdfs(MaterialSample material, float F)
 {
     LobePdfs pdfs;
     pdfs.Diffuse = (1.0f - material.Metalness) * (1.0f - F);
-    pdfs.Gloss = (1.0f - material.Metalness) * F;
-    pdfs.Metalic = material.Metalness;
+    pdfs.Glossy = (1.0f - material.Metalness) * F;
+    pdfs.Metallic = material.Metalness;
     return pdfs;
 }
 
@@ -184,11 +185,11 @@ vec3 EvaluateBSDF(MaterialSample material, vec3 V, vec3 L, out float outPdf)
     bsdf += EvaluateDiffuseBRDF(material, V, L, pdf) * pdfs.Diffuse;
     outPdf += pdf * pdfs.Diffuse;
 
-    bsdf += EvaluateGlossBRDF(material, V, L, pdf) * pdfs.Gloss;
-    outPdf += pdf * pdfs.Gloss;
+    bsdf += EvaluateGlossyBSDF(material, V, L, pdf) * pdfs.Glossy;
+    outPdf += pdf * pdfs.Glossy;
     
-    bsdf += EvaluateMetalicBRDF(material, V, L, pdf) * pdfs.Metalic;
-    outPdf += pdf * pdfs.Metalic;
+    bsdf += EvaluateMetallicBRDF(material, V, L, pdf) * pdfs.Metallic;
+    outPdf += pdf * pdfs.Metallic;
 
     return bsdf;
 }
@@ -202,12 +203,12 @@ BSDFSample SampleBSDF(MaterialSample material, vec3 V, inout uint rngState)
     LobePdfs pdfs = SampleLobePdfs(material, F);
     
     vec3 L;
-    if (rand(rngState) < pdfs.Metalic)
-        L = SampleMetalicBRDF(material, H, V);
+    if (rand(rngState) < pdfs.Metallic)
+        L = SampleMetallicBRDF(material, H, V);
     else
     {
-        if (rand(rngState) < pdfs.Gloss)
-            L = SampleGlossBSDF(material, H, V);
+        if (rand(rngState) < pdfs.Glossy)
+            L = SampleGlossyBSDF(material, H, V);
         else
             L = SampleDiffuseBRDF(material, vec2(rand(rngState), rand(rngState)));
     }
@@ -229,7 +230,6 @@ void main()
     const Vertex originalVertex = getInterpolatedVertex(vertices, indices, gl_PrimitiveID * 3, barycentricCoords);
     const Vertex vertex = transform(originalVertex, sbt.TransformIndex);
 
-    // TODO: Calculate the LOD properly
     const vec3 origin = gl_WorldRayOriginEXT;
     const vec3 viewDir = gl_WorldRayDirectionEXT;
 
@@ -255,10 +255,19 @@ void main()
 
     const vec4 derivatives = ComputeDerivatives(dpdx, dpdy, dpdu, dpdv);
 
-    MaterialSample material = SampleMaterial(sbt.MaterialId, vertex.TexCoords, derivatives, 0);
+    const bool flipYNormal = (s_HitFlags & HitFlagsDxNormalTextures) != HitFlagsNone;
+    MaterialSample material = SampleMaterial(sbt.MaterialId, vertex.TexCoords, derivatives, 0, flipYNormal);
+    
+    // Handling decals
+    if (payload.DirectLightPdf != -1.0f && gl_RayTmaxEXT > payload.DirectLightPdf)
+        material.Color = mix(material.Color, payload.LightDirection.rgb, payload.LightDistance);
+    
+    // Prevents firefly artifacts
     payload.MaxRoughness = max(material.Roughness, payload.MaxRoughness);
-    material.Roughness = max(payload.MaxRoughness, 0.01f);  // TODO: Consider adding a specular lobe
 
+    // Glossy lobe is numerically unstable on very low roughness
+    material.Roughness = max(payload.MaxRoughness, 0.01f);  // TODO: Consider adding a perfect specular lobe
+    
     const mat3 TBN = mat3(vertex.Tangent, vertex.Bitangent, vertex.Normal);
     const vec3 N = normalize(vertex.Normal + TBN * material.Normal);
     const vec3 V = normalize(inverse(TBN) * normalize(-gl_WorldRayDirectionEXT));

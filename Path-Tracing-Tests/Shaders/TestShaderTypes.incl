@@ -11,7 +11,7 @@ using namespace glm;
 #endif
 
 const uint PaddingTestModeSpecularGlossinessMaterial    = 0u;
-const uint PaddingTestModeMetalicRoughnessMaterial      = 1u;
+const uint PaddingTestModeMetallicRoughnessMaterial      = 1u;
 const uint PaddingTestModeDirectionalLight              = 2u;
 const uint PaddingTestModePointLight                    = 3u;
 const uint PaddingTestModeMax                           = 3u;

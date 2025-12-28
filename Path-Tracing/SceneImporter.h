@@ -8,15 +8,15 @@
 namespace PathTracing
 {
 
-struct MetalicRoughnessTextureMapping
+struct MetallicRoughnessTextureMapping
 {
     TextureType ColorTexture;
     TextureType NormalTexture;
     TextureType RoughnessTexture;
-    TextureType MetalicTexture;
+    TextureType MetallicTexture;
 };
 
-using TextureMapping = std::variant<std::monostate, MetalicRoughnessTextureMapping>;
+using TextureMapping = std::variant<std::monostate, MetallicRoughnessTextureMapping>;
 
 class SceneImporter
 {

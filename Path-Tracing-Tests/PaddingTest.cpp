@@ -35,21 +35,21 @@ TEST(PaddingTest, SpecularGlossinessMaterial)
     }
 }
 
-TEST(PaddingTest, MetalicRoughnessMaterial)
+TEST(PaddingTest, MetallicRoughnessMaterial)
 {
-    using Input = PathTracing::Shaders::MetalicRoughnessMaterial;
+    using Input = PathTracing::Shaders::MetallicRoughnessMaterial;
     using Output = Input;
 
     std::array<Input, 2> input = {
         Input { .EmissiveColor = glm::vec3(1.1f, 2.2f, 3.3f), .EmissiveIntensity = 4.4f, 
-                .Color = glm::vec3(1.0f, 2.0f, 3.0f), .Roughness = 4.0f, .Metalness = 5.0f,
-                .EmissiveIdx = 10, .ColorIdx = 1, .NormalIdx = 2, .RoughnessIdx = 3, .MetalicIdx = 4 },
+                .Color = glm::vec4(1.0f, 2.0f, 3.0f, 12.0f), .Roughness = 4.0f, .Metalness = 5.0f,
+                .EmissiveIdx = 10, .ColorIdx = 1, .NormalIdx = 2, .RoughnessIdx = 3, .MetallicIdx = 4 },
         Input { .EmissiveColor = glm::vec3(5.5f, 6.6f, 7.7f), .EmissiveIntensity = 8.8f, 
-                .Color = glm::vec3(5.0f, 6.0f, 7.0f), .Roughness = 8.0f, .Metalness = 9.0f,
-                .EmissiveIdx = 9, .ColorIdx = 5, .NormalIdx = 6, .RoughnessIdx = 7, .MetalicIdx = 8 },
+                .Color = glm::vec4(5.0f, 6.0f, 7.0f, 11.0f), .Roughness = 8.0f, .Metalness = 9.0f,
+                .EmissiveIdx = 9, .ColorIdx = 5, .NormalIdx = 6, .RoughnessIdx = 7, .MetallicIdx = 8 },
     };
 
-    PaddingTestPipelineConfig config = { Shaders::PaddingTestModeMetalicRoughnessMaterial };
+    PaddingTestPipelineConfig config = { Shaders::PaddingTestModeMetallicRoughnessMaterial };
 
     TestRenderer::WriteInput<Input>(input);
     TestRenderer::ExecutePipeline("testPadding.comp", config, input.size());
@@ -64,7 +64,7 @@ TEST(PaddingTest, MetalicRoughnessMaterial)
         EXPECT_EQ(inputElement.Metalness, outputElement.Metalness);
         EXPECT_EQ(inputElement.NormalIdx, outputElement.NormalIdx);
         EXPECT_EQ(inputElement.RoughnessIdx, outputElement.RoughnessIdx);
-        EXPECT_EQ(inputElement.MetalicIdx, outputElement.MetalicIdx);
+        EXPECT_EQ(inputElement.MetallicIdx, outputElement.MetallicIdx);
     }
 }
 

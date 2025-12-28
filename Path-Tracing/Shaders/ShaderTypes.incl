@@ -18,7 +18,7 @@ const uint MaxUniformBufferSize                     = 64 * 1024u;
 const uint DefaultColorTextureIndex                 = 0;
 const uint DefaultNormalTextureIndex                = 1;
 const uint DefaultRoughnessTextureIndex             = 2;
-const uint DefaultMetalicTextureIndex               = 3;
+const uint DefaultMetallicTextureIndex               = 3;
 const uint DefaultEmissiveTextureIndex              = 4;
 const uint PlaceholderTextureIndex                  = 5;
 const uint SceneTextureOffset                       = 6;
@@ -55,20 +55,19 @@ struct AnimatedVertex
     float BoneWeights[MaxBonesPerVertex];
 };
 
-struct MetalicRoughnessMaterial
+struct MetallicRoughnessMaterial
 {
     vec3 EmissiveColor;
     float EmissiveIntensity;
-    vec3 Color;
+    vec4 Color;
     float Roughness;
     float Metalness;
     float pad0;
-    float pad1;
     uint EmissiveIdx;
     uint ColorIdx;
     uint NormalIdx;
     uint RoughnessIdx;
-    uint MetalicIdx;
+    uint MetallicIdx;
 };
 
 struct SpecularGlossinessMaterial
@@ -104,7 +103,7 @@ struct PointLight
 const uint DirectionalLightStructAlignment  = 16u;
 const uint PointLightStructAlignment        = 16u;
 
-const uint MaterialTypeMetalicRoughness     = 0u;
+const uint MaterialTypeMetallicRoughness     = 0u;
 const uint MaterialTypeSpecularGlossiness   = 1u;
 
 

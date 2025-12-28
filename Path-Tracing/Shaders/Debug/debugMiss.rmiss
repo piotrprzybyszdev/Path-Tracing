@@ -3,7 +3,6 @@
 #extension GL_EXT_buffer_reference : require
 
 #include "ShaderRendererTypes.incl"
-#include "DebugShaderRendererTypes.incl"
 #include "DebugShaderTypes.incl"
 
 layout(constant_id = DebugMissFlagsConstantId) const uint s_MissFlags = MissFlagsNone;
@@ -27,12 +26,12 @@ void main()
 
         const vec2 texCoords = vec2(longitude / 2.0f, latitude) / PI + 0.5f;
 
-        payload.hitValue = texture(skybox2D, texCoords).xyz;
+        payload.Color = vec4(texture(skybox2D, texCoords).xyz, 1.0f);
     }
     else if ((s_MissFlags & MissFlagsSkyboxCube) != MissFlagsNone)
     {
-        payload.hitValue = texture(skyboxCube, gl_WorldRayDirectionEXT).xyz;
+        payload.Color = vec4(texture(skyboxCube, gl_WorldRayDirectionEXT).xyz, 1.0f);
     }
     else
-        payload.hitValue = vec3(0.2f, 0.2f, 0.2f);
+        payload.Color = vec4(0.2f, 0.2f, 0.2f, 1.0f);
 }

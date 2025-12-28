@@ -29,6 +29,11 @@ void CombinedSceneLoader::AddSkybox2D(const std::filesystem::path &path)
     m_SkyboxPath = path;
 }
 
+void CombinedSceneLoader::SetDxNormalTextures()
+{
+    m_HasDxNormalTextures = true;
+}
+
 bool CombinedSceneLoader::HasContent() const
 {
     return m_SkyboxPath.has_value() || !m_ComponentPaths.empty();
@@ -39,11 +44,15 @@ void CombinedSceneLoader::Load(SceneBuilder &sceneBuilder)
     for (const auto &path : m_ComponentPaths)
         SceneImporter::AddFile(sceneBuilder, path, m_TextureMapping);
 
-    if (!m_SkyboxPath.has_value())
-        return;
+    if (m_SkyboxPath.has_value())
+    {
+        const TextureInfo info =
+            TextureImporter::GetTextureInfo(m_SkyboxPath.value(), TextureType::Skybox, "Skybox");
+        sceneBuilder.SetSkybox(Skybox2D(info));
+    }
 
-    TextureInfo info = TextureImporter::GetTextureInfo(m_SkyboxPath.value(), TextureType::Skybox, "Skybox");
-    sceneBuilder.SetSkybox(Skybox2D(info));
+    if (m_HasDxNormalTextures)
+        sceneBuilder.SetDxNormalTextures();
 }
 
 std::map<std::string, SceneGroup> SceneManager::s_SceneGroups = {};

@@ -34,14 +34,24 @@ const uint HitGroupFlagsNone                        = 0x00u;
 const uint HitGroupFlagsDisableColorTexture         = 0x01u;
 const uint HitGroupFlagsDisableNormalTexture        = 0x02u;
 const uint HitGroupFlagsDisableRoughnessTexture     = 0x04u;
-const uint HitGroupFlagsDisableMetalicTexture       = 0x08u;
+const uint HitGroupFlagsDisableMetallicTexture       = 0x08u;
 const uint HitGroupFlagsDisableMipMaps              = 0x10u;
 const uint HitGroupFlagsDisableShadows              = 0x20u;
-const uint HitGroupFlagsAll                         = 0x3fu;
+const uint HitGroupFlagsDxNormalTextures			= 0x40u;
+const uint HitGroupFlagsAll                         = 0x7fu;
 
 const uint MaxDebugRecursionDepth					= 2u;
 const uint MaxDebugPayloadSize						= 48u;
 const uint MaxDebugHitAttributeSize					= 12u;
+
+struct DebugPayload
+{
+    vec4 Color;
+    vec3 RxDirection;
+    float DecalDist;
+    vec3 RyDirection;
+    float pad0;
+};
 
 
 #ifndef GL_core_profile
