@@ -96,6 +96,9 @@ void Renderer::Init(const Swapchain *swapchain)
         vk::SamplerCreateInfo createInfo(vk::SamplerCreateFlags(), vk::Filter::eLinear, vk::Filter::eLinear);
         createInfo.setMipmapMode(vk::SamplerMipmapMode::eLinear);
         createInfo.setMaxLod(vk::LodClampNone);
+        createInfo.setAnisotropyEnable(vk::True);
+        float maxSamplerAnisotropy = DeviceContext::GetPhysical().getProperties().limits.maxSamplerAnisotropy;
+        createInfo.setMaxAnisotropy(maxSamplerAnisotropy);
         s_TextureSampler = DeviceContext::GetLogical().createSampler(createInfo);
         Utils::SetDebugName(s_TextureSampler, "Texture Sampler");
     }

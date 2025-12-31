@@ -104,6 +104,7 @@ void DeviceContext::Init(vk::Instance instance, vk::SurfaceKHR surface)
     GetQueueCreateInfos(priorities, queueCreateInfos);
 
     vk::PhysicalDeviceFeatures2 features;
+    features.features.setSamplerAnisotropy(vk::True);
 
     vk::PhysicalDeviceSynchronization2Features synchronizationFeatures;
     synchronizationFeatures.setSynchronization2(vk::True);
@@ -239,6 +240,13 @@ bool DeviceContext::CheckSuitable(
             logger::warn("{} does not support Extension {}", deviceName, extension);
             return false;
         }
+    }
+
+    vk::PhysicalDeviceFeatures features = device.getFeatures();
+    if (!features.samplerAnisotropy)
+    {
+        logger::warn("{} does not support Anisotropic Filtering", deviceName);
+        return false;
     }
 
     logger::info("{} is a suitable device", deviceName);
