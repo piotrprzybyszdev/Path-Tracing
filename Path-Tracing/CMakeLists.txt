@@ -20,6 +20,7 @@ source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR}/Shaders PREFIX Shaders/Headers FIL
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR}/Shaders PREFIX Shaders/Sources FILES ${SHADER_SOURCE_FILES})
 
 target_include_directories(Path-Tracing PRIVATE ${CMAKE_SOURCE_DIR}/vendor/gli)
+target_include_directories(Path-Tracing PRIVATE ${CMAKE_SOURCE_DIR}/vendor/subprocess)
 target_include_directories(Path-Tracing PRIVATE ${CMAKE_SOURCE_DIR}/Path-Tracing)
 target_link_libraries(Path-Tracing glfw imgui glm spdlog stb vma assimp nfd vulkan shaderc_combined spirv-cross-core)
 

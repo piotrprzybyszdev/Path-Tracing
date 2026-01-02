@@ -1,8 +1,12 @@
 #include <vulkan/vulkan_format_traits.hpp>
 #include <stb_image_write.h>
+#include <subprocess.h>
 
+#include <limits>
 #include <utility>
 #include <vector>
+
+#include "Core/Core.h"
 
 #include "DeviceContext.h"
 #include "OutputSaver.h"
@@ -22,12 +26,25 @@ OutputSaver::OutputSaver()
     m_CommandPool = DeviceContext::GetLogical().createCommandPool(createInfo);
     vk::CommandBufferAllocateInfo allocateInfo(m_CommandPool, vk::CommandBufferLevel::ePrimary, 1);
     m_CommandBuffer = DeviceContext::GetLogical().allocateCommandBuffers(allocateInfo)[0];
+
+    const char *cmd[] = { "ffmpeg", nullptr };
+    subprocess_s test;
+    int result = subprocess_create(cmd, 0, &test);
+    m_HasFFmpeg = result == 0;
+
+    if (!m_HasFFmpeg)
+        logger::warn("FFmpeg not found - video output will be disabled");
+
+    if (result == 0)
+    {
+        result = subprocess_destroy(&test);
+        assert(result == 0);
+    }
 }
 
 OutputSaver::~OutputSaver()
 {
-    if (m_Thread.joinable())
-        m_Thread.join();
+    EndOutput();
 
     DeviceContext::GetLogical().destroyCommandPool(m_CommandPool);
     DeviceContext::GetLogical().destroyFence(m_Fence);
@@ -39,10 +56,14 @@ vk::Semaphore OutputSaver::GetSignalSemaphore() const
     return m_Semaphore;
 }
 
+bool OutputSaver::CanOutputVideo() const
+{
+    return m_HasFFmpeg;
+}
+
 vk::Image OutputSaver::RegisterOutput(const OutputInfo &info)
 {
-    if (m_Thread.joinable())
-        m_Thread.join();
+    EndOutput();
 
     m_Image = ImageBuilder()
                   .SetUsageFlags(
@@ -56,6 +77,26 @@ vk::Image OutputSaver::RegisterOutput(const OutputInfo &info)
                    .SetUsageFlags(vk::BufferUsageFlagBits::eTransferDst)
                    .CreateHostBuffer(m_Image.GetMipSize(0), "Output Read Buffer");
 
+    if (info.Format == OutputFormat::Mp4)
+    {
+        const std::string framerate = std::to_string(info.Framerate);
+        const std::string size = std::format("{}x{}", info.Extent.width, info.Extent.height);
+        const std::string path = info.Path.string();
+        const char *cmd[] = {
+            "ffmpeg", "-r",       framerate.c_str(), "-f",       "rawvideo", "-pix_fmt",
+            "rgba",   "-s",       size.c_str(),      "-i",       "-",        "-y",
+            "-an",    "-vcodec",  "libx264",         "-preset",  "veryslow", "-crf",
+            "17",     "-pix_fmt", "yuv420p",         "-threads", "0",        path.c_str(),
+            nullptr,
+        };
+
+        m_FFmpegSubprocess = std::make_unique<subprocess_s>();
+        int result = subprocess_create(cmd, 0, m_FFmpegSubprocess.get());
+        assert(result == 0);
+        fclose(subprocess_stdout(m_FFmpegSubprocess.get()));
+        fclose(subprocess_stderr(m_FFmpegSubprocess.get()));
+    }
+
     m_Info = info;
 
     return m_Image.GetHandle();
@@ -63,6 +104,9 @@ vk::Image OutputSaver::RegisterOutput(const OutputInfo &info)
 
 void OutputSaver::StartOutputWait()
 {
+    if (m_Thread.joinable())
+        m_Thread.join();
+
     m_CommandBuffer.reset();
     m_CommandBuffer.begin(vk::CommandBufferBeginInfo());
 
@@ -105,10 +149,52 @@ void OutputSaver::StartOutputWait()
         bool success = WriteImage(m_Info, data);
 
         if (success)
-            logger::info(std::format("Successfully saved file {}", m_Info.Path.string()));
+            logger::info(std::format("Successfully encoded frame to file {}", m_Info.Path.string()));
         else
-            logger::error(std::format("Could not save output file {}", m_Info.Path.string()));
+            logger::error(std::format("Could not encode frame to file {}", m_Info.Path.string()));
     });
+}
+
+void OutputSaver::EndOutput()
+{
+    if (m_Thread.joinable())
+        m_Thread.join();
+
+    if (m_FFmpegSubprocess != nullptr)
+    {
+        logger::info("Flushing output file {}", m_Info.Path.string());
+        
+        int result = subprocess_join(m_FFmpegSubprocess.get(), nullptr);
+        assert(result == 0);
+
+        result = subprocess_destroy(m_FFmpegSubprocess.get());
+        assert(result == 0);
+
+        m_FFmpegSubprocess.reset();
+        logger::info("Done flushing output file {}", m_Info.Path.string());
+    }
+}
+
+void OutputSaver::CancelOutput()
+{
+    if (m_Thread.joinable())
+        m_Thread.join();
+
+    if (m_FFmpegSubprocess != nullptr)
+    {
+        int result = subprocess_terminate(m_FFmpegSubprocess.get());
+        assert(result == 0);
+
+        result = subprocess_join(m_FFmpegSubprocess.get(), nullptr);
+        assert(result == 0);
+
+        result = subprocess_destroy(m_FFmpegSubprocess.get());
+        assert(result == 0);
+
+        m_FFmpegSubprocess.reset();
+    }
+
+    std::filesystem::remove(m_Info.Path);
 }
 
 bool OutputSaver::WriteImage(const OutputInfo &info, std::span<const std::byte> data)
@@ -133,6 +219,9 @@ bool OutputSaver::WriteImage(const OutputInfo &info, std::span<const std::byte> 
             reinterpret_cast<const float *>(data.data())
         );
         break;
+    case OutputFormat::Mp4:
+        ret = fwrite(data.data(), data.size(), 1, subprocess_stdin(m_FFmpegSubprocess.get()));
+        break;
     default:
         throw error("Unsupported output format");
     }
@@ -150,6 +239,8 @@ vk::Format OutputSaver::SelectImageFormat(OutputFormat format)
         return vk::Format::eR8G8B8A8Srgb;
     case OutputFormat::Hdr:
         return vk::Format::eR32G32B32A32Sfloat;
+    case OutputFormat::Mp4:
+        return vk::Format::eR8G8B8A8Srgb;
     default:
         throw error("Unsupported output format");
     }

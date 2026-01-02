@@ -28,3 +28,6 @@
 [submodule "vendor/gli"]
 	path = vendor/gli
 	url = https://github.com/g-truc/gli
+[submodule "vendor/subprocess"]
+	path = vendor/subprocess
+	url = https://github.com/sheredom/subprocess.h.git

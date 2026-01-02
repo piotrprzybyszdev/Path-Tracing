@@ -153,6 +153,10 @@ void UserInterface::OnKeyRelease(Key key)
         break;
     case Key::P:
         SceneManager::GetActiveScene()->ToggleAnimationPause();
+        break;
+    case Key::Esc:
+        Window::SetMode(WindowMode::Windowed);
+        break;
     }
 }
 
@@ -436,8 +440,11 @@ private:
     int m_MaxSampleCount = 1000;
     int m_MaxBounceCount = 4;
     int m_Extent[2] = { 1280, 720 };
+    int m_FrameCount = 60;
+    int m_Framerate = 60;
     int m_Time = 5;
     float m_Exposure = 0.0f;
+    bool m_IsImageOutput = true;
     const char *m_TimeUnit = s_TimeUnitMinutes;
     const char *m_OutputFormat = s_OutputFormatPng;
 
@@ -450,11 +457,13 @@ private:
     static inline const char *s_OutputFormatJpg = "jpg";
     static inline const char *s_OutputFormatTga = "tga";
     static inline const char *s_OutputFormatHdr = "hdr";
+    static inline const char *s_OutputFormatMp4 = "mp4";
 
     static inline const nfdfilteritem_t s_PngItemFilter = { .name = "Png Image (.png)", .spec = "png" };
     static inline const nfdfilteritem_t s_JpgItemFilter = { .name = "Jpg Image (.jpg)", .spec = "jpg,jpeg" };
     static inline const nfdfilteritem_t s_TgaItemFilter = { .name = "Tga Image (.tga)", .spec = "tga" };
     static inline const nfdfilteritem_t s_HdrItemFilter = { .name = "Hdr Image (.hdr)", .spec = "hdr" };
+    static inline const nfdfilteritem_t s_Mp4ItemFilter = { .name = "Mp4 Video (.mp4)", .spec = "mp4" };
 
 private:
     void SaveFileDialog();
@@ -462,6 +471,7 @@ private:
     std::chrono::seconds GetTime();
     OutputFormat GetOutputFormat();
     const nfdfilteritem_t *GetFileFilter();
+    bool IsRenderDisalbed(const char *&reason);
 };
 
 void OfflineRenderContent::Render()
@@ -473,7 +483,21 @@ void OfflineRenderContent::Render()
     ImGui::Separator();
     ImGui::Dummy({ 10, 0 });
     ImGui::SameLine();
-    ImGui::Button("Image");  // TODO: Add Video
+
+    if (!Renderer::CanRenderVideo())
+        ImGui::BeginDisabled();
+    if (ImGui::Button(m_IsImageOutput ? "Image" : "Video"))
+    {
+        m_IsImageOutput = !m_IsImageOutput;
+        m_OutputFormat = m_IsImageOutput ? s_OutputFormatPng : s_OutputFormatMp4;
+    }
+    if (!Renderer::CanRenderVideo())
+    {
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("FFmpeg wasn't found - video output is disabled");
+        ImGui::EndDisabled();
+    }
+
     ImGui::SameLine();
     ImGui::Dummy({ 2, 0 });
     ImGui::SameLine();
@@ -482,14 +506,22 @@ void OfflineRenderContent::Render()
     ImGui::SetNextItemWidth(60);
     if (ImGui::BeginCombo("##OuptutFormat", m_OutputFormat, ImGuiComboFlags_NoArrowButton))
     {
-        if (ImGui::Selectable(s_OutputFormatPng, m_OutputFormat == s_OutputFormatPng))
-            m_OutputFormat = s_OutputFormatPng;
-        if (ImGui::Selectable(s_OutputFormatJpg, m_OutputFormat == s_OutputFormatJpg))
-            m_OutputFormat = s_OutputFormatJpg;
-        if (ImGui::Selectable(s_OutputFormatTga, m_OutputFormat == s_OutputFormatTga))
-            m_OutputFormat = s_OutputFormatTga;
-        if (ImGui::Selectable(s_OutputFormatHdr, m_OutputFormat == s_OutputFormatHdr))
-            m_OutputFormat = s_OutputFormatHdr;
+        if (m_IsImageOutput)
+        {
+            if (ImGui::Selectable(s_OutputFormatPng, m_OutputFormat == s_OutputFormatPng))
+                m_OutputFormat = s_OutputFormatPng;
+            if (ImGui::Selectable(s_OutputFormatJpg, m_OutputFormat == s_OutputFormatJpg))
+                m_OutputFormat = s_OutputFormatJpg;
+            if (ImGui::Selectable(s_OutputFormatTga, m_OutputFormat == s_OutputFormatTga))
+                m_OutputFormat = s_OutputFormatTga;
+            if (ImGui::Selectable(s_OutputFormatHdr, m_OutputFormat == s_OutputFormatHdr))
+                m_OutputFormat = s_OutputFormatHdr;
+        }
+        else
+        {
+            if (ImGui::Selectable(s_OutputFormatMp4, m_OutputFormat == s_OutputFormatMp4))
+                m_OutputFormat = s_OutputFormatMp4;
+        }
         ImGui::EndCombo();
     }
     ImGui::SameLine();
@@ -541,6 +573,23 @@ void OfflineRenderContent::Render()
             ImGui::EndCombo();
         }
 
+        if (!m_IsImageOutput)
+        {
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::Text("Framerate");
+            ImGui::TableNextColumn();
+            ImGui::SetNextItemWidth(-1);
+            ImGui::InputInt("##Framerate", &m_Framerate, 0);
+
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::Text("Frame Count");
+            ImGui::TableNextColumn();
+            ImGui::SetNextItemWidth(-1);
+            ImGui::InputInt("##FrameCount", &m_FrameCount, 0);
+        }
+
         ImGui::TableNextRow();
         ImGui::TableNextColumn();
         ImGui::Text("Max Bounce Count");
@@ -567,7 +616,10 @@ void OfflineRenderContent::Render()
     AlignItemRight(size.x, buttonSize.x, margin);
     AlignItemBottom(size.y, buttonSize.y, margin);
 
-    if (!m_OutputPath.has_value())
+    const char *reason;
+    const bool isRenderDisabled = IsRenderDisalbed(reason);
+
+    if (isRenderDisabled)
         ImGui::BeginDisabled();
     if (ImGui::Button("Render", buttonSize))
     {
@@ -576,16 +628,21 @@ void OfflineRenderContent::Render()
         Renderer::SetSettings(Renderer::PostProcessSettings(std::pow(2.0f, m_Exposure)));
         Renderer::SetSettings(
             Renderer::RenderSettings(
-                OutputInfo(m_OutputPath.value(), vk::Extent2D(m_Extent[0], m_Extent[1]), GetOutputFormat()),
-                m_MaxSampleCount, GetTime()
+                OutputInfo(
+                    m_OutputPath.value(), vk::Extent2D(m_Extent[0], m_Extent[1]), m_Framerate,
+                    GetOutputFormat()
+                ),
+                m_IsImageOutput ? 1 : m_FrameCount, m_MaxSampleCount, GetTime()
             )
         );
         s_ShowingOfflineRender = false;
     }
-    if (!m_OutputPath.has_value())
+    if (isRenderDisabled)
+    {
         ImGui::EndDisabled();
-    if (!m_OutputPath.has_value() && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-        ImGui::SetTooltip("Select Output File Path");
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip(reason);
+    }
 }
 
 void OfflineRenderContent::SaveFileDialog()
@@ -648,6 +705,8 @@ OutputFormat OfflineRenderContent::GetOutputFormat()
         return OutputFormat::Tga;
     if (m_OutputFormat == s_OutputFormatHdr)
         return OutputFormat::Hdr;
+    if (m_OutputFormat == s_OutputFormatMp4)
+        return OutputFormat::Mp4;
 
     throw error("Unsupported output format");
 }
@@ -662,8 +721,41 @@ const nfdfilteritem_t *OfflineRenderContent::GetFileFilter()
         return &s_TgaItemFilter;
     if (m_OutputFormat == s_OutputFormatHdr)
         return &s_HdrItemFilter;
+    if (m_OutputFormat == s_OutputFormatMp4)
+        return &s_Mp4ItemFilter;
 
     throw error("Unsupported output format");
+}
+
+bool OfflineRenderContent::IsRenderDisalbed(const char *&reason)
+{
+    if (!m_OutputPath.has_value())
+    {
+        reason = "Select output file path";
+        return true;
+    }
+
+    if (s_DebuggingEnabled)
+    {
+        reason = "Disable debug mode to begin render";
+        return true;
+    }
+
+    auto task = Application::GetBackgroundTaskState(BackgroundTaskType::TextureUpload);
+    if (task.IsRunning())
+    {
+        reason = "Texture upload is still in progress";
+        return true;
+    }
+
+    task = Application::GetBackgroundTaskState(BackgroundTaskType::SceneImport);
+    if (task.IsRunning())
+    {
+        reason = "Scene import is still in progress";
+        return true;
+    }
+
+    return false;
 }
 
 class SettingsContent : public Content
@@ -756,6 +848,17 @@ void SettingsTab::RenderContent()
 
     ImVec2 size = ImGui::GetWindowSize();
     ImVec2 buttonSize(100, 25);
+
+    AlignItemLeft(15);
+    AlignItemBottom(size.y, buttonSize.y, 15);
+    if (Application::IsRendering())
+    {
+        ImGui::EndDisabled();
+        if (ImGui::Button("Cancel Render", buttonSize))
+            Renderer::CancelRendering();
+        ImGui::BeginDisabled();
+    }
+
     AlignItemRight(size.x, buttonSize.x, 15);
     AlignItemBottom(size.y, buttonSize.y, 15);
     
@@ -1002,7 +1105,7 @@ protected:
 void AboutTab::RenderContent()
 {
     ImGui::Text("Path-Tracing");
-    ImGui::Text("Piotr Przybysz, Michal Popkowicz, 2025");
+    ImGui::Text("Piotr Przybysz, Michal Popkowicz, 2026");
 }
 
 struct UIComponents

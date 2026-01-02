@@ -10,6 +10,8 @@
 namespace PathTracing
 {
 
+bool InputCamera::s_InputDisabled = false;
+
 Camera::Camera(
     float verticalFOV, float nearClip, float farClip, glm::vec3 position, glm::vec3 direction, glm::vec3 up
 )
@@ -79,6 +81,9 @@ InputCamera::InputCamera(
 
 bool InputCamera::OnUpdate(float timeStep)
 {
+    if (s_InputDisabled)
+        return false;
+
     glm::vec3 prevPosition = m_Position;
     glm::vec3 prevDirection = m_Direction;
 
@@ -136,6 +141,16 @@ bool InputCamera::OnUpdate(float timeStep)
     }
 
     return false;
+}
+
+void InputCamera::DisableInput()
+{
+    s_InputDisabled = true;
+}
+
+void InputCamera::EnableInput()
+{
+    s_InputDisabled = false;
 }
 
 AnimatedCamera::AnimatedCamera(

@@ -6,7 +6,9 @@
 
 #include <ranges>
 #include <string_view>
+#include <thread>
 
+#include "Core/Camera.h"
 #include "Core/Config.h"
 #include "Core/Core.h"
 #include "Core/Input.h"
@@ -97,6 +99,7 @@ vk::SurfaceKHR Application::s_Surface = nullptr;
 std::unique_ptr<Swapchain> Application::s_Swapchain = nullptr;
 
 Application::State Application::s_State = Application::State::Shutdown;
+bool Application::s_AdvanceFrameOfflineRendering = false;
 
 Config Application::s_Config = {};
 std::array<BackgroundTask, Application::g_BackgroundTasks.size()> Application::s_BackgroundTasks = {};
@@ -286,7 +289,7 @@ void Application::Run()
         const vk::Extent2D windowSize = Window::GetSize();
         if (windowSize != previousSize)
         {
-            logger::info("Resize event for: {}x{}", windowSize.width, windowSize.height);
+            logger::debug("Resize event for: {}x{}", windowSize.width, windowSize.height);
 
             DeviceContext::GetGraphicsQueue().WaitIdle();
             s_Swapchain->Recreate(windowSize);
@@ -316,7 +319,14 @@ void Application::Run()
                 UserInterface::OnUpdate(timeStep);
 
                 const auto scene = SceneManager::GetActiveScene();
-                const bool updated = IsRendering() ? false : scene->Update(timeStep);
+                
+                bool updated = false;
+                if (!IsRendering())
+                    updated = scene->Update(timeStep);
+                if (IsRendering() && s_AdvanceFrameOfflineRendering)
+                    updated = scene->Update(1.0f / Renderer::GetRenderFramerate());
+                s_AdvanceFrameOfflineRendering = false;
+
                 Renderer::UpdateSceneData(scene, updated);
 
                 Renderer::OnUpdate(timeStep);
@@ -396,12 +406,23 @@ void Application::BeginOfflineRendering()
 {
     assert(s_State == State::Running);
     s_State = State::Rendering;
+    const auto scene = SceneManager::GetActiveScene();
+    if (scene->IsAnimationPaused())
+        scene->ToggleAnimationPause();
+    InputCamera::DisableInput();
 }
 
 void Application::EndOfflineRendering()
 {
     assert(s_State == State::Rendering);
     s_State = State::Running;
+    InputCamera::EnableInput();
+}
+
+void Application::AdvanceFrameOfflineRendering()
+{
+    assert(s_State == State::Rendering);
+    s_AdvanceFrameOfflineRendering = true;
 }
 
 bool Application::IsRendering()

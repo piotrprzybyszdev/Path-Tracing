@@ -190,9 +190,10 @@ public:
 
     [[nodiscard]] std::span<const glm::mat3x4> GetBoneTransforms() const;
 
-    [[nodiscard]] bool HasDxNormalTextures() const;
     [[nodiscard]] bool HasAnimations() const;
     [[nodiscard]] bool HasSkeletalAnimations() const;
+    [[nodiscard]] bool IsAnimationPaused() const;
+    [[nodiscard]] bool HasDxNormalTextures() const;
 
     [[nodiscard]] std::span<const Shaders::PointLight> GetPointLights() const;
     [[nodiscard]] const Shaders::DirectionalLight &GetDirectionalLight() const;

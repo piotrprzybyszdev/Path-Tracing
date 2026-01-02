@@ -23,6 +23,7 @@ Renderer::PathTracingSettings Renderer::s_PathTracingSettings = {};
 Renderer::PostProcessSettings Renderer::s_PostProcessSettings = {};
 Renderer::RenderSettings Renderer::s_RenderSettings = {};
 float Renderer::s_RenderTimeSeconds = 0.0f;
+uint32_t Renderer::s_RenderCompletedFrames = 0;
 
 const Swapchain *Renderer::s_Swapchain = nullptr;
 
@@ -181,6 +182,16 @@ uint32_t Renderer::GetPreferredImageCount()
         s_Swapchain->GetPresentMode() == vk::PresentModeKHR::eMailbox)
         return 3;
     return 2;
+}
+
+uint32_t Renderer::GetRenderFramerate()
+{
+    return s_RenderSettings.OutputInfo.Framerate;
+}
+
+bool Renderer::CanRenderVideo()
+{
+    return s_OutputSaver->CanOutputVideo();
 }
 
 void Renderer::UpdateSceneData(const std::shared_ptr<Scene> &scene, bool updated)
@@ -665,6 +676,21 @@ void Renderer::ResetAccumulationImage()
         res.TotalSamples = 0;
 }
 
+void Renderer::CancelRendering()
+{
+    ResetAccumulationImage();
+    s_RenderCompletedFrames = 0;
+    s_OutputSaver->CancelOutput();
+
+    Application::EndOfflineRendering();
+    Application::SetBackgroundTaskDone(BackgroundTaskType::Rendering);
+ 
+    logger::info("Render cancelled");
+    
+    DeviceContext::GetGraphicsQueue().WaitIdle();
+    OnResize(s_Swapchain->GetExtent());
+}
+
 void Renderer::SetSettings(const PathTracingSettings &settings)
 {
     s_PathTracingSettings = settings;
@@ -683,7 +709,9 @@ void Renderer::SetSettings(const RenderSettings &settings)
     OnResize(settings.OutputInfo.Extent);
     s_OutputImage = s_OutputSaver->RegisterOutput(s_RenderSettings.OutputInfo);
     Application::ResetBackgroundTask(BackgroundTaskType::Rendering);
-    Application::AddBackgroundTask(BackgroundTaskType::Rendering, settings.MaxSampleCount);
+    Application::AddBackgroundTask(
+        BackgroundTaskType::Rendering, settings.MaxSampleCount * settings.FrameCount
+    );
 }
 
 void Renderer::RecordSkinningCommands(const RenderingResources &resources)
@@ -1175,7 +1203,7 @@ void Renderer::Render()
         {
             saveOutput |= res.TotalSamples >= s_RenderSettings.MaxSampleCount;
             saveOutput |= s_RenderTimeSeconds >= s_RenderSettings.MaxTime.count();
-            Application::IncrementBackgroundTaskDone(BackgroundTaskType::Rendering);
+            Application::IncrementBackgroundTaskDone(BackgroundTaskType::Rendering, s_RefreshRate.SamplesPerFrame);
         }
     }
     else
@@ -1255,11 +1283,24 @@ void Renderer::Render()
     if (saveOutput)
     {
         s_OutputSaver->StartOutputWait();
-        Application::EndOfflineRendering();
+        s_RenderTimeSeconds = 0.0f;
+        s_RenderCompletedFrames++;
+        Application::AdvanceFrameOfflineRendering();
+        Application::IncrementBackgroundTaskDone(
+            BackgroundTaskType::Rendering, s_RenderSettings.MaxSampleCount - res.TotalSamples
+        );
+        res.TotalSamples = 0;
         
-        Application::SetBackgroundTaskDone(BackgroundTaskType::Rendering);
-        DeviceContext::GetGraphicsQueue().WaitIdle();
-        OnResize(s_Swapchain->GetExtent());
+        if (s_RenderCompletedFrames == s_RenderSettings.FrameCount)
+        {
+            s_RenderCompletedFrames = 0;
+            s_OutputSaver->EndOutput();
+
+            Application::EndOfflineRendering();
+            Application::SetBackgroundTaskDone(BackgroundTaskType::Rendering);
+            DeviceContext::GetGraphicsQueue().WaitIdle();
+            OnResize(s_Swapchain->GetExtent());
+        }
     }
 }
 

@@ -307,6 +307,11 @@ template<typename T, size_t N> void FixedWindow<T, N>::RenderCenter(ImVec2 size)
     Render(ImVec2((size.x - m_Size.x) / 2, (size.y - m_Size.y) / 2));
 }
 
+inline void AlignItemLeft(float margin)
+{
+    ImGui::SetCursorPosX(margin);
+}
+
 inline void AlignItemRight(float width, float itemWidth, float margin)
 {
     ImGui::SetCursorPosX(width - itemWidth - margin);

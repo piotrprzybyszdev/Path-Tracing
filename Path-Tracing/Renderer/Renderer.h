@@ -3,7 +3,6 @@
 #include <vulkan/vulkan.hpp>
 
 #include <chrono>
-#include <filesystem>
 #include <memory>
 #include <mutex>
 #include <queue>
@@ -39,6 +38,8 @@ public:
     static void Shutdown();
 
     static uint32_t GetPreferredImageCount();
+    static uint32_t GetRenderFramerate();
+    static bool CanRenderVideo();
     static void UpdateSceneData(const std::shared_ptr<Scene> &scene, bool updated);
 
     static void OnResize(vk::Extent2D extent);
@@ -46,6 +47,8 @@ public:
     static void Render();
 
     static void ReloadShaders();
+    static void CancelRendering();
+
     static void SetPathTracingPipeline(PathTracingPipelineConfig config);
     static void SetDebugRaytracingPipeline(DebugRaytracingPipelineConfig config);
 
@@ -62,6 +65,7 @@ public:
     struct RenderSettings
     {
         OutputInfo OutputInfo;
+        uint32_t FrameCount;
         uint32_t MaxSampleCount;
         std::chrono::seconds MaxTime;
     };
@@ -157,6 +161,7 @@ private:
     static PostProcessSettings s_PostProcessSettings;
     static RenderSettings s_RenderSettings;
     static float s_RenderTimeSeconds;
+    static uint32_t s_RenderCompletedFrames;
 
     struct SceneData
     {

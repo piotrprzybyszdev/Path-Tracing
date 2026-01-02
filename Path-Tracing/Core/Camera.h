@@ -49,9 +49,15 @@ public:
 
     bool OnUpdate(float timeStep) override;
 
+public:
+    static void DisableInput();
+    static void EnableInput();
+
 private:
     static constexpr float CameraSpeed = 5.0f;
     static constexpr float MouseSensitivity = 0.05f;
+
+    static bool s_InputDisabled;
 
     bool m_WasPreviousPressed = false;
     glm::vec2 m_PreviousMousePos = { 0.0f, 0.0f };

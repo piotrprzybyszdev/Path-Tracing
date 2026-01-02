@@ -88,6 +88,9 @@ bool Window::ShouldClose()
 
 void Window::SetMode(WindowMode mode)
 {
+    if (s_Mode == mode)
+        return;
+
     GLFWmonitor *monitor = glfwGetPrimaryMonitor();
     auto [width, height] = GetSize();
 

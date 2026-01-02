@@ -55,6 +55,7 @@ public:
 
     static void BeginOfflineRendering();
     static void EndOfflineRendering();
+    static void AdvanceFrameOfflineRendering();
 
     static bool IsRendering();
 
@@ -92,6 +93,7 @@ private:
     };
 
     static State s_State;
+    static bool s_AdvanceFrameOfflineRendering;
 
     static Config s_Config;
     static std::array<BackgroundTask, g_BackgroundTasks.size()> s_BackgroundTasks;

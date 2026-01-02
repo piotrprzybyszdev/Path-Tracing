@@ -25,6 +25,7 @@ enum Key : uint16_t
     H = GLFW_KEY_H,
     P = GLFW_KEY_P,
     Space = GLFW_KEY_SPACE,
+    Esc = GLFW_KEY_ESCAPE,
 };
 
 class Input

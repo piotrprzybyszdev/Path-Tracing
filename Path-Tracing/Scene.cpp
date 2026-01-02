@@ -400,6 +400,11 @@ bool Scene::HasSkeletalAnimations() const
     return m_HasSkeletalAnimations;
 }
 
+bool Scene::IsAnimationPaused() const
+{
+    return m_IsAnimationPaused;
+}
+
 std::span<const Shaders::PointLight> Scene::GetPointLights() const
 {
     return m_PointLights;

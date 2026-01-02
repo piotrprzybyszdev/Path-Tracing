@@ -94,7 +94,7 @@ void TextureUploader::UploadTexturesBlocking(const Scene &scene)
     if (textures.empty())
         return;
 
-    DeterminteMaxTextureSizes(textures.size());
+    DetermineMaxTextureSizes(textures.size());
 
     for (uint32_t i = 0; i < textures.size(); i++)
     {
@@ -123,7 +123,7 @@ void TextureUploader::UploadTextures(const std::shared_ptr<const Scene> &scene)
     if (textures.empty())
         return;
 
-    DeterminteMaxTextureSizes(textures.size());
+    DetermineMaxTextureSizes(textures.size());
     Application::AddBackgroundTask(BackgroundTaskType::TextureUpload, textures.size());
     StartLoaderThreads(scene);
     StartSubmitThread(scene);
@@ -530,7 +530,7 @@ void TextureUploader::UploadBuffersWithTransfer(
     }
 }
 
-void TextureUploader::DeterminteMaxTextureSizes(size_t textureCount)
+void TextureUploader::DetermineMaxTextureSizes(size_t textureCount)
 {
     const size_t textureBudget = GetTextureBudget();
     const size_t perTextureBudget = textureBudget / textureCount;

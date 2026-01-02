@@ -57,7 +57,7 @@ void PrintHelp()
 {
     std::cout << "Path-Tracing - Photorealistic 3D scene rendering in Vulkan" << std::endl;
     std::cout << "Piotr Przybysz, Michal Popkowicz - Faculty of Mathematics and Information Science, Warsaw "
-                 "University of Technology, 2025"
+                 "University of Technology, 2026"
               << std::endl;
     std::cout << "Usage:" << std::endl;
     std::cout << "    Optional arguments:" << std::endl;
