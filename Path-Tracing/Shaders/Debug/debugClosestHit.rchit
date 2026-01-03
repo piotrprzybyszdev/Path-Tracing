@@ -186,7 +186,7 @@ void main()
 
     const bool flipYNormal = (s_HitGroupFlags & HitGroupFlagsDxNormalTextures) != HitFlagsNone;
 
-    MaterialSample material = SampleMaterial(sbt.MaterialId, vertex.TexCoords, derivatives, 0, flipYNormal);
+    MaterialSample material = SampleMaterial(sbt.MaterialId, vertex.TexCoords, derivatives, s_HitGroupFlags, false, flipYNormal);
 
     if (payload.DecalDist != -1.0f && gl_RayTmaxEXT > payload.DecalDist)
         material.Color = mix(material.Color, payload.Color.rgb, payload.Color.a);

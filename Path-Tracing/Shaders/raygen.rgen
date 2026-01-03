@@ -68,7 +68,7 @@ void main()
                 if (!checkOccluded(payload.LightDirection, payload.Position, payload.LightDistance))
                     radiance += throughput * payload.DirectLight / payload.DirectLightPdf;
              
-            if (payload.Pdf > 0.0f)
+            if (payload.Pdf > 0.001f)
                 throughput *= payload.Bsdf / payload.Pdf;
             
             const float prob = min(maxComponent(throughput), 1.0f);

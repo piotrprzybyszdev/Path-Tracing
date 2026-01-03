@@ -142,6 +142,7 @@ Shaders::MaterialId SceneBuilder::AddMaterial(std::string name, Shaders::Metalli
     if (m_MetallicRoughnessMaterialIds.contains(name))
         return m_MetallicRoughnessMaterialIds[name];
 
+    assert(material.Ior >= 1.0f);  // I somehow doubt you want to have a material less dense than air (ior 1.5 should be the default)
     assert(m_MetallicRoughnessMaterials.size() < Shaders::MaxMaterialCount);
     m_MetallicRoughnessMaterials.push_back(material);
 

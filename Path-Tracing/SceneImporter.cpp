@@ -98,7 +98,7 @@ uint32_t AddTexture(
 struct EmissiveInfo
 {
     glm::vec3 Color;
-    glm::uint TextureIdx;
+    Shaders::uint TextureIdx;
     float Intensity;
 };
 
@@ -134,6 +134,26 @@ EmissiveInfo LoadEmissive(
     };
 }
 
+struct TransmissionInfo
+{
+    float Ior;
+    float Transmission;
+};
+
+TransmissionInfo LoadTransmission(
+    const std::filesystem::path &path, SceneBuilder &sceneBuilder, const aiMaterial *material
+)
+{
+    float ior = 1.5f, transmission = 0.0f;
+
+    // TODO: Handle transmission texture
+
+    material->Get(AI_MATKEY_REFRACTI, ior);
+    material->Get(AI_MATKEY_TRANSMISSION_FACTOR, transmission);
+
+    return TransmissionInfo(ior, transmission);
+}
+
 struct MaterialInfo
 {
     uint32_t MaterialIndex;
@@ -154,6 +174,7 @@ MaterialInfo LoadMetallicRoughnessMaterial(
     material->Get(AI_MATKEY_METALLIC_FACTOR, metalness);
 
     EmissiveInfo emissive = LoadEmissive(path, sceneBuilder, material);
+    TransmissionInfo transmission = LoadTransmission(path, sceneBuilder, material);
 
     bool hasTransparency;
     Shaders::MetallicRoughnessMaterial outMaterial = {
@@ -162,6 +183,8 @@ MaterialInfo LoadMetallicRoughnessMaterial(
         .Color = TrivialCopyUnsafe<aiColor4D, glm::vec4>(color),
         .Roughness = roughness,
         .Metalness = metalness,
+        .Ior = transmission.Ior,
+        .Transmission = transmission.Transmission,
         .EmissiveIdx = emissive.TextureIdx,
         .ColorIdx = AddTexture(
             sceneBuilder, path.parent_path(), material, mapping.ColorTexture, &hasTransparency
@@ -400,12 +423,24 @@ std::vector<uint32_t> LoadMeshes(
                     animatedVertices[idx].Tangent = TrivialCopy<aiVector3D, glm::vec3>(mesh->mTangents[j]);
                     animatedVertices[idx].Bitangent =
                         TrivialCopy<aiVector3D, glm::vec3>(mesh->mBitangents[j]);
+
+                    if (animatedVertices[idx].Normal != animatedVertices[idx].Tangent ||
+                        animatedVertices[idx].Normal != animatedVertices[idx].Bitangent ||
+                        animatedVertices[idx].Tangent != animatedVertices[idx].Bitangent)
+                    {
+                        std::tie(animatedVertices[idx].Tangent, animatedVertices[idx].Bitangent) =
+                            computeTangentSpace(animatedVertices[idx].Normal);
+                    }
                 }
                 else
-                {                 
+                {
                     std::tie(animatedVertices[idx].Tangent, animatedVertices[idx].Bitangent) =
                         computeTangentSpace(animatedVertices[idx].Normal);
                 }
+
+                assert(animatedVertices[idx].Normal != animatedVertices[idx].Tangent);
+                assert(animatedVertices[idx].Normal != animatedVertices[idx].Bitangent);
+                assert(animatedVertices[idx].Tangent != animatedVertices[idx].Bitangent);
             }
             else
             {
@@ -417,12 +452,24 @@ std::vector<uint32_t> LoadMeshes(
                 {
                     vertices[idx].Tangent = TrivialCopy<aiVector3D, glm::vec3>(mesh->mTangents[j]);
                     vertices[idx].Bitangent = TrivialCopy<aiVector3D, glm::vec3>(mesh->mBitangents[j]);
+
+                    if (vertices[idx].Normal != vertices[idx].Tangent ||
+                        vertices[idx].Normal != vertices[idx].Bitangent ||
+                        vertices[idx].Tangent != vertices[idx].Bitangent)
+                    {
+                        std::tie(vertices[idx].Tangent, vertices[idx].Bitangent) =
+                            computeTangentSpace(vertices[idx].Normal);
+                    }
                 }
                 else
                 {
                     std::tie(vertices[idx].Tangent, vertices[idx].Bitangent) =
                         computeTangentSpace(vertices[idx].Normal);
                 }
+
+                assert(vertices[idx].Normal != vertices[idx].Tangent);
+                assert(vertices[idx].Normal != vertices[idx].Bitangent);
+                assert(vertices[idx].Tangent != vertices[idx].Bitangent);
             }
         }
 

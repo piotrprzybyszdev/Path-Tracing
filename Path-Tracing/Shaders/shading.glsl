@@ -33,9 +33,23 @@ float GGXSmith(vec3 V, float alpha)
     return 1.0f / (1.0f + Lambda(V, alpha));
 }
 
+float DielectricFresnel(float VdotH, float eta)
+{
+    float cosThetaI = VdotH;
+    float sinThetaT2 = eta * eta * (1.0f - cosThetaI * cosThetaI);
+
+    if (sinThetaT2 > 1.0)
+        return 1.0;
+    
+    const float cosThetaT = sqrt(max(1.0 - sinThetaT2, 0.0));
+    
+    const float rs = (eta * cosThetaT - cosThetaI) / (eta * cosThetaT + cosThetaI);
+    const float rp = (eta * cosThetaI - cosThetaT) / (eta * cosThetaI + cosThetaT);
+
+    return (rs * rs + rp * rp) / 2.0f;
+}
+
 float SchlickFresnel(float VdotH)
 {
-    float m = clamp(1.0 - VdotH, 0.0, 1.0);
-    float m2 = m * m;
-    return m2 * m2 * m;
+    return pow(clamp(1.0 - VdotH, 0.0, 1.0), 5);
 }

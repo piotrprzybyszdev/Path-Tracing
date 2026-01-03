@@ -62,7 +62,11 @@ struct MetallicRoughnessMaterial
     vec4 Color;
     float Roughness;
     float Metalness;
+    float Ior;
+    float Transmission;
     float pad0;
+    float pad1;
+    float pad2;
     uint EmissiveIdx;
     uint ColorIdx;
     uint NormalIdx;

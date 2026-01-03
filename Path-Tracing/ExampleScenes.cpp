@@ -267,6 +267,22 @@ void CreateDefaultScene(SceneBuilder &sceneBuilder)
             .Color = glm::vec4(color, 1.0f),
             .Roughness = roughness,
             .Metalness = 0.0f,
+            .Ior = 1.5f,
+            .EmissiveIdx = Scene::GetDefaultTextureIndex(TextureType::Emisive),
+            .ColorIdx = Scene::GetDefaultTextureIndex(TextureType::Color),
+            .NormalIdx = Scene::GetDefaultTextureIndex(TextureType::Normal),
+            .RoughnessIdx = Scene::GetDefaultTextureIndex(TextureType::Roughness),
+            .MetallicIdx = Scene::GetDefaultTextureIndex(TextureType::Metallic),
+        };
+    };
+    auto makeTransmissiveMaterialFromColor = [](glm::vec3 color, float ior, float transmission,
+                                                float roughness = 1.0f) {
+        return Shaders::MetallicRoughnessMaterial {
+            .Color = glm::vec4(color, 1.0f),
+            .Roughness = roughness,
+            .Metalness = 0.0f,
+            .Ior = ior,
+            .Transmission = transmission,
             .EmissiveIdx = Scene::GetDefaultTextureIndex(TextureType::Emisive),
             .ColorIdx = Scene::GetDefaultTextureIndex(TextureType::Color),
             .NormalIdx = Scene::GetDefaultTextureIndex(TextureType::Normal),
@@ -280,6 +296,7 @@ void CreateDefaultScene(SceneBuilder &sceneBuilder)
             .EmissiveIntensity = 1.0f,
             .Roughness = 1.0f,
             .Metalness = 0.0f,
+            .Ior = 1.5f,
             .EmissiveIdx = Scene::GetDefaultTextureIndex(TextureType::Emisive),
             .ColorIdx = Scene::GetDefaultTextureIndex(TextureType::Color),
             .NormalIdx = Scene::GetDefaultTextureIndex(TextureType::Normal),
@@ -292,6 +309,7 @@ void CreateDefaultScene(SceneBuilder &sceneBuilder)
             .Color = glm::vec4(1.0f),
             .Roughness = 1.0f,
             .Metalness = 0.0f,
+            .Ior = 1.5f,
             .EmissiveIdx = Scene::GetDefaultTextureIndex(TextureType::Emisive),
             .ColorIdx = sceneBuilder.AddTexture(
                 TextureImporter::GetTextureInfo(
@@ -315,6 +333,9 @@ void CreateDefaultScene(SceneBuilder &sceneBuilder)
     );
     Shaders::MaterialId lightMaterial =
         sceneBuilder.AddMaterial("Light Material", makeMaterialFromEmissiveColor(glm::vec3(1.0f)));
+    Shaders::MaterialId glassMaterial = sceneBuilder.AddMaterial(
+        "Glass Material", makeTransmissiveMaterialFromColor(glm::vec3(1.0f), 1.5f, 1.0f, 0.0f)
+    );
 
     auto &vertices = sceneBuilder.GetVertices();
     vertices = {
@@ -367,12 +388,12 @@ void CreateDefaultScene(SceneBuilder &sceneBuilder)
     std::array<uint32_t, 6> geometryIndices = AddCube(sceneBuilder);
 
     std::array<MeshInfo, 6> cubeMeshes = { {
-        { geometryIndices[0], whiteMaterial, MaterialType::MetallicRoughness, glm::mat4(1.0f) },
-        { geometryIndices[1], whiteMaterial, MaterialType::MetallicRoughness, glm::mat4(1.0f) },
-        { geometryIndices[2], whiteMaterial, MaterialType::MetallicRoughness, glm::mat4(1.0f) },
-        { geometryIndices[3], whiteMaterial, MaterialType::MetallicRoughness, glm::mat4(1.0f) },
-        { geometryIndices[4], whiteMaterial, MaterialType::MetallicRoughness, glm::mat4(1.0f) },
-        { geometryIndices[5], whiteMaterial, MaterialType::MetallicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[0], glassMaterial, MaterialType::MetallicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[1], glassMaterial, MaterialType::MetallicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[2], glassMaterial, MaterialType::MetallicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[3], glassMaterial, MaterialType::MetallicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[4], glassMaterial, MaterialType::MetallicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[5], glassMaterial, MaterialType::MetallicRoughness, glm::mat4(1.0f) },
     } };
 
     const uint32_t lightVertexOffset = vertices.size();
@@ -421,7 +442,7 @@ void CreateDefaultScene(SceneBuilder &sceneBuilder)
     const glm::mat4 leftCubeTransform = glm::transpose(
         glm::scale(
             glm::rotate(
-                glm::translate(glm::mat4(1.0f), glm::vec3(-0.4f, -0.8f, 0.5f)), glm::radians(25.0f),
+                glm::translate(glm::mat4(1.0f), glm::vec3(-0.4f, -0.7f, 0.5f)), glm::radians(25.0f),
                 glm::vec3(0.0f, 1.0f, 0.0f)
             ),
             glm::vec3(0.3f)
@@ -432,7 +453,7 @@ void CreateDefaultScene(SceneBuilder &sceneBuilder)
     const glm::mat4 rightCubeTransform = glm::transpose(
         glm::scale(
             glm::rotate(
-                glm::translate(glm::mat4(1.0f), glm::vec3(0.2f, -0.8f, -0.6f)), glm::radians(-20.0f),
+                glm::translate(glm::mat4(1.0f), glm::vec3(0.2f, -0.7f, -0.6f)), glm::radians(-20.0f),
                 glm::vec3(0.0f, 1.0f, 0.0f)
             ),
             glm::vec3(0.3f)
@@ -478,6 +499,7 @@ void CreateMetallicRoughnessCubesScene(SceneBuilder &sceneBuilder)
                 .Color = glm::vec4(1.0f),
                 .Roughness = 1.0f,
                 .Metalness = 1.0f,
+                .Ior = 1.5f,
                 .ColorIdx = addTexture(materialPath, material + "_Color.jpg", TextureType::Color),
                 .NormalIdx = addTexture(materialPath, material + "_NormalGL.jpg", TextureType::Normal),
                 .RoughnessIdx = addTexture(materialPath, material + "_Roughness.jpg", TextureType::Roughness),
@@ -588,6 +610,7 @@ void CreateReuseMeshCubesScene(SceneBuilder &sceneBuilder)
                 .Color = glm::vec4(1.0f),
                 .Roughness = 1.0f,
                 .Metalness = 1.0f,
+                .Ior = 1.5f,
                 .ColorIdx = addTexture(materialPath, material + "_Color.jpg", TextureType::Color),
                 .NormalIdx = addTexture(materialPath, material + "_NormalGL.jpg", TextureType::Normal),
                 .RoughnessIdx = addTexture(materialPath, material + "_Roughness.jpg", TextureType::Roughness),
@@ -666,6 +689,7 @@ void CreateRoughnessTestCubesScene(SceneBuilder &sceneBuilder)
             .Color = glm::vec4(color, 1.0f),
             .Roughness = roughness,
             .Metalness = metalness,
+            .Ior = 1.5f,
             .EmissiveIdx = Scene::GetDefaultTextureIndex(TextureType::Emisive),
             .ColorIdx = Scene::GetDefaultTextureIndex(TextureType::Color),
             .NormalIdx = Scene::GetDefaultTextureIndex(TextureType::Normal),
@@ -678,6 +702,7 @@ void CreateRoughnessTestCubesScene(SceneBuilder &sceneBuilder)
             .Color = glm::vec4(1.0f),
             .Roughness = 1.0f,
             .Metalness = 0.0f,
+            .Ior = 1.5f,
             .EmissiveIdx = Scene::GetDefaultTextureIndex(TextureType::Emisive),
             .ColorIdx = sceneBuilder.AddTexture(
                 TextureImporter::GetTextureInfo(

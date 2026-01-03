@@ -31,6 +31,8 @@ struct MaterialSample
     vec3 Normal;
     float Roughness;
     float Metalness;
+    float Transmission;
+    float Eta;
 };
 
 vec3 ReconstructNormalFromXY(vec3 normal)
@@ -144,7 +146,7 @@ void ComputeReflectedDifferentialRays(vec4 derivatives, vec3 n, vec3 p, vec3 vie
     ryDirection = reflectedDir - dwody + 2 * (dot(viewDir, n) * dndy + dwoDotn_dy * n);
 }
 
-MaterialSample SampleMaterial(MetallicRoughnessMaterial material, vec2 texCoords, vec4 derivatives, uint flags)
+MaterialSample SampleMaterial(MetallicRoughnessMaterial material, vec2 texCoords, vec4 derivatives, bool isHitFromInside, uint flags)
 {
     MaterialSample ret;
 
@@ -161,34 +163,40 @@ MaterialSample SampleMaterial(MetallicRoughnessMaterial material, vec2 texCoords
     ret.Normal = ReconstructNormalFromXY(textureGrad(textures[normalIdx], texCoords, dpdx, dpdy).rgb);
     ret.Roughness = textureGrad(textures[roughnessIdx], texCoords, dpdx, dpdy).g * material.Roughness;
     ret.Metalness = textureGrad(textures[metallicIdx], texCoords, dpdx, dpdy).b * material.Metalness;
+    ret.Transmission = material.Transmission;
+
+    ret.Eta = isHitFromInside ? material.Ior : (1.0f / material.Ior);
 
     return ret;
 }
 
-MaterialSample SampleMaterial(SpecularGlossinessMaterial material, vec2 texCoords, vec4 derivatives, uint flags)
+MaterialSample SampleMaterial(SpecularGlossinessMaterial material, vec2 texCoords, vec4 derivatives, bool isHitFromInside, uint flags)
 {
     MaterialSample ret;
 
     // TODO
-    ret.EmissiveColor = vec3(0.0f);
+    ret.EmissiveColor = vec3(1.0f, 0.0f, 1.0f);
     ret.Color = DefaultColor;
     ret.Normal = DefaultNormal;
     ret.Roughness = DefaultRoughness;
     ret.Metalness = DefaultMetalness;
+    ret.Transmission = 0.0f;
+
+    ret.Eta = isHitFromInside ? 1.5f : (1.0f / 1.5f);
 
     return ret;
 }
 
-MaterialSample SampleMaterial(uint materialId, vec2 texCoords, vec4 derivatives, uint flags, bool flipNormalY)
+MaterialSample SampleMaterial(uint materialId, vec2 texCoords, vec4 derivatives, uint flags, bool isHitFromInside, bool flipNormalY)
 {
     uint materialType;
     uint materialIndex = unpackMaterialId(materialId, materialType);
 
     MaterialSample ret;
     if (materialType == MaterialTypeMetallicRoughness)
-        ret = SampleMaterial(metallicRoughnessMaterials[materialIndex], texCoords, derivatives, flags);
+        ret = SampleMaterial(metallicRoughnessMaterials[materialIndex], texCoords, derivatives, isHitFromInside, flags);
     else
-        ret = SampleMaterial(specularGlossinessMaterials[materialIndex], texCoords, derivatives, flags);
+        ret = SampleMaterial(specularGlossinessMaterials[materialIndex], texCoords, derivatives, isHitFromInside, flags);
 
     if (flipNormalY)
         ret.Normal.y *= -1;
@@ -201,7 +209,7 @@ vec3 EvaluateReflection(vec3 V, vec3 L, vec3 F, float alpha, out float pdf)
     if (L.z < 0.00001f)
     {
         pdf = 0.0f;
-        return vec3(0.0f, 0.0f, 0.0f);
+        return vec3(0.0f);
     }
 
     const vec3 H = normalize(V + L);
@@ -217,6 +225,43 @@ vec3 EvaluateReflection(vec3 V, vec3 L, vec3 F, float alpha, out float pdf)
 
     pdf = (GV * max(VdotH, 0.0f) * D / V.z) / (4.0f * VdotH);
     return G * D * F / (4.0f * V.z);
+}
+
+vec3 EvaluateRefraction(vec3 V, vec3 L, vec3 F, float alpha, float eta, out float pdf)
+{
+    if (L.z >= 1e-5)
+    {
+        pdf = 0.0f;
+        return vec3(0.0f);
+    }
+
+    vec3 H = normalize(eta * V + L);
+
+    if (H.z < 0.0f)
+        H = -H;
+    
+    const float VdotH = dot(V, H);
+    const float LdotH = dot(L, H);
+
+    if ((VdotH > 0.0f && LdotH < 0.0f) || (VdotH < 0.0f && LdotH > 0.0f))
+    {
+        pdf = 0.0f;
+        return vec3(0.0f);
+    }
+
+    const float D = GGXDistribution(H, alpha);
+    const float GV = GGXSmith(V, alpha);
+    const float GL = GGXSmith(L, alpha);
+    const float G = GV * GL;
+
+    const float denominator = LdotH + eta * VdotH;
+    const float denominator2 = denominator * denominator;
+    const float eta2 = eta * eta;
+
+    const float jacobian = (eta2 * abs(LdotH)) / denominator2;
+
+    pdf = (GV * abs(VdotH) * D / V.z) * jacobian;
+    return (F * D * G * eta2 / denominator2) * (abs(VdotH) * abs(LdotH) / (abs(V.z)));
 }
 
 vec3 SampleGGX(vec2 u, vec3 V, float alpha)

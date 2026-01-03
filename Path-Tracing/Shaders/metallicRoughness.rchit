@@ -43,6 +43,17 @@ hitAttributeEXT vec3 attribs;
 #include "shading.glsl"
 #include "sampling.glsl"
 
+mat3 ComputeTangentSpace(vec3 normal)
+{
+    vec3 t1 = cross(normal, vec3(1.0f, 0.0f, 0.0f));
+    vec3 t2 = cross(normal, vec3(0.0f, 1.0f, 0.0f));
+
+    vec3 tangent = length(t1) > length(t2) ? t1 : t2;
+    vec3 bitangent = cross(normal, tangent);
+    
+    return mat3(normalize(tangent), normalize(bitangent), normal);
+};
+
 Vertex transform(Vertex vertex, uint transformIndex)
 {
     const mat3x4 transform = mat3x4(mat4(transforms[transformIndex]) * gl_ObjectToWorld3x4EXT);
@@ -137,41 +148,63 @@ vec3 SampleMetallicBRDF(MaterialSample material, vec3 H, vec3 V)
     return normalize(reflect(-V, H));
 }
 
+vec3 EvaluateBTDF(MaterialSample material, vec3 V, vec3 L, out float pdf)
+{
+    return EvaluateRefraction(V, L, material.Color, material.Roughness * material.Roughness, material.Eta, pdf);
+}
+
+vec3 SampleBTDF(MaterialSample material, vec3 H, vec3 V)
+{
+    return normalize(refract(-V, H, material.Eta));
+}
+
 struct LobePdfs
 {
     float Diffuse;
     float Glossy;
     float Metallic;
+    float Transmissive;
 };
 
 LobePdfs SampleLobePdfs(MaterialSample material, float F)
 {
     LobePdfs pdfs;
-    pdfs.Diffuse = (1.0f - material.Metalness) * (1.0f - F);
+    pdfs.Diffuse = (1.0f - material.Metalness) * (1.0f - F) * (1.0f - material.Transmission);
     pdfs.Glossy = (1.0f - material.Metalness) * F;
     pdfs.Metallic = material.Metalness;
+    pdfs.Transmissive = (1.0f - material.Metalness) * (1.0f - F) * material.Transmission;
     return pdfs;
 }
 
 vec3 EvaluateBSDF(MaterialSample material, vec3 V, vec3 L, out float outPdf)
 {
-    const vec3 H = normalize(V + L);
-    const float F = SchlickFresnel(dot(V, H));
+    const bool isReflection = L.z > 0.0f;
 
-    LobePdfs pdfs = SampleLobePdfs(material, F);
+    vec3 H = isReflection ? normalize(V + L) : normalize(material.Eta * V + L);
+    const float FD = DielectricFresnel(abs(dot(V, H)), material.Eta);
+
+    LobePdfs pdfs = SampleLobePdfs(material, FD);
 
     vec3 bsdf = vec3(0.0f);
     outPdf = 0.0f;
     float pdf;
 
-    bsdf += EvaluateDiffuseBRDF(material, V, L, pdf) * pdfs.Diffuse;
-    outPdf += pdf * pdfs.Diffuse;
+    if (isReflection)
+    {
+        bsdf += EvaluateDiffuseBRDF(material, V, L, pdf) * pdfs.Diffuse;
+        outPdf += pdf * pdfs.Diffuse;
 
-    bsdf += EvaluateGlossyBSDF(material, V, L, pdf) * pdfs.Glossy;
-    outPdf += pdf * pdfs.Glossy;
+        bsdf += EvaluateGlossyBSDF(material, V, L, pdf) * pdfs.Glossy;
+        outPdf += pdf * pdfs.Glossy;
     
-    bsdf += EvaluateMetallicBRDF(material, V, L, pdf) * pdfs.Metallic;
-    outPdf += pdf * pdfs.Metallic;
+        bsdf += EvaluateMetallicBRDF(material, V, L, pdf) * pdfs.Metallic;
+        outPdf += pdf * pdfs.Metallic;
+    }
+    else
+    {
+        bsdf += EvaluateBTDF(material, V, L, pdf) * pdfs.Transmissive;
+        outPdf += pdf * pdfs.Transmissive;
+    }
 
     return bsdf;
 }
@@ -180,19 +213,22 @@ BSDFSample SampleBSDF(MaterialSample material, vec3 V, inout uint rngState)
 {
     const float alpha = material.Roughness * material.Roughness;
     const vec3 H = SampleGGX(vec2(rand(rngState), rand(rngState)), V, alpha);
-    const float F = SchlickFresnel(dot(V, H));
+    const float FD = DielectricFresnel(abs(dot(V, H)), material.Eta);
 
-    LobePdfs pdfs = SampleLobePdfs(material, F);
-    
     vec3 L;
-    if (rand(rngState) < pdfs.Metallic)
+    if (rand(rngState) < material.Metalness)
         L = SampleMetallicBRDF(material, H, V);
     else
     {
-        if (rand(rngState) < pdfs.Glossy)
+        if (rand(rngState) < FD)
             L = SampleGlossyBSDF(material, H, V);
         else
-            L = SampleDiffuseBRDF(material, vec2(rand(rngState), rand(rngState)));
+        {
+            if (rand(rngState) < material.Transmission)
+                L = SampleBTDF(material, H, V);
+            else
+                L = SampleDiffuseBRDF(material, vec2(rand(rngState), rand(rngState)));
+        }
     }
 
     BSDFSample ret;
@@ -210,7 +246,15 @@ void main()
     IndexBuffer indices = IndexBuffer(geometries[sbt.GeometryIndex].Indices);
 
     const Vertex originalVertex = getInterpolatedVertex(vertices, indices, gl_PrimitiveID * 3, barycentricCoords);
-    const Vertex vertex = transform(originalVertex, sbt.TransformIndex);
+    Vertex vertex = transform(originalVertex, sbt.TransformIndex);
+
+    const bool isHitFromInside = dot(vertex.Normal, gl_WorldRayDirectionEXT) > 0.0f;
+    if (isHitFromInside)
+    {
+        vertex.Normal *= -1;
+        vertex.Tangent *= -1;
+        vertex.Bitangent *= -1;
+    }
 
     const vec3 origin = gl_WorldRayOriginEXT;
     const vec3 viewDir = gl_WorldRayDirectionEXT;
@@ -238,7 +282,7 @@ void main()
     const vec4 derivatives = ComputeDerivatives(dpdx, dpdy, dpdu, dpdv);
 
     const bool flipYNormal = (s_HitFlags & HitFlagsDxNormalTextures) != HitFlagsNone;
-    MaterialSample material = SampleMaterial(sbt.MaterialId, vertex.TexCoords, derivatives, 0, flipYNormal);
+    MaterialSample material = SampleMaterial(sbt.MaterialId, vertex.TexCoords, derivatives, 0, isHitFromInside, flipYNormal);
     
     // Handling decals
     if (payload.DirectLightPdf != -1.0f && gl_RayTmaxEXT > payload.DirectLightPdf)
@@ -247,13 +291,14 @@ void main()
     // Prevents firefly artifacts
     payload.MaxRoughness = max(material.Roughness, payload.MaxRoughness);
 
-    // Glossy lobe is numerically unstable on very low roughness
+    // Glossy lobe is numerically unstable at very low roughness
     material.Roughness = max(payload.MaxRoughness, 0.01f);  // TODO: Consider adding a perfect specular lobe
     
-    const mat3 TBN = mat3(vertex.Tangent, vertex.Bitangent, vertex.Normal);
-    const vec3 N = normalize(vertex.Normal + TBN * material.Normal);
+    const mat3 geometryTBN = mat3(vertex.Tangent, vertex.Bitangent, vertex.Normal);
+    const vec3 N = normalize(vertex.Normal + geometryTBN * material.Normal);
+    const mat3 TBN = ComputeTangentSpace(N);
     const vec3 V = normalize(inverse(TBN) * normalize(-gl_WorldRayDirectionEXT));
-
+    
     uint rngState = payload.RngState;
 
     float lightPdf, lightSmplPdf;  // unused
@@ -263,8 +308,8 @@ void main()
 
     BSDFSample bsdf = SampleBSDF(material, V, rngState);
 
-    payload.Position = vertex.Position + vertex.Normal * 0.001f;
     payload.Direction = normalize(TBN * bsdf.Direction);
+    payload.Position = vertex.Position + payload.Direction * 0.001f;  // TODO: Do we prefer offsetting by the normal?
     payload.Bsdf = bsdf.Color;
     payload.Pdf = bsdf.Pdf;
     payload.Emissive = material.EmissiveColor;
