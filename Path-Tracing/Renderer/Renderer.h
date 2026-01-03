@@ -55,6 +55,8 @@ public:
     struct PathTracingSettings
     {
         uint32_t BounceCount = 4;
+        float LensRadius = 0.0f;
+        float FocalDistance = 10.0f;
     };
 
     struct PostProcessSettings

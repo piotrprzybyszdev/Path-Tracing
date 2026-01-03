@@ -27,6 +27,8 @@ struct RaygenUniformData
 {
     Camera MainCamera;
     uint BounceCount;
+    float LensRadius;
+    float FocalDistance;
     uint SampleCount;
     uint TotalSamples;
 };

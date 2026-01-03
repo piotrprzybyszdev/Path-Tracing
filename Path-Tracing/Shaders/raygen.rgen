@@ -31,8 +31,15 @@ void main()
         vec3 throughput = vec3(1.0f);
 
         vec2 u = vec2(rand(rngState), rand(rngState));
-        Ray rx, ry;
-        Ray ray = constructPrimaryRay(gl_LaunchIDEXT.xy, gl_LaunchSizeEXT.xy, mainUniform.MainCamera, u, rx, ry);
+        Ray ray, rx, ry;
+        if (mainUniform.LensRadius > 0)
+        {
+            vec2 u2 = vec2(rand(rngState), rand(rngState));
+            ray = constructPrimaryRay(gl_LaunchIDEXT.xy, gl_LaunchSizeEXT.xy, mainUniform.MainCamera, u, u2, mainUniform.LensRadius, mainUniform.FocalDistance, rx, ry);
+        }
+        else
+            ray = constructPrimaryRay(gl_LaunchIDEXT.xy, gl_LaunchSizeEXT.xy, mainUniform.MainCamera, u, rx, ry);
+        
         payload.RxOrigin = rx.Origin;
         payload.RxDirection = rx.Direction;
         payload.RyOrigin = ry.Origin;

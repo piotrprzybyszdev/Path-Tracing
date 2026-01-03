@@ -55,24 +55,6 @@ Vertex transform(Vertex vertex, uint transformIndex)
     return vertex;
 }
 
-vec2 SampleUniformDiskConcentric(vec2 u)
-{
-    vec2 offset = 2.0f * u - 1.0f;
-    if (offset == vec2(0.0f))
-        return vec2(0.0f);
-
-    if (abs(offset.x) > abs(offset.y))
-    {
-        float theta = PI / 4 * (offset.y / offset.x);
-        return offset.x * vec2(cos(theta), sin(theta));
-    }
-    else
-    {
-        float theta = PI / 2 - PI / 4 * (offset.x / offset.y);
-        return offset.y * vec2(cos(theta), sin(theta));
-    }
-}
-
 vec3 SampleCosineHemisphere(vec2 u)
 {
     vec2 d = SampleUniformDiskConcentric(u);

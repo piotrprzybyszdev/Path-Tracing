@@ -439,6 +439,9 @@ private:
     std::optional<std::filesystem::path> m_OutputPath;
     int m_MaxSampleCount = 1000;
     int m_MaxBounceCount = 4;
+    bool m_DepthOfField = false;
+    float m_LensRadius = 0.1f;
+    float m_FocalDistance = 10.0f;
     int m_Extent[2] = { 1280, 720 };
     int m_FrameCount = 60;
     int m_Framerate = 60;
@@ -599,6 +602,34 @@ void OfflineRenderContent::Render()
 
         ImGui::TableNextRow();
         ImGui::TableNextColumn();
+        ImGui::Text("Depth of field simulation");
+        ImGui::TableNextColumn();
+        ImGui::Checkbox("##DepthOfField", &m_DepthOfField);
+
+        if (!m_DepthOfField)
+            ImGui::BeginDisabled();
+
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("Lens Radius");
+        ImGui::TableNextColumn();
+        ImGui::SetNextItemWidth(-1);
+        ImGui::SliderFloat("##LensRadius", &m_LensRadius, 0.01f, 1.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
+
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("Focal Distance");
+        ImGui::TableNextColumn();
+        ImGui::SetNextItemWidth(-1);
+        ImGui::SliderFloat(
+            "##FocalDistance", &m_FocalDistance, 1.0f, 100.0f, "%.2f", ImGuiSliderFlags_Logarithmic
+        );
+
+        if (!m_DepthOfField)
+            ImGui::EndDisabled();
+
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
         ImGui::Text("Exposure");
         ImGui::TableNextColumn();
         ImGui::SetNextItemWidth(-1);
@@ -624,7 +655,9 @@ void OfflineRenderContent::Render()
     if (ImGui::Button("Render", buttonSize))
     {
         Application::BeginOfflineRendering();
-        Renderer::SetSettings(Renderer::PathTracingSettings(m_MaxBounceCount));
+        Renderer::SetSettings(Renderer::PathTracingSettings(
+            m_MaxBounceCount, m_DepthOfField ? m_LensRadius : 0.0f, m_FocalDistance
+        ));
         Renderer::SetSettings(Renderer::PostProcessSettings(std::pow(2.0f, m_Exposure)));
         Renderer::SetSettings(
             Renderer::RenderSettings(
@@ -769,6 +802,9 @@ private:
     float m_Exposure = 0.0f;
     int m_BounceCount = 4;
     int m_SampleCount = 1;
+    bool m_DepthOfField = false;
+    float m_LensRadius = 0.1f;
+    float m_FocalDistance = 10.0f;
 };
 
 void SettingsContent::Render()
@@ -784,6 +820,25 @@ void SettingsContent::Render()
         ImGui::Text("Bounces: ");
         ImGui::SameLine();
         pathTracingSettingsChanged |= ImGui::SliderInt("##Bounces", &m_BounceCount, 1, 16, "%d");
+
+        pathTracingSettingsChanged |= ImGui::Checkbox("Depth of field simulation", &m_DepthOfField);
+
+        if (!m_DepthOfField)
+            ImGui::BeginDisabled();
+
+        ImGui::Text("Lens Radius: ");
+        ImGui::SameLine();
+        pathTracingSettingsChanged |=
+            ImGui::SliderFloat("##LensRadius", &m_LensRadius, 0.01f, 1.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
+
+        ImGui::Text("Focal Distance: ");
+        ImGui::SameLine();
+        pathTracingSettingsChanged |= ImGui::SliderFloat(
+            "##FocalDistance", &m_FocalDistance, 1.0f, 100.0f, "%.2f", ImGuiSliderFlags_Logarithmic
+        );
+
+        if (!m_DepthOfField)
+            ImGui::EndDisabled();
 
         ImGui::TreePop();
     }
@@ -801,7 +856,9 @@ void SettingsContent::Render()
     }
 
     if (pathTracingSettingsChanged)
-        Renderer::SetSettings(Renderer::PathTracingSettings(m_BounceCount));
+        Renderer::SetSettings(Renderer::PathTracingSettings(
+            m_BounceCount, m_DepthOfField ? m_LensRadius : 0.0f, m_FocalDistance
+        ));
     if (postProcessSettingsChanged)
         Renderer::SetSettings(Renderer::PostProcessSettings(std::pow(2.0f, m_Exposure)));
 }

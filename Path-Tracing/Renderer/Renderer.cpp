@@ -1191,7 +1191,8 @@ void Renderer::Render()
     Camera &camera = s_SceneData->Handle->GetActiveCamera();
     camera.OnResize(res.AccumulationImage.GetExtent().width, res.AccumulationImage.GetExtent().height);
     Shaders::RaygenUniformData rgenData = { camera.GetInvViewMatrix(), camera.GetInvProjectionMatrix(),
-                                            s_PathTracingSettings.BounceCount, s_RefreshRate.SamplesPerFrame,
+                                            s_PathTracingSettings.BounceCount, s_PathTracingSettings.LensRadius,
+                                            s_PathTracingSettings.FocalDistance, s_RefreshRate.SamplesPerFrame,
                                             res.TotalSamples };
     
     bool resetAccumulationImage = false, saveOutput = false;
