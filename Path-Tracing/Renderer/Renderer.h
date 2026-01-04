@@ -30,6 +30,9 @@ using PathTracingPipelineConfig = PipelineConfig<2>;
 using DebugRaytracingPipelineConfig = PipelineConfig<4>;
 using SkinningPipelineConfig = PipelineConfig<0>;
 using PostProcessPipelineConfig = PipelineConfig<0>;
+using CompositionPipelineConfig = PipelineConfig<0>;
+using BloomDownsamplePipelineConfig = PipelineConfig<0>;
+using BloomUpsamplePipelineConfig = PipelineConfig<0>;
 
 class Renderer
 {
@@ -62,6 +65,8 @@ public:
     struct PostProcessSettings
     {
         float Exposure = 1.0f;
+        float BloomThreshold = 1.0f;
+        float BloomIntensity = 0.1f;
     };
 
     struct RenderSettings
@@ -97,6 +102,9 @@ private:
         ShaderId OcclusionAnyHit = ShaderLibrary::g_UnusedShaderId;
         ShaderId SkinningCompute = ShaderLibrary::g_UnusedShaderId;
         ShaderId PostProcessCompute = ShaderLibrary::g_UnusedShaderId;
+        ShaderId CompositionCompute = ShaderLibrary::g_UnusedShaderId;
+        ShaderId BloomDownsampleCompute = ShaderLibrary::g_UnusedShaderId;
+        ShaderId BloomUpsampleCompute = ShaderLibrary::g_UnusedShaderId;
 
         ShaderId DebugRaygen = ShaderLibrary::g_UnusedShaderId;
         ShaderId DebugMiss = ShaderLibrary::g_UnusedShaderId;
@@ -128,6 +136,9 @@ private:
         uint32_t TotalSamples = 0;
         Image AccumulationImage;
         Image PostProcessImage;
+
+        Image BloomImage;
+        std::vector<vk::ImageView> BloomImageViews;
 
         Buffer RaygenUniformBuffer;
         Buffer PostProcessUniformBuffer;
@@ -206,6 +217,9 @@ private:
     static std::unique_ptr<RaytracingPipeline> s_DebugRayTracingPipeline;
     static std::unique_ptr<ComputePipeline> s_SkinningPipeline;
     static std::unique_ptr<ComputePipeline> s_PostProcessPipeline;
+    static std::unique_ptr<ComputePipeline> s_CompositionPipeline;
+    static std::unique_ptr<ComputePipeline> s_BloomDownsamplePipeline;
+    static std::unique_ptr<ComputePipeline> s_BloomUpsamplePipeline;
 
     static RaytracingPipeline *s_ActiveRayTracingPipeline;
 
@@ -245,6 +259,7 @@ private:
     static std::unique_ptr<ImageBuilder> s_ImageBuilder;
 
     static vk::Sampler s_TextureSampler;
+    static vk::Sampler s_BloomSampler;
 };
 
 }

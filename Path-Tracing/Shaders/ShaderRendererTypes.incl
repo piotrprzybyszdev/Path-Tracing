@@ -62,6 +62,8 @@ const uint SkinningShaderGroupSizeX         = 256u;
 const uint PostProcessShaderGroupSizeX      = 32u;
 const uint PostProcessShaderGroupSizeY      = 32u;
 
+const uint MaxBloomMipmapLevel              = 12u;
+
 struct SkinningPushConstants
 {
     AnimatedVertexBuffer inAnimatedVertices;
@@ -72,6 +74,8 @@ struct PostProcessingUniformData
 {
     uint TotalSamples;
     float Exposure;
+    float BloomThreshold;
+    float BloomIntensity;
 };
 
 const uint MissFlagsConstantId              = 0u;

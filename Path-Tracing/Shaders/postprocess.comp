@@ -2,10 +2,12 @@
 #extension GL_EXT_buffer_reference : require
 
 #include "ShaderRendererTypes.incl"
+#include "common.glsl"
 
 layout(binding = 0, set = 0, rgba32f) uniform image2D u_AccumulationImage;
 layout(binding = 1, set = 0, rgba16f) uniform image2D u_PostProcessImage;
-layout(binding = 2, set = 0) uniform MainBlock {
+layout(binding = 2, set = 0, rgba16f) uniform image2D u_BloomImage;
+layout(binding = 3, set = 0) uniform MainBlock {
     PostProcessingUniformData mainUniform;
 };
 
@@ -24,5 +26,14 @@ void main()
     if (isinf(color.r) || isinf(color.g) || isinf(color.b))
         color = vec3(0.0f, 5000.0f, 0.0f);
 
+    float knee = 0.5f;
+    float threshold = mainUniform.BloomThreshold;
+    float br = max(color.r, max(color.g, color.b));
+    vec3 curve = vec3(threshold - knee, knee * 2.0f, 0.25f / knee);
+    float rq = clamp(br - curve.x, 0.0f, curve.y);
+    rq = curve.z * rq * rq;
+    vec3 bloomColor = color * (max(rq, br - threshold) / max(br, 0.0001f));
+
     imageStore(u_PostProcessImage, imageCoords, vec4(color, 1.0f));
+    imageStore(u_BloomImage, imageCoords, vec4(bloomColor, 1.0f));
 }

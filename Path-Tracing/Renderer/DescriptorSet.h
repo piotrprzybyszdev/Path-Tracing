@@ -36,6 +36,10 @@ public:
         std::span<const uint32_t> imageMap, vk::Sampler sampler, vk::ImageLayout layout,
         uint32_t firstIndex = 0
     );
+    void UpdateImageArrayFromViews(
+        uint32_t binding, uint32_t frameIndex, std::span<const vk::ImageView> views, vk::Sampler sampler,
+        vk::ImageLayout layout
+    );
 
     void FlushUpdate(uint32_t frameIndex);
 

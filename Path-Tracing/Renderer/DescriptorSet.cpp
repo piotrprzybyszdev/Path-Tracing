@@ -87,6 +87,24 @@ void DescriptorSet::UpdateImageArray(
     desc.Writes.back().setImageInfo(desc.ImageInfos.back());
 }
 
+void DescriptorSet::UpdateImageArrayFromViews(
+    uint32_t binding, uint32_t frameIndex, std::span<const vk::ImageView> views, vk::Sampler sampler, vk::ImageLayout layout
+)
+{
+    assert(frameIndex < m_FramesInFlight);
+
+    FrameDescriptors &desc = m_Descriptors[frameIndex];
+
+    std::vector<vk::DescriptorImageInfo> imageInfos = {};
+
+    for (auto view : views)
+        imageInfos.emplace_back(sampler, view, layout);
+
+    AddWrite(binding, frameIndex, 0, views.size());
+    desc.ImageInfos.push_back(std::move(imageInfos));
+    desc.Writes.back().setImageInfo(desc.ImageInfos.back());
+}
+
 void DescriptorSet::AddWrite(uint32_t binding, uint32_t frameIndex, uint32_t arrayIndex, uint32_t count)
 {
     std::erase_if(m_Descriptors[frameIndex].Writes, [binding, arrayIndex](vk::WriteDescriptorSet write) {
