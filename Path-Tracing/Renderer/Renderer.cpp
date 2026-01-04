@@ -60,12 +60,16 @@ std::unique_ptr<RaytracingPipeline> Renderer::s_PathTracingPipeline = nullptr;
 std::unique_ptr<RaytracingPipeline> Renderer::s_DebugRayTracingPipeline = nullptr;
 std::unique_ptr<ComputePipeline> Renderer::s_SkinningPipeline = nullptr;
 std::unique_ptr<ComputePipeline> Renderer::s_PostProcessPipeline = nullptr;
+std::unique_ptr<ComputePipeline> Renderer::s_CompositionPipeline = nullptr;
+std::unique_ptr<ComputePipeline> Renderer::s_BloomDownsamplePipeline = nullptr;
+std::unique_ptr<ComputePipeline> Renderer::s_BloomUpsamplePipeline = nullptr;
 RaytracingPipeline *Renderer::s_ActiveRayTracingPipeline = nullptr;
 
 std::unique_ptr<BufferBuilder> Renderer::s_BufferBuilder = nullptr;
 std::unique_ptr<ImageBuilder> Renderer::s_ImageBuilder = nullptr;
 
 vk::Sampler Renderer::s_TextureSampler = nullptr;
+vk::Sampler Renderer::s_BloomSampler = nullptr;
 
 void Renderer::Init(const Swapchain *swapchain)
 {
@@ -102,6 +106,14 @@ void Renderer::Init(const Swapchain *swapchain)
         createInfo.setMaxAnisotropy(maxSamplerAnisotropy);
         s_TextureSampler = DeviceContext::GetLogical().createSampler(createInfo);
         Utils::SetDebugName(s_TextureSampler, "Texture Sampler");
+    }
+
+    {
+        vk::SamplerCreateInfo createInfo(vk::SamplerCreateFlags(), vk::Filter::eLinear, vk::Filter::eLinear);
+        createInfo.setAddressModeU(vk::SamplerAddressMode::eClampToEdge);
+        createInfo.setAddressModeV(vk::SamplerAddressMode::eClampToEdge);
+        s_BloomSampler = DeviceContext::GetLogical().createSampler(createInfo);
+        Utils::SetDebugName(s_BloomSampler, "Bloom Sampler");
     }
 
     s_TextureUploader = std::make_unique<TextureUploader>(s_Textures, s_DescriptorSetMutex);
@@ -153,10 +165,17 @@ void Renderer::Shutdown()
     s_TextureOwnershipCommandBuffer.reset();
 
     for (RenderingResources &res : s_RenderingResources)
+    {
         DeviceContext::GetLogical().destroyCommandPool(res.CommandPool);
+        for (auto view : res.BloomImageViews)
+            DeviceContext::GetLogical().destroyImageView(view);
+    }
     s_RenderingResources.clear();
 
     s_PostProcessPipeline.reset();
+    s_CompositionPipeline.reset();
+    s_BloomDownsamplePipeline.reset();
+    s_BloomUpsamplePipeline.reset();
     s_SkinningPipeline.reset();
     s_DebugRayTracingPipeline.reset();
     s_PathTracingPipeline.reset();
@@ -167,6 +186,7 @@ void Renderer::Shutdown()
 
     s_SceneData.reset();
 
+    DeviceContext::GetLogical().destroySampler(s_BloomSampler);
     DeviceContext::GetLogical().destroySampler(s_TextureSampler);
     s_ImageBuilder.reset();
     s_BufferBuilder.reset();
@@ -493,6 +513,12 @@ void Renderer::CreatePipelines()
         s_ShaderLibrary->AddShader("skinning.comp", vk::ShaderStageFlagBits::eCompute);
     s_Shaders.PostProcessCompute =
         s_ShaderLibrary->AddShader("postprocess.comp", vk::ShaderStageFlagBits::eCompute);
+    s_Shaders.CompositionCompute =
+        s_ShaderLibrary->AddShader("composition.comp", vk::ShaderStageFlagBits::eCompute);
+    s_Shaders.BloomDownsampleCompute =
+        s_ShaderLibrary->AddShader("bloomDownsample.comp", vk::ShaderStageFlagBits::eCompute);
+    s_Shaders.BloomUpsampleCompute =
+        s_ShaderLibrary->AddShader("bloomUpsample.comp", vk::ShaderStageFlagBits::eCompute);
     s_Shaders.DebugRaygen =
         s_ShaderLibrary->AddShader("Debug/debugRaygen.rgen", vk::ShaderStageFlagBits::eRaygenKHR);
     s_Shaders.DebugMiss =
@@ -579,6 +605,28 @@ void Renderer::CreatePipelines()
         static PostProcessPipelineConfig maxPostProcessConfig = {};
         s_PostProcessPipeline = builder.CreatePipelineUnique(maxPostProcessConfig);
     }
+
+    {
+        ComputePipelineBuilder builder(*s_ShaderLibrary, s_Shaders.CompositionCompute);
+        static CompositionPipelineConfig maxCompositionConfig = {};
+        s_CompositionPipeline = builder.CreatePipelineUnique(maxCompositionConfig);
+    }
+
+    {
+        ComputePipelineBuilder builder(*s_ShaderLibrary, s_Shaders.BloomDownsampleCompute);
+        builder.AddHintSize(0, Shaders::MaxBloomMipmapLevel + 1);
+        builder.AddHintSize(1, Shaders::MaxBloomMipmapLevel + 1);
+        static BloomDownsamplePipelineConfig maxBloomDownsampleConfig = {};
+        s_BloomDownsamplePipeline = builder.CreatePipelineUnique(maxBloomDownsampleConfig);
+    }
+
+    {
+        ComputePipelineBuilder builder(*s_ShaderLibrary, s_Shaders.BloomUpsampleCompute);
+        builder.AddHintSize(0, Shaders::MaxBloomMipmapLevel + 1);
+        builder.AddHintSize(1, Shaders::MaxBloomMipmapLevel + 1);
+        static BloomUpsamplePipelineConfig maxBloomUpsampleConfig = {};
+        s_BloomUpsamplePipeline = builder.CreatePipelineUnique(maxBloomUpsampleConfig);
+    }
 }
 
 void Renderer::UpdateShaderBindingTable()
@@ -633,6 +681,9 @@ void Renderer::UpdatePipelineSpecializations()
     s_DebugRayTracingPipeline->CancelUpdate();
     s_SkinningPipeline->CancelUpdate();
     s_PostProcessPipeline->CancelUpdate();
+    s_CompositionPipeline->CancelUpdate();
+    s_BloomDownsamplePipeline->CancelUpdate();
+    s_BloomUpsamplePipeline->CancelUpdate();
     Application::ResetBackgroundTask(BackgroundTaskType::ShaderCompilation);
 
     if (s_ActiveRayTracingPipeline == s_PathTracingPipeline.get())
@@ -641,6 +692,9 @@ void Renderer::UpdatePipelineSpecializations()
         s_ActiveRayTracingPipeline->Update(s_DebugRayTracingPipelineConfig);
 
     s_PostProcessPipeline->Update(PostProcessPipelineConfig());
+    s_CompositionPipeline->Update(CompositionPipelineConfig());
+    s_BloomDownsamplePipeline->Update(BloomDownsamplePipelineConfig());
+    s_BloomUpsamplePipeline->Update(BloomUpsamplePipelineConfig());
     s_SkinningPipeline->Update(SkinningPipelineConfig());
     UpdateShaderBindingTable();
     ResetAccumulationImage();
@@ -813,6 +867,118 @@ void Renderer::RecordPostProcessCommands(const RenderingResources &resources)
         const uint32_t groupSizeY =
             std::ceil(static_cast<float>(storageExtent.height) / Shaders::PostProcessShaderGroupSizeY);
         commandBuffer.dispatch(groupSizeX, groupSizeY, 1);
+        
+        const uint32_t maxMipLevel =
+            std::min(resources.BloomImage.GetMipLevels() - 3, Shaders::MaxBloomMipmapLevel);
+
+        for (uint32_t i = 0; i < maxMipLevel - 1; i++)
+        {
+            const auto flags = vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderStorageWrite;
+
+            Image::Transition(
+                commandBuffer, resources.BloomImage.GetHandle(), vk::ImageLayout::eGeneral,
+                vk::ImageLayout::eGeneral, vk::PipelineStageFlagBits2::eComputeShader,
+                vk::PipelineStageFlagBits2::eComputeShader, flags, flags, i
+            );
+
+            Image::Transition(
+                commandBuffer, resources.BloomImage.GetHandle(), vk::ImageLayout::eGeneral,
+                vk::ImageLayout::eGeneral, vk::PipelineStageFlagBits2::eComputeShader,
+                vk::PipelineStageFlagBits2::eComputeShader, flags, flags, i + 1
+            );
+
+            commandBuffer.bindPipeline(
+                vk::PipelineBindPoint::eCompute, s_BloomDownsamplePipeline->GetHandle()
+            );
+            commandBuffer.bindDescriptorSets(
+                vk::PipelineBindPoint::eCompute, s_BloomDownsamplePipeline->GetLayout(), 0,
+                { s_BloomDownsamplePipeline->GetDescriptorSet()->GetSet(
+                    s_Swapchain->GetCurrentFrameInFlightIndex()
+                ) },
+                {}
+            );
+
+            commandBuffer.pushConstants(
+                s_BloomDownsamplePipeline->GetLayout(), vk::ShaderStageFlagBits::eCompute, 0u,
+                sizeof(uint32_t), &i
+            );
+
+            vk::Extent2D mipmapExtent = resources.BloomImage.GetMipExtent(i + 1);
+
+            const uint32_t mipGroupSizeX =
+                std::ceil(static_cast<float>(mipmapExtent.width) / Shaders::PostProcessShaderGroupSizeX);
+            const uint32_t mipGroupSizeY =
+                std::ceil(static_cast<float>(mipmapExtent.height) / Shaders::PostProcessShaderGroupSizeY);
+
+            commandBuffer.dispatch(mipGroupSizeX, mipGroupSizeY, 1);
+        }
+
+        for (uint32_t i = maxMipLevel - 1; i > 0; i--)
+        {
+            const auto flags = vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderStorageWrite;
+
+            Image::Transition(
+                commandBuffer, resources.BloomImage.GetHandle(), vk::ImageLayout::eGeneral,
+                vk::ImageLayout::eGeneral, vk::PipelineStageFlagBits2::eComputeShader,
+                vk::PipelineStageFlagBits2::eComputeShader, flags, flags, i
+            );
+
+            Image::Transition(
+                commandBuffer, resources.BloomImage.GetHandle(), vk::ImageLayout::eGeneral,
+                vk::ImageLayout::eGeneral, vk::PipelineStageFlagBits2::eComputeShader,
+                vk::PipelineStageFlagBits2::eComputeShader, flags, flags, i - 1
+            );
+
+            commandBuffer.bindPipeline(
+                vk::PipelineBindPoint::eCompute, s_BloomUpsamplePipeline->GetHandle()
+            );
+            commandBuffer.bindDescriptorSets(
+                vk::PipelineBindPoint::eCompute, s_BloomUpsamplePipeline->GetLayout(), 0,
+                { s_BloomUpsamplePipeline->GetDescriptorSet()->GetSet(
+                    s_Swapchain->GetCurrentFrameInFlightIndex()
+                ) },
+                {}
+            );
+
+            commandBuffer.pushConstants(
+                s_BloomUpsamplePipeline->GetLayout(), vk::ShaderStageFlagBits::eCompute, 0u,
+                sizeof(uint32_t), &i
+            );
+
+            vk::Extent2D mipmapExtent = resources.BloomImage.GetMipExtent(i - 1);
+
+            const uint32_t mipGroupSizeX =
+                std::ceil(static_cast<float>(mipmapExtent.width) / Shaders::PostProcessShaderGroupSizeX);
+            const uint32_t mipGroupSizeY =
+                std::ceil(static_cast<float>(mipmapExtent.height) / Shaders::PostProcessShaderGroupSizeY);
+
+            commandBuffer.dispatch(mipGroupSizeX, mipGroupSizeY, 1);
+        }
+
+        Image::Transition(
+            commandBuffer, resources.BloomImage.GetHandle(), vk::ImageLayout::eGeneral,
+            vk::ImageLayout::eGeneral, vk::PipelineStageFlagBits2::eComputeShader,
+            vk::PipelineStageFlagBits2::eComputeShader, vk::AccessFlagBits2::eShaderStorageWrite,
+            vk::AccessFlagBits2::eShaderStorageRead, 0
+        );
+
+        Image::Transition(
+            commandBuffer, resources.PostProcessImage.GetHandle(), vk::ImageLayout::eGeneral,
+            vk::ImageLayout::eGeneral, vk::PipelineStageFlagBits2::eComputeShader,
+            vk::PipelineStageFlagBits2::eComputeShader, vk::AccessFlagBits2::eShaderStorageWrite,
+            vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite
+        );
+  
+        commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, s_CompositionPipeline->GetHandle());
+        commandBuffer.bindDescriptorSets(
+            vk::PipelineBindPoint::eCompute, s_CompositionPipeline->GetLayout(), 0,
+            { s_CompositionPipeline->GetDescriptorSet()->GetSet(
+                s_Swapchain->GetCurrentFrameInFlightIndex()
+            ) },
+            {}
+        );
+
+        commandBuffer.dispatch(groupSizeX, groupSizeY, 1);
 
         Image::Transition(
             commandBuffer, swapchainImage, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
@@ -943,6 +1109,30 @@ void Renderer::CreateImageResources(RenderingResources &res, uint32_t frameIndex
             .SetUsageFlags(vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eTransferSrc)
             .CreateImage(extent, std::format("Post-process Image {}", frameIndex));
 
+    res.BloomImage = s_ImageBuilder->SetFormat(vk::Format::eR16G16B16A16Sfloat)
+                            .SetUsageFlags(
+                                vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled |
+                                vk::ImageUsageFlagBits::eTransferSrc
+                            )
+                            .EnableMips()
+                            .CreateImage(extent, std::format("Bloom Image {}", frameIndex));
+
+    for (auto view : res.BloomImageViews)
+        DeviceContext::GetLogical().destroyImageView(view);
+    res.BloomImageViews.clear();
+
+    for (uint32_t level = 0; level < res.BloomImage.GetMipLevels(); level++)
+    {
+        vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, level, 1, 0, 1);
+        vk::ImageViewCreateInfo viewCreateInfo = vk::ImageViewCreateInfo(
+                                                     vk::ImageViewCreateFlags(), res.BloomImage.GetHandle(),
+                                                     vk::ImageViewType::e2D, res.BloomImage.GetFormat()
+        )
+                                                     .setSubresourceRange(range);
+
+        res.BloomImageViews.push_back(DeviceContext::GetLogical().createImageView(viewCreateInfo));
+    }
+
     s_MainCommandBuffer->Begin();
     res.AccumulationImage.Transition(
         s_MainCommandBuffer->Buffer, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral
@@ -950,6 +1140,11 @@ void Renderer::CreateImageResources(RenderingResources &res, uint32_t frameIndex
     res.PostProcessImage.Transition(
         s_MainCommandBuffer->Buffer, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral
     );
+
+    res.BloomImage.Transition(
+        s_MainCommandBuffer->Buffer, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral
+    );
+
     s_MainCommandBuffer->SubmitBlocking();
 }
 
@@ -1011,6 +1206,28 @@ void Renderer::OnResize(vk::Extent2D extent)
         s_PostProcessPipeline->GetDescriptorSet()->UpdateImage(
             1, i, res.PostProcessImage, vk::Sampler(), vk::ImageLayout::eGeneral
         );
+        s_PostProcessPipeline->GetDescriptorSet()->UpdateImage(
+            2, i, res.BloomImage, vk::Sampler(), vk::ImageLayout::eGeneral
+        );
+        s_CompositionPipeline->GetDescriptorSet()->UpdateImage(
+            0, i, res.PostProcessImage, vk::Sampler(), vk::ImageLayout::eGeneral
+        );
+        s_CompositionPipeline->GetDescriptorSet()->UpdateImage(
+            1, i, res.BloomImage, vk::Sampler(), vk::ImageLayout::eGeneral
+        );
+
+        s_BloomDownsamplePipeline->GetDescriptorSet()->UpdateImageArrayFromViews(
+            0, i, res.BloomImageViews, s_BloomSampler, vk::ImageLayout::eGeneral
+        );
+        s_BloomDownsamplePipeline->GetDescriptorSet()->UpdateImageArrayFromViews(
+            1, i, res.BloomImageViews, vk::Sampler(), vk::ImageLayout::eGeneral
+        );
+        s_BloomUpsamplePipeline->GetDescriptorSet()->UpdateImageArrayFromViews(
+            0, i, res.BloomImageViews, s_BloomSampler, vk::ImageLayout::eGeneral
+        );
+        s_BloomUpsamplePipeline->GetDescriptorSet()->UpdateImageArrayFromViews(
+            1, i, res.BloomImageViews, vk::Sampler(), vk::ImageLayout::eGeneral
+        );
     }
 }
 
@@ -1062,8 +1279,14 @@ void Renderer::RecreateDescriptorSet()
     s_DebugRayTracingPipeline->CreateDescriptorSet(s_RenderingResources.size());
     s_SkinningPipeline->CreateDescriptorSet(s_RenderingResources.size());
     s_PostProcessPipeline->CreateDescriptorSet(s_RenderingResources.size());
+    s_CompositionPipeline->CreateDescriptorSet(s_RenderingResources.size());
+    s_BloomDownsamplePipeline->CreateDescriptorSet(s_RenderingResources.size());
+    s_BloomUpsamplePipeline->CreateDescriptorSet(s_RenderingResources.size());
     DescriptorSet *skinningDescriptorSet = s_SkinningPipeline->GetDescriptorSet();
     DescriptorSet *postProcessDescriptorSet = s_PostProcessPipeline->GetDescriptorSet();
+    DescriptorSet *compositionDescriptorSet = s_CompositionPipeline->GetDescriptorSet();
+    DescriptorSet *bloomDownsampleDescriptorSet = s_BloomDownsamplePipeline->GetDescriptorSet();
+    DescriptorSet *bloomUpsampleDescriptorSet = s_BloomUpsamplePipeline->GetDescriptorSet();
 
     for (uint32_t frameIndex = 0; frameIndex < s_RenderingResources.size(); frameIndex++)
     {
@@ -1119,7 +1342,31 @@ void Renderer::RecreateDescriptorSet()
         postProcessDescriptorSet->UpdateImage(
             1, frameIndex, res.PostProcessImage, vk::Sampler(), vk::ImageLayout::eGeneral
         );
-        postProcessDescriptorSet->UpdateBuffer(2, frameIndex, res.PostProcessUniformBuffer);
+        postProcessDescriptorSet->UpdateImage(
+            2, frameIndex, res.BloomImage, vk::Sampler(), vk::ImageLayout::eGeneral
+        );
+        postProcessDescriptorSet->UpdateBuffer(3, frameIndex, res.PostProcessUniformBuffer);
+        
+        compositionDescriptorSet->UpdateImage(
+            0, frameIndex, res.PostProcessImage, vk::Sampler(), vk::ImageLayout::eGeneral
+        );
+        compositionDescriptorSet->UpdateImage(
+            1, frameIndex, res.BloomImage, vk::Sampler(), vk::ImageLayout::eGeneral
+        );
+        compositionDescriptorSet->UpdateBuffer(2, frameIndex, res.PostProcessUniformBuffer);
+        
+        s_BloomDownsamplePipeline->GetDescriptorSet()->UpdateImageArrayFromViews(
+            0, frameIndex, res.BloomImageViews, s_BloomSampler, vk::ImageLayout::eGeneral
+        );
+        s_BloomDownsamplePipeline->GetDescriptorSet()->UpdateImageArrayFromViews(
+            1, frameIndex, res.BloomImageViews, vk::Sampler(), vk::ImageLayout::eGeneral
+        );
+        s_BloomUpsamplePipeline->GetDescriptorSet()->UpdateImageArrayFromViews(
+            0, frameIndex, res.BloomImageViews, s_BloomSampler, vk::ImageLayout::eGeneral
+        );
+        s_BloomUpsamplePipeline->GetDescriptorSet()->UpdateImageArrayFromViews(
+            1, frameIndex, res.BloomImageViews, vk::Sampler(), vk::ImageLayout::eGeneral
+        );
     }
 }
 
@@ -1171,6 +1418,9 @@ void Renderer::Render()
 {
     s_SkinningPipeline->GetDescriptorSet()->FlushUpdate(s_Swapchain->GetCurrentFrameInFlightIndex());
     s_PostProcessPipeline->GetDescriptorSet()->FlushUpdate(s_Swapchain->GetCurrentFrameInFlightIndex());
+    s_CompositionPipeline->GetDescriptorSet()->FlushUpdate(s_Swapchain->GetCurrentFrameInFlightIndex());
+    s_BloomDownsamplePipeline->GetDescriptorSet()->FlushUpdate(s_Swapchain->GetCurrentFrameInFlightIndex());
+    s_BloomUpsamplePipeline->GetDescriptorSet()->FlushUpdate(s_Swapchain->GetCurrentFrameInFlightIndex());
 
     {
         std::lock_guard lock(s_DescriptorSetMutex);
@@ -1210,7 +1460,11 @@ void Renderer::Render()
     else
         res.TotalSamples = 1;
 
-    Shaders::PostProcessingUniformData postprocessData = { res.TotalSamples, s_PostProcessSettings.Exposure };
+    Shaders::PostProcessingUniformData postprocessData = { res.TotalSamples, s_PostProcessSettings.Exposure,
+                                                           s_PostProcessSettings.BloomThreshold,
+                                                           s_PostProcessSettings.BloomIntensity };
+    
+    
     res.RaygenUniformBuffer.Upload(&rgenData);
     res.PostProcessUniformBuffer.Upload(&postprocessData);
     res.LightUniformBuffer.Upload(ToByteSpan(res.LightCount));

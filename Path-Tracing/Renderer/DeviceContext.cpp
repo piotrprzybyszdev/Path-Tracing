@@ -127,9 +127,15 @@ void DeviceContext::Init(vk::Instance instance, vk::SurfaceKHR surface)
     pipelineFeatures.setPNext(&dynamicRenderingFeatures);
 
     vk::PhysicalDeviceDescriptorIndexingFeatures descriptorIndexingFeatures;
+    descriptorIndexingFeatures.setShaderSampledImageArrayNonUniformIndexing(vk::True);
+    descriptorIndexingFeatures.setShaderStorageImageArrayNonUniformIndexing(vk::True);
     descriptorIndexingFeatures.setDescriptorBindingPartiallyBound(vk::True);
     descriptorIndexingFeatures.setRuntimeDescriptorArray(vk::True);
     dynamicRenderingFeatures.setPNext(&descriptorIndexingFeatures);
+
+    vk::PhysicalDeviceUniformBufferStandardLayoutFeatures uniformBufferLayoutFeatures;
+    uniformBufferLayoutFeatures.setUniformBufferStandardLayout(vk::True);
+    descriptorIndexingFeatures.setPNext(&uniformBufferLayoutFeatures);
 
     vk::DeviceCreateInfo createInfo(
         vk::DeviceCreateFlags(), queueCreateInfos, {}, deviceExtensions, nullptr, &features

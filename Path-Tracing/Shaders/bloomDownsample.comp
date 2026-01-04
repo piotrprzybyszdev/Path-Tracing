@@ -1,0 +1,56 @@
+#version 460
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_scalar_block_layout : require
+#extension GL_EXT_nonuniform_qualifier : require
+
+#include "ShaderRendererTypes.incl"
+#include "common.glsl"
+
+layout(binding = 0, set = 0) uniform sampler2D u_BloomSampler[MaxBloomMipmapLevel + 1];
+layout(binding = 1, set = 0, rgba16f) uniform image2D u_BloomMipmaps[MaxBloomMipmapLevel + 1];
+
+layout(push_constant) uniform PushConstants {
+    uint mipmapLevel;
+} pushConstants;
+
+layout (local_size_x = PostProcessShaderGroupSizeX, local_size_y = PostProcessShaderGroupSizeY, local_size_z = 1) in;
+
+void main() 
+{
+    const uint srcLevel = pushConstants.mipmapLevel;
+    const uint dstLevel = srcLevel + 1;
+    const ivec2 dstCoords = ivec2(gl_GlobalInvocationID.xy);
+    
+    ivec2 dstSize = imageSize(u_BloomMipmaps[nonuniformEXT(dstLevel)]);
+    if (any(greaterThanEqual(dstCoords, dstSize)))
+        return;
+
+    vec2 srcTexelSize = 1.0f /  vec2(textureSize(u_BloomSampler[nonuniformEXT(srcLevel)], 0));
+    
+    vec2 uv = (vec2(dstCoords) + 0.5f) / vec2(dstSize);
+
+    // 13-tap Downsample (Jimenez) using hardware bilinear filtering.
+    vec3 a = texture(u_BloomSampler[nonuniformEXT(srcLevel)], uv + vec2(-2.0 * srcTexelSize.x,  2.0 * srcTexelSize.y)).rgb;
+    vec3 b = texture(u_BloomSampler[nonuniformEXT(srcLevel)], uv + vec2( 0.0 * srcTexelSize.x,  2.0 * srcTexelSize.y)).rgb;
+    vec3 c = texture(u_BloomSampler[nonuniformEXT(srcLevel)], uv + vec2( 2.0 * srcTexelSize.x,  2.0 * srcTexelSize.y)).rgb;
+    
+    vec3 d = texture(u_BloomSampler[nonuniformEXT(srcLevel)], uv + vec2(-2.0 * srcTexelSize.x,  0.0 * srcTexelSize.y)).rgb;
+    vec3 e = texture(u_BloomSampler[nonuniformEXT(srcLevel)], uv + vec2( 0.0 * srcTexelSize.x,  0.0 * srcTexelSize.y)).rgb;
+    vec3 f = texture(u_BloomSampler[nonuniformEXT(srcLevel)], uv + vec2( 2.0 * srcTexelSize.x,  0.0 * srcTexelSize.y)).rgb;
+    
+    vec3 g = texture(u_BloomSampler[nonuniformEXT(srcLevel)], uv + vec2(-2.0 * srcTexelSize.x, -2.0 * srcTexelSize.y)).rgb;
+    vec3 h = texture(u_BloomSampler[nonuniformEXT(srcLevel)], uv + vec2( 0.0 * srcTexelSize.x, -2.0 * srcTexelSize.y)).rgb;
+    vec3 i = texture(u_BloomSampler[nonuniformEXT(srcLevel)], uv + vec2( 2.0 * srcTexelSize.x, -2.0 * srcTexelSize.y)).rgb;
+    
+    vec3 j = texture(u_BloomSampler[nonuniformEXT(srcLevel)], uv + vec2(-1.0 * srcTexelSize.x,  1.0 * srcTexelSize.y)).rgb;
+    vec3 k = texture(u_BloomSampler[nonuniformEXT(srcLevel)], uv + vec2( 1.0 * srcTexelSize.x,  1.0 * srcTexelSize.y)).rgb;
+    vec3 l = texture(u_BloomSampler[nonuniformEXT(srcLevel)], uv + vec2(-1.0 * srcTexelSize.x, -1.0 * srcTexelSize.y)).rgb;
+    vec3 m = texture(u_BloomSampler[nonuniformEXT(srcLevel)], uv + vec2( 1.0 * srcTexelSize.x, -1.0 * srcTexelSize.y)).rgb;
+
+    vec3 downsample = e * 0.125;
+    downsample += (a + c + g + i) * 0.03125;
+    downsample += (b + d + f + h) * 0.0625;
+    downsample += (j + k + l + m) * 0.125;
+
+    imageStore(u_BloomMipmaps[nonuniformEXT(dstLevel)], dstCoords, vec4(downsample, 1.0f));
+}

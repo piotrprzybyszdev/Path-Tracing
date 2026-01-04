@@ -443,6 +443,9 @@ private:
     bool m_DepthOfField = false;
     float m_LensRadius = 0.1f;
     float m_FocalDistance = 10.0f;
+    bool m_Bloom = true;
+    float m_BloomThreshold = 1.0f;
+    float m_BloomIntensity = 0.1f;
     int m_Extent[2] = { 1280, 720 };
     int m_FrameCount = 60;
     int m_Framerate = 60;
@@ -636,6 +639,32 @@ void OfflineRenderContent::Render()
         ImGui::SetNextItemWidth(-1);
         ImGui::SliderFloat("##Exposure", &m_Exposure, -10.0f, 10.0f, "%.2f");
 
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("Bloom");
+        ImGui::TableNextColumn();
+        ImGui::Checkbox("##Bloom", &m_Bloom);
+
+        if (!m_Bloom)
+            ImGui::BeginDisabled();
+
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("Bloom Threshold");
+        ImGui::TableNextColumn();
+        ImGui::SetNextItemWidth(-1);
+        ImGui::SliderFloat("##BloomThreshold", &m_BloomThreshold, 1.0f, 5.0f, "%.2f");
+
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("Bloom Intensity");
+        ImGui::TableNextColumn();
+        ImGui::SetNextItemWidth(-1);
+        ImGui::SliderFloat("##BloomIntensity", &m_BloomIntensity, 0.0f, 1.0f, "%.2f");
+
+        if (!m_Bloom)
+            ImGui::EndDisabled();
+
         ImGui::EndTable();
     }
 
@@ -659,7 +688,7 @@ void OfflineRenderContent::Render()
         Renderer::SetSettings(Renderer::PathTracingSettings(
             m_MaxBounceCount, m_DepthOfField ? m_LensRadius : 0.0f, m_FocalDistance
         ));
-        Renderer::SetSettings(Renderer::PostProcessSettings(std::pow(2.0f, m_Exposure)));
+        Renderer::SetSettings(Renderer::PostProcessSettings(std::pow(2.0f, m_Exposure), m_BloomThreshold, m_Bloom ? m_BloomIntensity : 0.0f));
         Renderer::SetSettings(
             Renderer::RenderSettings(
                 OutputInfo(
@@ -806,6 +835,9 @@ private:
     bool m_DepthOfField = false;
     float m_LensRadius = 0.1f;
     float m_FocalDistance = 10.0f;
+    bool m_Bloom = true;
+    float m_BloomThreshold = 1.0f;
+    float m_BloomIntensity = 0.1f;
 };
 
 void SettingsContent::Render()
@@ -853,6 +885,24 @@ void SettingsContent::Render()
         ImGui::SameLine();
         postProcessSettingsChanged |= ImGui::SliderFloat("##Exposure", &m_Exposure, -10.0f, 10.0f, "%.2f");
 
+        postProcessSettingsChanged |= ImGui::Checkbox("Bloom", &m_Bloom);
+
+        if (!m_Bloom)
+            ImGui::BeginDisabled();
+
+        ImGui::Text("Bloom Threshold:");
+        ImGui::SameLine();
+        postProcessSettingsChanged |=
+            ImGui::SliderFloat("##BloomThreshold", &m_BloomThreshold, 1.0f, 5.0f, "%.2f");
+
+        ImGui::Text("Bloom Intensity:");
+        ImGui::SameLine();
+        postProcessSettingsChanged |=
+            ImGui::SliderFloat("##BloomIntensity", &m_BloomIntensity, 0.0f, 1.0f, "%.2f");
+
+        if (!m_Bloom)
+            ImGui::EndDisabled();
+
         ImGui::TreePop();
     }
 
@@ -861,7 +911,7 @@ void SettingsContent::Render()
             m_BounceCount, m_DepthOfField ? m_LensRadius : 0.0f, m_FocalDistance
         ));
     if (postProcessSettingsChanged)
-        Renderer::SetSettings(Renderer::PostProcessSettings(std::pow(2.0f, m_Exposure)));
+        Renderer::SetSettings(Renderer::PostProcessSettings(std::pow(2.0f, m_Exposure), m_BloomThreshold, m_Bloom ? m_BloomIntensity : 0.0f));
 }
 
 class SettingsTab : public Tab
