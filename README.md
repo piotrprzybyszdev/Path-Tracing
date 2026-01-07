@@ -40,6 +40,10 @@ Some scenes are composed of separate components. In that case, you can also inst
 * **AMAZON_BISTRO** (*0.9 GB zip*)
 ![alt text](gallery/bistro.png)
 
+### [Beeple Zero Day](https://developer.nvidia.com/orca/beeple-zero-day)
+* **BEEPLE_ZERO_DAY** (*0.6 GB zip*)
+![alt text](gallery/beeple.png)
+
 ## Configuration
 The project can be compiled in 4 different configurations, each of which enables different suboptions. Each suboption can also be enabled individually.
 
