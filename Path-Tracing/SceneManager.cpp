@@ -34,6 +34,11 @@ void CombinedSceneLoader::SetDxNormalTextures()
     m_HasDxNormalTextures = true;
 }
 
+void CombinedSceneLoader::ForceFullTextureSize()
+{
+    m_ForceFullTextureSize = true;
+}
+
 bool CombinedSceneLoader::HasContent() const
 {
     return m_SkyboxPath.has_value() || !m_ComponentPaths.empty();
@@ -53,6 +58,9 @@ void CombinedSceneLoader::Load(SceneBuilder &sceneBuilder)
 
     if (m_HasDxNormalTextures)
         sceneBuilder.SetDxNormalTextures();
+
+    if (m_ForceFullTextureSize)
+        sceneBuilder.ForceFullTextureSize();
 }
 
 std::map<std::string, SceneGroup> SceneManager::s_SceneGroups = {};

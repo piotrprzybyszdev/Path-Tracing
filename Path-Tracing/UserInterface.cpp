@@ -149,7 +149,8 @@ void UserInterface::OnKeyRelease(Key key)
         s_IsVisible = !s_IsVisible;
         break;
     case Key::H:
-        Renderer::ReloadShaders();
+        if (!Application::IsRendering())
+            Renderer::ReloadShaders();
         break;
     case Key::P:
         SceneManager::GetActiveScene()->ToggleAnimationPause();

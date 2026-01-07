@@ -168,7 +168,7 @@ public:
         std::vector<LightInfo> &&lightInfos, DirectionalLightInfo &&directionalLightInfo,
         std::vector<Shaders::PointLight> &&pointLights, Shaders::DirectionalLight &&directionalLight,
         SkyboxVariant &&skybox, const std::vector<CameraInfo> &cameraInfos, bool hasAnimatedInstances,
-        bool hasDxNormalTextures, const std::string &name
+        bool hasDxNormalTextures, bool forceFullTextureSize, const std::string &name
     );
 
     bool Update(float timeStep);
@@ -194,6 +194,7 @@ public:
     [[nodiscard]] bool HasSkeletalAnimations() const;
     [[nodiscard]] bool IsAnimationPaused() const;
     [[nodiscard]] bool HasDxNormalTextures() const;
+    [[nodiscard]] bool GetForceFullTextureSize() const;
 
     [[nodiscard]] std::span<const Shaders::PointLight> GetPointLights() const;
     [[nodiscard]] const Shaders::DirectionalLight &GetDirectionalLight() const;
@@ -230,6 +231,7 @@ private:
     std::vector<TextureInfo> m_Textures;
 
     const bool m_HasDxNormalTextures = false;
+    const bool m_ForceFullTextureSize = false;
 
     std::vector<Model> m_Models;
     std::vector<ModelInstance> m_ModelInstances;
@@ -290,6 +292,7 @@ public:
     void AddCamera(CameraInfo &&camera);
 
     void SetDxNormalTextures();
+    void ForceFullTextureSize();
     [[nodiscard]] std::shared_ptr<Scene> CreateSceneShared(const std::string &name);
 
 public:
@@ -315,6 +318,7 @@ private:
     std::vector<TextureInfo> m_Textures;
     std::unordered_map<std::string, uint32_t> m_TextureIndices;
     bool m_HasDxNormalTextures = false;
+    bool m_ForceFullTextureSize = false;
 
     std::vector<Model> m_Models;
     std::vector<std::pair<uint32_t, uint32_t>> m_ModelInstanceInfos;

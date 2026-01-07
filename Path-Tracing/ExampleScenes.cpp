@@ -42,22 +42,29 @@ static void AddKhronosScenes(std::map<std::string, SceneGroup> &scenes)
                                        "KhronosScenes" / "glTF-Sample-Assets-main" / "Models";
     SceneGroup &group = AddSceneGroup(scenes, "Khronos Scenes");
 
-    for (const auto &entry : std::filesystem::recursive_directory_iterator(base))
+    try
     {
-        try
+        for (const auto &entry : std::filesystem::recursive_directory_iterator(base))
         {
-            if (entry.path().extension() != ".gltf")
-                continue;
+            try
+            {
+                if (entry.path().extension() != ".gltf")
+                    continue;
 
-            auto loader = std::make_unique<CombinedSceneLoader>();
-            loader->AddComponent(entry.path());
+                auto loader = std::make_unique<CombinedSceneLoader>();
+                loader->AddComponent(entry.path());
 
-            group.emplace(entry.path().stem().string(), std::move(loader));
+                group.emplace(entry.path().stem().string(), std::move(loader));
+            }
+            catch (const std::system_error &exc)
+            {
+                logger::debug("Error when iterating scene folders: {}", exc.what());
+            }
         }
-        catch (const std::exception &exc)
-        {
-            logger::debug("Error when iterating scene folders: {}", exc.what());
-        }
+    }
+    catch (const std::system_error &exc)
+    {
+        logger::debug("Khronos Scenes could not be found: {}", exc.what());
     }
 }
 
@@ -67,6 +74,7 @@ struct SceneDescription
     std::optional<std::filesystem::path> SkyboxPath;
     TextureMapping Mapping;
     bool HasDxNormalTextures = false;
+    bool ForceFullTextureSize = false;
 
     [[nodiscard]] std::unique_ptr<CombinedSceneLoader> ToLoader() const;
 };
@@ -94,6 +102,9 @@ std::unique_ptr<CombinedSceneLoader> SceneDescription::ToLoader() const
 
     if (HasDxNormalTextures)
         loader->SetDxNormalTextures();
+
+    if (ForceFullTextureSize)
+        loader->ForceFullTextureSize();
 
     return loader;
 }
@@ -150,32 +161,64 @@ static void AddHighQualityScenes(std::map<std::string, SceneGroup> &scenes)
         .SkyboxPath = { base / "UE4SunTemple" / "SunTemple_v4" / "SunTemple" / "SunTemple_Skybox.hdr" },
         .Mapping = NVIDIAOrcaTextureMapping,
         .HasDxNormalTextures = true,
+        .ForceFullTextureSize = true,
     };
 
     SceneDescription amazonBistroDescription = {
         .ComponentPaths = {
             base / "AmazonBistro" / "Bistro_v5_2" / "BistroExterior.fbx",
+        },
+        .SkyboxPath = base / "AmazonBistro" / "Bistro_v5_2" / "san_giuseppe_bridge_4k.hdr",
+        .Mapping = NVIDIAOrcaTextureMapping,
+        .HasDxNormalTextures = true,
+        .ForceFullTextureSize = true,
+    };
+
+    SceneDescription amazonBistroInteriorDescription = {
+        .ComponentPaths = {
             base / "AmazonBistro" / "Bistro_v5_2" / "BistroInterior.fbx",
         },
         .SkyboxPath = base / "AmazonBistro" / "Bistro_v5_2" / "san_giuseppe_bridge_4k.hdr",
         .Mapping = NVIDIAOrcaTextureMapping,
         .HasDxNormalTextures = true,
+        .ForceFullTextureSize = true,
     };
 
-    SceneDescription amazonBistroWineDescription = {
+    SceneDescription amazonBistroInteriorWineDescription = {
         .ComponentPaths = {
-            base / "AmazonBistro" / "Bistro_v5_2" / "BistroExterior.fbx",
             base / "AmazonBistro" / "Bistro_v5_2" / "BistroInterior_Wine.fbx",
         },
         .SkyboxPath = base / "AmazonBistro" / "Bistro_v5_2" / "san_giuseppe_bridge_4k.hdr",
         .Mapping = NVIDIAOrcaTextureMapping,
         .HasDxNormalTextures = true,
+        .ForceFullTextureSize = true,
+    };
+
+    SceneDescription beepleZeroDayMeasureOneDescription = {
+        .ComponentPaths = {
+            base / "BeepleZeroDay" / "MEASURE_ONE" / "MEASURE_ONE.fbx",
+        },
+        .Mapping = NVIDIAOrcaTextureMapping,
+        .HasDxNormalTextures = true,
+        .ForceFullTextureSize = true,
+    };
+
+    SceneDescription beepleZeroDayMeasureSevenDescription = {
+        .ComponentPaths = {
+            base / "BeepleZeroDay" / "MEASURE_SEVEN" / "MEASURE_SEVEN.fbx",
+        },
+        .Mapping = NVIDIAOrcaTextureMapping,
+        .HasDxNormalTextures = true,
+        .ForceFullTextureSize = true,
     };
 
     AddSceneByDescription(group, "Intel Sponza", std::move(intelSponzaDescription));
     AddSceneByDescription(group, "UE4 Sun Temple", std::move(ue4SunTempleDescription));
-    AddSceneByDescription(group, "Amazon Bistro", std::move(amazonBistroDescription));
-    AddSceneByDescription(group, "Amazon Bistro Wine", std::move(amazonBistroWineDescription));
+    AddSceneByDescription(group, "Amazon Bistro Exterior", std::move(amazonBistroDescription));
+    AddSceneByDescription(group, "Amazon Bistro Interior", std::move(amazonBistroInteriorDescription));
+    AddSceneByDescription(group, "Amazon Bistro Interior Wine", std::move(amazonBistroInteriorWineDescription));
+    AddSceneByDescription(group, "Beeple Zero Day Mesure One", std::move(beepleZeroDayMeasureOneDescription));
+    AddSceneByDescription(group, "Beeple Zero Day Mesure Seven", std::move(beepleZeroDayMeasureSevenDescription));
 }
 
 static void AddTestScenes(std::map<std::string, SceneGroup> &scenes)

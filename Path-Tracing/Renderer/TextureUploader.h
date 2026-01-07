@@ -84,7 +84,7 @@ private:
     };
 
 private:
-    void DetermineMaxTextureSizes(size_t textureCount);
+    void DetermineMaxTextureSizes(size_t textureCount, bool forceFullSize);
 
     void StartLoaderThreads(const std::shared_ptr<const Scene> &scene);
     void StartSubmitThread(const std::shared_ptr<const Scene> &scene);

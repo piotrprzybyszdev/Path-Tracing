@@ -94,7 +94,7 @@ void TextureUploader::UploadTexturesBlocking(const Scene &scene)
     if (textures.empty())
         return;
 
-    DetermineMaxTextureSizes(textures.size());
+    DetermineMaxTextureSizes(textures.size(), scene.GetForceFullTextureSize());
 
     for (uint32_t i = 0; i < textures.size(); i++)
     {
@@ -123,7 +123,7 @@ void TextureUploader::UploadTextures(const std::shared_ptr<const Scene> &scene)
     if (textures.empty())
         return;
 
-    DetermineMaxTextureSizes(textures.size());
+    DetermineMaxTextureSizes(textures.size(), scene->GetForceFullTextureSize());
     Application::AddBackgroundTask(BackgroundTaskType::TextureUpload, textures.size());
     StartLoaderThreads(scene);
     StartSubmitThread(scene);
@@ -420,23 +420,41 @@ void TextureUploader::UploadTexture(
     Image image = m_ImageBuilder.CreateImage(extent, texture.Name);
     if (Utils::LteExtent(originalExtent, maxExtent))
     {
-        image.UploadFromBuffer(transferBuffer, buffer, 0, originalExtent, 0, texture.Levels);
-
-        if (texture.Levels != image.GetMipLevels())
+        if (texture.Levels != image.GetMipLevels() && !m_ScalingImages.contains(format) && texture.Levels == 1)
         {
-            if (!m_ScalingImages.contains(format))
-            {
-                logger::error(
-                    "Could not upload texture {} because it requires generating mip maps and "
-                    "it's format doesn't support the blit operation",
-                    texture.Name
-                );
-                m_RejectedCount++;
-                Application::IncrementBackgroundTaskDone(BackgroundTaskType::TextureUpload);
-                return;
-            }
+            logger::warn(
+                "Texture {} has only one mip map and mips can't be generated for it since it's format "
+                "doesn't support it", texture.Name
+            );
+            image = ImageBuilder()
+                        .SetUsageFlags(
+                            vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst |
+                            vk::ImageUsageFlagBits::eSampled
+                        )
+                        .SetFormat(format)
+                        .CreateImage(extent, texture.Name);
+            image.UploadFromBuffer(transferBuffer, buffer, 0, originalExtent, 0, texture.Levels);
+        }
+        else
+        {
+            image.UploadFromBuffer(transferBuffer, buffer, 0, originalExtent, 0, texture.Levels);
 
-            image.GenerateFullMips(mipBuffer, vk::ImageLayout::eTransferDstOptimal);
+            if (texture.Levels != image.GetMipLevels())
+            {
+                if (!m_ScalingImages.contains(format))
+                {
+                    logger::error(
+                        "Could not upload texture {} because it requires generating mip maps and "
+                        "it's format doesn't support the blit operation",
+                        texture.Name
+                    );
+                    m_RejectedCount++;
+                    Application::IncrementBackgroundTaskDone(BackgroundTaskType::TextureUpload);
+                    return;
+                }
+
+                image.GenerateFullMips(mipBuffer, vk::ImageLayout::eTransferDstOptimal);
+            }
         }
     }
     else
@@ -530,7 +548,7 @@ void TextureUploader::UploadBuffersWithTransfer(
     }
 }
 
-void TextureUploader::DetermineMaxTextureSizes(size_t textureCount)
+void TextureUploader::DetermineMaxTextureSizes(size_t textureCount, bool forceFullSize)
 {
     const size_t textureBudget = GetTextureBudget();
     const size_t perTextureBudget = textureBudget / textureCount;
@@ -538,10 +556,13 @@ void TextureUploader::DetermineMaxTextureSizes(size_t textureCount)
     for (vk::Format format : SupportedFormats)
     {
         vk::Extent2D maxExtent = MaxTextureDataSize;
-        while (Image::GetTextureMemoryRequirement(maxExtent, format) > perTextureBudget)
+        if (!forceFullSize)
         {
-            maxExtent.height /= 2;
-            maxExtent.width /= 2;
+            while (Image::GetTextureMemoryRequirement(maxExtent, format) > perTextureBudget)
+            {
+                maxExtent.height /= 2;
+                maxExtent.width /= 2;
+            }
         }
         m_MaxTextureSize[format] = maxExtent;
     }

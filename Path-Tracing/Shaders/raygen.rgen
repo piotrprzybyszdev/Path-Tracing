@@ -96,6 +96,21 @@ void main()
             ray.Origin = payload.Position;
             ray.Direction = payload.Direction;
         }
+
+        // If we got a nan of inf sample recompute the sample
+        // TODO: Enable this optionally with a flag
+        if (isnan(radiance.r) || isnan(radiance.g) || isnan(radiance.b))
+        {
+            radiance = vec3(0.0f);
+            smpl = -1;
+            continue;
+        }
+        if (isinf(radiance.r) || isinf(radiance.g) || isinf(radiance.b))
+        {
+            radiance = vec3(0.0f);
+            smpl = -1;
+            continue;
+        }
     }
     
     const ivec2 imageCoords = ivec2(gl_LaunchIDEXT.xy);

@@ -20,7 +20,7 @@ Scene::Scene(
     std::vector<LightInfo> &&lightInfos, DirectionalLightInfo &&directionalLightInfo,
     std::vector<Shaders::PointLight> &&pointLights, Shaders::DirectionalLight &&directionalLight,
     SkyboxVariant &&skybox, const std::vector<CameraInfo> &cameraInfos, bool hasAnimatedInstances,
-    bool hasDxNormalTextures, const std::string &name
+    bool hasDxNormalTextures, bool forceFullTextureSize, const std::string &name
 )
     : m_Vertices(std::move(vertices)), m_AnimatedVertices(std::move(animatedVertices)),
       m_Indices(std::move(indices)), m_AnimatedIndices(std::move(animatedIndices)),
@@ -32,7 +32,7 @@ Scene::Scene(
       m_PointLights(std::move(pointLights)), m_DirectionalLight(std::move(directionalLight)),
       m_DirectionalLightInfo(std::move(directionalLightInfo)), m_Skybox(std::move(skybox)),
       m_ActiveCameraId(g_InputCameraId), m_HasAnimatedInstances(hasAnimatedInstances),
-      m_HasDxNormalTextures(hasDxNormalTextures), m_Name(name)
+      m_HasDxNormalTextures(hasDxNormalTextures), m_ForceFullTextureSize(forceFullTextureSize), m_Name(name)
 {
     auto nodes = m_Graph.GetSceneNodes();
 
@@ -240,6 +240,11 @@ void SceneBuilder::SetDxNormalTextures()
     m_HasDxNormalTextures = true;
 }
 
+void SceneBuilder::ForceFullTextureSize()
+{
+    m_ForceFullTextureSize = true;
+}
+
 std::shared_ptr<Scene> SceneBuilder::CreateSceneShared(const std::string &name)
 {
     std::vector<bool> isAnimated(m_SceneNodes.size(), false);
@@ -271,7 +276,7 @@ std::shared_ptr<Scene> SceneBuilder::CreateSceneShared(const std::string &name)
         std::move(m_Bones), SceneGraph(std::move(m_SceneNodes), std::move(m_IsRelativeTransform),
         std::move(m_Animations)), std::move(m_LightInfos), std::move(m_DirectionalLightInfo),
         std::move(m_PointLights), std::move(m_DirectionalLight), std::move(m_Skybox), std::move(m_CameraInfos), hasAnimatedInstances,
-        m_HasDxNormalTextures, name
+        m_HasDxNormalTextures, m_ForceFullTextureSize, name
     );
 
     m_MeshOffset = 0;
@@ -302,6 +307,7 @@ std::shared_ptr<Scene> SceneBuilder::CreateSceneShared(const std::string &name)
     m_Skybox = SkyboxClearColor {};
     m_CameraInfos.clear();
     m_HasDxNormalTextures = false;
+    m_ForceFullTextureSize = false;
 
     return scene;
 }
@@ -389,6 +395,11 @@ std::span<const glm::mat3x4> Scene::GetBoneTransforms() const
 bool Scene::HasDxNormalTextures() const
 {
     return m_HasDxNormalTextures;
+}
+
+bool Scene::GetForceFullTextureSize() const
+{
+    return m_ForceFullTextureSize;
 }
 
 bool Scene::HasAnimations() const

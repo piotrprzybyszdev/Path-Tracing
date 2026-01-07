@@ -89,6 +89,14 @@ void DescriptorSet::UpdateImageArray(
 
 void DescriptorSet::AddWrite(uint32_t binding, uint32_t frameIndex, uint32_t arrayIndex, uint32_t count)
 {
+    std::erase_if(m_Descriptors[frameIndex].Writes, [binding, arrayIndex](vk::WriteDescriptorSet write) {
+        assert(
+            !(write.dstBinding == binding && write.dstArrayElement == arrayIndex) ||
+            write.descriptorCount == 1
+        );
+        return write.dstBinding == binding && write.dstArrayElement == arrayIndex;
+    });
+
     m_Descriptors[frameIndex].Writes.emplace_back(
         m_Sets[frameIndex], binding, arrayIndex, count, m_Types[binding]
     );

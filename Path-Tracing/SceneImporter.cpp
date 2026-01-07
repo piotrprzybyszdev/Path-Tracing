@@ -35,7 +35,7 @@ std::span<const aiTextureType> GetTextureTypes(TextureType type)
 {
     static std::array<aiTextureType, 2> colorTextureTypes = { aiTextureType_BASE_COLOR,
                                                               aiTextureType_DIFFUSE };
-    static std::array<aiTextureType, 1> normalTextureTypes = { aiTextureType_NORMALS };
+    static std::array<aiTextureType, 2> normalTextureTypes = { aiTextureType_NORMALS };
     static std::array<aiTextureType, 1> roughnessTextureTypes = { aiTextureType_DIFFUSE_ROUGHNESS };
     static std::array<aiTextureType, 1> metallicTextureTypes = { aiTextureType_METALNESS };
     static std::array<aiTextureType, 1> emissiveTextureTypes = { aiTextureType_EMISSIVE };
@@ -424,9 +424,9 @@ std::vector<uint32_t> LoadMeshes(
                     animatedVertices[idx].Bitangent =
                         TrivialCopy<aiVector3D, glm::vec3>(mesh->mBitangents[j]);
 
-                    if (animatedVertices[idx].Normal != animatedVertices[idx].Tangent ||
-                        animatedVertices[idx].Normal != animatedVertices[idx].Bitangent ||
-                        animatedVertices[idx].Tangent != animatedVertices[idx].Bitangent)
+                    if (animatedVertices[idx].Normal == animatedVertices[idx].Tangent ||
+                        animatedVertices[idx].Normal == animatedVertices[idx].Bitangent ||
+                        animatedVertices[idx].Tangent == animatedVertices[idx].Bitangent)
                     {
                         std::tie(animatedVertices[idx].Tangent, animatedVertices[idx].Bitangent) =
                             computeTangentSpace(animatedVertices[idx].Normal);
@@ -453,9 +453,9 @@ std::vector<uint32_t> LoadMeshes(
                     vertices[idx].Tangent = TrivialCopy<aiVector3D, glm::vec3>(mesh->mTangents[j]);
                     vertices[idx].Bitangent = TrivialCopy<aiVector3D, glm::vec3>(mesh->mBitangents[j]);
 
-                    if (vertices[idx].Normal != vertices[idx].Tangent ||
-                        vertices[idx].Normal != vertices[idx].Bitangent ||
-                        vertices[idx].Tangent != vertices[idx].Bitangent)
+                    if (vertices[idx].Normal == vertices[idx].Tangent ||
+                        vertices[idx].Normal == vertices[idx].Bitangent ||
+                        vertices[idx].Tangent == vertices[idx].Bitangent)
                     {
                         std::tie(vertices[idx].Tangent, vertices[idx].Bitangent) =
                             computeTangentSpace(vertices[idx].Normal);
