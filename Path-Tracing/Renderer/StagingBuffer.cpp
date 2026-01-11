@@ -67,8 +67,12 @@ void StagingBuffer::UploadToImage(
 )
 {
     assert(m_DestinationBuffers.empty());
-    const vk::DeviceSize rowSize =
-        static_cast<vk::DeviceSize>(image.GetExtent().width) * vk::blockSize(image.GetFormat());
+
+    const bool is3D = image.Is3D();
+    const uint32_t width = is3D ? image.GetExtent3D().width : image.GetExtent().width;
+    const uint32_t height = is3D ? image.GetExtent3D().height : image.GetExtent().height;
+    const uint32_t depth = is3D ? image.GetExtent3D().depth : 1;
+    const vk::DeviceSize rowSize = static_cast<vk::DeviceSize>(width) * vk::blockSize(image.GetFormat());
 
     for (uint32_t layer = 0; layer < contents.size(); layer++)
     {
@@ -94,13 +98,65 @@ void StagingBuffer::UploadToImage(
                 );
 
             m_Buffer.Upload(content.GetSubContent(uploaded, toUpload));
-            m_CommandBuffer.Buffer.copyBufferToImage(
-                m_Buffer.GetHandle(), image.GetHandle(), vk::ImageLayout::eTransferDstOptimal,
-                { vk::BufferImageCopy(
-                    0, 0, 0, { vk::ImageAspectFlagBits::eColor, 0, layer, 1 },
-                    vk::Offset3D(0, uploadedRows, 0), vk::Extent3D(image.GetExtent().width, rowsToUpload, 1)
-                ) }
-            );
+
+            if (is3D)
+            {
+                // For 3D images: rows span across depth slices
+                const uint32_t rowsPerSlice = height;
+                const uint32_t startSlice = uploadedRows / rowsPerSlice;
+                const uint32_t startRow = uploadedRows % rowsPerSlice;
+                
+                // Calculate how many complete slices we can fit in this upload
+                const uint32_t rowsInFirstSlice = std::min(rowsPerSlice - startRow, rowsToUpload);
+                const uint32_t remainingRows = rowsToUpload - rowsInFirstSlice;
+                const uint32_t additionalSlices = remainingRows / rowsPerSlice;
+                const uint32_t rowsInLastSlice = remainingRows % rowsPerSlice;
+                const uint32_t totalSlices = 1 + additionalSlices + (rowsInLastSlice > 0 ? 1 : 0);
+
+                // Determine actual extent height for this upload
+                uint32_t extentHeight;
+                if (totalSlices == 1)
+                {
+                    // Single slice upload
+                    extentHeight = rowsToUpload;
+                }
+                else
+                {
+                    // Multi-slice upload: fill remaining rows in first slice
+                    extentHeight = rowsInFirstSlice;
+                }
+
+                // Depth extent: how many complete slices we're uploading
+                const uint32_t extentDepth = (startRow == 0 && rowsToUpload >= rowsPerSlice) 
+                    ? std::min(rowsToUpload / rowsPerSlice, depth - startSlice)
+                    : 1;
+
+                // Adjust height if we're doing multi-slice upload
+                if (extentDepth > 1)
+                {
+                    extentHeight = rowsPerSlice;
+                }
+
+                m_CommandBuffer.Buffer.copyBufferToImage(
+                    m_Buffer.GetHandle(), image.GetHandle(), vk::ImageLayout::eTransferDstOptimal,
+                    { vk::BufferImageCopy(
+                        0, 0, 0, { vk::ImageAspectFlagBits::eColor, 0, 0, 1 },
+                        vk::Offset3D(0, startRow, startSlice),
+                        vk::Extent3D(width, extentHeight, extentDepth)
+                    ) }
+                );
+            }
+            else
+            {
+                // For 2D images: use layer parameter
+                m_CommandBuffer.Buffer.copyBufferToImage(
+                    m_Buffer.GetHandle(), image.GetHandle(), vk::ImageLayout::eTransferDstOptimal,
+                    { vk::BufferImageCopy(
+                        0, 0, 0, { vk::ImageAspectFlagBits::eColor, 0, layer, 1 },
+                        vk::Offset3D(0, uploadedRows, 0), vk::Extent3D(width, rowsToUpload, 1)
+                    ) }
+                );
+            }
 
             uploadNumber++;
             uploaded += toUpload;

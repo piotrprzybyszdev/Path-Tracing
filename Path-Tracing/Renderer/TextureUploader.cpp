@@ -269,6 +269,61 @@ Image TextureUploader::UploadSkyboxBlocking(const SkyboxCube &skybox)
     return image;
 }
 
+Image TextureUploader::UploadLUTBlocking(const TextureInfo &info)
+{
+    const uint32_t lutSize = 16;
+
+    assert(info.Width == lutSize * lutSize && info.Height == lutSize);
+
+    vk::Extent3D extent(lutSize, lutSize, lutSize);
+
+    assert(info.Type == TextureType::LookupTable);
+
+    vk::Format format = GetImageFormat(info.Type, info.Format);
+
+    auto image = ImageBuilder()
+                     .SetFormat(format)
+                     .SetUsageFlags(
+                         vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst |
+                         vk::ImageUsageFlagBits::eTransferSrc
+                     )
+                     .CreateImage3D(extent, "Lookup Table");
+
+    assert(info.Levels == 1);
+
+    TextureData data = TextureImporter::LoadTextureData(info);
+
+    std::vector<std::byte> reorderedData(data.size_bytes());
+    const uint32_t pixelSize = 4;  // RGBA8
+
+    for (uint32_t z = 0; z < lutSize; z++)
+    {
+        for (uint32_t y = 0; y < lutSize; y++)
+        {
+            for (uint32_t x = 0; x < lutSize; x++)
+            {
+                // Source: 2D unwrapped layout (width = lutSize*lutSize, height = lutSize)
+                uint32_t src2DX = z * lutSize + x;
+                uint32_t src2DY = y;
+                uint32_t srcIdx = (src2DY * lutSize * lutSize + src2DX) * pixelSize;
+
+                // Destination: 3D volume layout
+                uint32_t dstIdx = (z * lutSize * lutSize + y * lutSize + x) * pixelSize;
+
+                std::memcpy(&reorderedData[dstIdx], &data[srcIdx], pixelSize);
+            }
+        }
+    }
+
+    std::array<BufferContent, 1> contents = { std::span(reorderedData) };
+
+    Renderer::s_StagingBuffer->UploadToImage(contents, image);
+
+    TextureImporter::ReleaseTextureData(info, data);
+
+    return image;
+}
+
 void TextureUploader::StartLoaderThreads(const std::shared_ptr<const Scene> &scene)
 {
     for (auto &thread : m_LoaderThreads)
@@ -573,7 +628,7 @@ vk::Format TextureUploader::GetImageFormat(TextureType type, TextureFormat forma
     // We assume that color textures are in srgb space
     // We assume all other textures to be in linear space
     auto isColorTexture = [](TextureType type) {
-        return type == TextureType::Color || type == TextureType::Emisive || type == TextureType::Skybox;
+        return type == TextureType::Color || type == TextureType::Emisive || type == TextureType::Skybox || type == TextureType::LookupTable;
     };
 
     switch (format)

@@ -31,6 +31,12 @@ public:
         bool isCube, const std::string &name
     );
 
+    // Add new constructor for 3D images
+    Image(
+        vk::Format format, vk::Extent3D extent, vk::ImageUsageFlags usageFlags,
+        const std::string &name
+    );
+
     ~Image();
 
     Image(const Image &image) = delete;
@@ -41,6 +47,8 @@ public:
 
     [[nodiscard]] bool IsDevice() const;
     [[nodiscard]] vk::Extent2D GetExtent() const;
+    [[nodiscard]] vk::Extent3D GetExtent3D() const;
+    [[nodiscard]] bool Is3D() const;
     [[nodiscard]] vk::Image GetHandle() const;
     [[nodiscard]] vk::ImageView GetView() const;
     [[nodiscard]] vk::Format GetFormat() const;
@@ -104,7 +112,9 @@ private:
     vk::Extent2D m_Extent = { 0, 0 };
     uint32_t m_MipLevels = 1;
     uint32_t m_Layers = 1;
+    vk::Extent3D m_Extent3D = { 0, 0, 0 };
 
+    bool m_Is3D = false;
     bool m_IsDevice = true;
     bool m_IsMoved = false;
 
@@ -130,8 +140,12 @@ public:
     ImageBuilder &ResetFlags();
 
     [[nodiscard]] Image CreateImage(vk::Extent2D extent, const std::string &name = s_DefaultImageName) const;
+    [[nodiscard]] Image CreateImage3D(vk::Extent3D extent, const std::string &name = s_DefaultImageName) const;
     [[nodiscard]] std::unique_ptr<Image> CreateImageUnique(
         vk::Extent2D extent, const std::string &name = s_DefaultImageName
+    ) const;
+    [[nodiscard]] std::unique_ptr<Image> CreateImage3DUnique(
+        vk::Extent3D extent, const std::string &name = s_DefaultImageName
     ) const;
 
 private:

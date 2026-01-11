@@ -38,6 +38,7 @@ public:
     Image UploadSingleBlocking(TextureSourceVariant source, TextureType type, std::string &&name);
     Image UploadSkyboxBlocking(const Skybox2D &skybox);
     Image UploadSkyboxBlocking(const SkyboxCube &skybox);
+    Image UploadLUTBlocking(const TextureInfo &info);
 
 private:
     std::vector<Image> &m_Textures;

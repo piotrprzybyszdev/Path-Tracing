@@ -928,7 +928,49 @@ protected:
 private:
     CameraListContent m_CameraList;
     SettingsContent m_Settings;
+    
+    // LUT management
+    std::optional<std::filesystem::path> m_LUTPath;
+    bool m_LUTLoaded = false;
+    
+    void LoadLUTDialog();
 };
+
+void SettingsTab::LoadLUTDialog()
+{
+    auto checkError = [](nfdresult_t result) {
+        if (result == nfdresult_t::NFD_ERROR)
+        {
+            logger::error("File dialog error: {}", NFD::GetError());
+            NFD::ClearError();
+        }
+        return result == nfdresult_t::NFD_OKAY;
+    };
+
+    static const nfdfilteritem_t lutFilter = { .name = "LUT Image (.png, .jpg, .tga)", .spec = "png,jpg,jpeg,tga" };
+    
+    NFD::UniquePath path;
+    nfdresult_t result = NFD::OpenDialog(path, &lutFilter, 1);
+    glfwRestoreWindow(Window::GetHandle());
+    
+    if (checkError(result))
+    {
+        m_LUTPath = std::filesystem::path(path.get());
+        
+        try
+        {
+            Renderer::LoadLUT(m_LUTPath.value());
+            m_LUTLoaded = true;
+            logger::info("LUT loaded successfully: {}", m_LUTPath.value().string());
+        }
+        catch (const error &e)
+        {
+            logger::error("Failed to load LUT: {}", e.what());
+            m_LUTPath.reset();
+            m_LUTLoaded = false;
+        }
+    }
+}
 
 void SettingsTab::RenderContent()
 {
@@ -951,6 +993,57 @@ void SettingsTab::RenderContent()
     {
         m_Settings.SetLeftMargin(10.0f);
         m_Settings.Render();
+        ImGui::TreePop();
+    }
+
+    // LUT Management Section
+    ImGui::Dummy({ 0.0f, 5.0f });
+    ImGui::Dummy({ 5.0f, 0.0f });
+    ImGui::SameLine();
+
+    if (ImGui::TreeNodeEx("Color Grading", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Dummy({ 10.0f, 0.0f });
+        ImGui::SameLine();
+        
+        if (m_LUTLoaded && m_LUTPath.has_value())
+        {
+            // Show loaded LUT path
+            std::string lutName = m_LUTPath.value().filename().string();
+            const size_t maxLength = 30;
+            if (lutName.size() > maxLength)
+                lutName = "..." + lutName.substr(lutName.size() - maxLength + 3);
+            
+            ImGui::Text("Loaded: %s", lutName.c_str());
+            
+            ImGui::Dummy({ 10.0f, 0.0f });
+            ImGui::SameLine();
+            
+            if (ImGui::Button("Unload LUT"))
+            {
+                Renderer::UnloadLUT();
+                m_LUTLoaded = false;
+                m_LUTPath.reset();
+                logger::info("LUT unloaded");
+            }
+        }
+        else
+        {
+            ImGui::Text("No LUT loaded");
+            
+            ImGui::Dummy({ 10.0f, 0.0f });
+            ImGui::SameLine();
+            
+            if (ImGui::Button("Load LUT"))
+            {
+                LoadLUTDialog();
+            }
+            
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Load a 3D LUT texture for color grading\n"
+                                "Supported formats: 16x16, 32x32, 64x64 unwrapped to 2D");
+        }
+        
         ImGui::TreePop();
     }
 

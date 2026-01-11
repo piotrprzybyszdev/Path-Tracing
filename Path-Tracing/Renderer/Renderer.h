@@ -7,6 +7,7 @@
 #include <mutex>
 #include <queue>
 #include <vector>
+#include <filesystem>
 
 #include "Shaders/ShaderRendererTypes.incl"
 
@@ -87,6 +88,10 @@ public:
 public:
     // Lock s_DescriptorSetMutex before calling (if not on main thread)
     static void UpdateTexture(uint32_t index);
+
+    // Add these public static methods in the Renderer class
+    static void LoadLUT(const std::filesystem::path &lutPath);
+    static void UnloadLUT();
 
 private:
     static const Swapchain *s_Swapchain;
@@ -204,6 +209,9 @@ private:
 
     static std::vector<Image> s_Textures;
     static std::vector<uint32_t> s_TextureMap;
+    static Image s_LUTTexture;
+    static vk::Sampler s_LUTSampler;
+    static bool s_HasLUT;
 
     static std::mutex s_DescriptorSetMutex;
     static std::unique_ptr<TextureUploader> s_TextureUploader;

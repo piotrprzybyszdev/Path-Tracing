@@ -28,6 +28,7 @@ enum class TextureType : uint8_t
     Metallic,
     Specular,
     Skybox,
+    LookupTable,
 };
 
 enum class TextureFormat : uint8_t

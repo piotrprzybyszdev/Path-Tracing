@@ -15,6 +15,7 @@
 #include "DeviceContext.h"
 #include "Renderer.h"
 #include "Utils.h"
+#include "TextureImporter.h"
 
 namespace PathTracing
 {
@@ -46,6 +47,9 @@ std::unique_ptr<Renderer::SceneData> Renderer::s_SceneData = nullptr;
 
 std::vector<Image> Renderer::s_Textures = {};
 std::vector<uint32_t> Renderer::s_TextureMap = {};
+Image Renderer::s_LUTTexture = {};
+vk::Sampler Renderer::s_LUTSampler = nullptr;
+bool Renderer::s_HasLUT = false;
 
 std::mutex Renderer::s_DescriptorSetMutex = {};
 std::unique_ptr<TextureUploader> Renderer::s_TextureUploader = nullptr;
@@ -114,6 +118,15 @@ void Renderer::Init(const Swapchain *swapchain)
         createInfo.setAddressModeV(vk::SamplerAddressMode::eClampToEdge);
         s_BloomSampler = DeviceContext::GetLogical().createSampler(createInfo);
         Utils::SetDebugName(s_BloomSampler, "Bloom Sampler");
+    }
+
+    {
+        vk::SamplerCreateInfo createInfo(vk::SamplerCreateFlags(), vk::Filter::eLinear, vk::Filter::eLinear);
+        createInfo.setAddressModeU(vk::SamplerAddressMode::eClampToEdge)
+            .setAddressModeV(vk::SamplerAddressMode::eClampToEdge)
+            .setAddressModeW(vk::SamplerAddressMode::eClampToEdge);
+        s_LUTSampler = DeviceContext::GetLogical().createSampler(createInfo);
+        Utils::SetDebugName(s_LUTSampler, "LUT Sampler");
     }
 
     s_TextureUploader = std::make_unique<TextureUploader>(s_Textures, s_DescriptorSetMutex);
@@ -1354,6 +1367,12 @@ void Renderer::RecreateDescriptorSet()
             1, frameIndex, res.BloomImage, vk::Sampler(), vk::ImageLayout::eGeneral
         );
         compositionDescriptorSet->UpdateBuffer(2, frameIndex, res.PostProcessUniformBuffer);
+        if (s_HasLUT)
+        {
+            compositionDescriptorSet->UpdateImage(
+                3, frameIndex, s_LUTTexture, s_LUTSampler, vk::ImageLayout::eShaderReadOnlyOptimal
+            );
+        }
         
         s_BloomDownsamplePipeline->GetDescriptorSet()->UpdateImageArrayFromViews(
             0, frameIndex, res.BloomImageViews, s_BloomSampler, vk::ImageLayout::eGeneral
@@ -1557,6 +1576,47 @@ void Renderer::Render()
             OnResize(s_Swapchain->GetExtent());
         }
     }
+}
+
+void Renderer::LoadLUT(const std::filesystem::path &lutPath)
+{
+    if (!std::filesystem::exists(lutPath))
+        throw error(std::format("LUT file not found: {}", lutPath.string()));
+
+    logger::info("Loading LUT texture: {}", lutPath.string());
+
+    // Unload existing LUT if any
+    UnloadLUT();
+
+    // Get texture info
+    TextureInfo lutInfo = TextureImporter::GetTextureInfo(
+        lutPath, TextureType::LookupTable, lutPath.filename().string()
+    );
+
+    // Upload using TextureUploader
+    s_LUTTexture = s_TextureUploader->UploadLUTBlocking(lutInfo);
+    s_HasLUT = true;
+
+    // Update descriptor sets for composition pipeline
+    RecreateDescriptorSet();
+
+    logger::info("LUT texture loaded successfully");
+}
+
+void Renderer::UnloadLUT()
+{
+    if (!s_HasLUT)
+        return;
+
+    DeviceContext::GetGraphicsQueue().WaitIdle();
+    s_LUTTexture = {};  // Image destructor handles cleanup
+    s_HasLUT = false;
+
+    // Update descriptor sets to remove LUT binding
+    if (!s_RenderingResources.empty())
+        RecreateDescriptorSet();
+
+    logger::debug("LUT texture unloaded");
 }
 
 }

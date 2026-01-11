@@ -9,8 +9,51 @@ layout(binding = 1, set = 0, rgba16f) uniform image2D u_BloomImage;
 layout(binding = 2, set = 0) uniform MainBlock {
     PostProcessingUniformData mainUniform;
 };
+layout(binding = 3, set = 0) uniform sampler3D u_LUTTexture;
 
 layout (local_size_x = PostProcessShaderGroupSizeX, local_size_y = PostProcessShaderGroupSizeY, local_size_z = 1) in;
+
+float LinearToGammaSpaceExact(float value)
+{
+    if (value <= 0.0)
+        return 0.0;
+    else if (value <= 0.0031308)
+        return 12.92 * value;
+    else if (value < 1.0)
+        return 1.055 * pow(value, 0.4166667) - 0.055;
+    else
+        return pow(value, 0.4166667);
+}
+
+vec3 LinearToGammaSpaceExact(vec3 color)
+{
+    return vec3(
+        LinearToGammaSpaceExact(color.r),
+        LinearToGammaSpaceExact(color.g),
+        LinearToGammaSpaceExact(color.b)
+    );
+}
+
+// GPU Gems 2 Chapter 24: Using Lookup Tables to Accelerate Color Transformations
+// Scale and bias to prevent hardware linear interpolation from sampling outside the LUT bounds
+vec3 applyLUT(vec3 color, sampler3D lut, float lutSize)
+{
+    // Clamp input color to valid range
+    vec3 clampedColor = clamp(color, 0.0f, 1.0f);
+    
+    // Scale: Maps [0,1] to the range that includes only valid texel centers
+    // This prevents interpolation from sampling outside the LUT bounds
+    float scale = (lutSize - 1.0f) / lutSize;
+    
+    // Offset: Shifts coordinates to sample at texel centers, not edges
+    // This ensures that input=0.0 samples the center of the first texel
+    // and input=1.0 samples the center of the last texel
+    float offset = 1.0f / (2.0f * lutSize);
+    
+    vec3 scaledColor = LinearToGammaSpaceExact(clampedColor) * scale + offset;
+    
+    return texture(lut, scaledColor).rgb;
+}
 
 void main() 
 {
@@ -19,9 +62,25 @@ void main()
     const vec3 postProcessColor = imageLoad(u_PostProcessImage, imageCoords).rgb;
     const vec3 bloomColor = imageLoad(u_BloomImage, imageCoords).rgb;
 
+    // Combine post-processed color with bloom
     vec3 color = mainUniform.BloomIntensity * 0.1f * bloomColor + 1.0f * postProcessColor;
 
+    // Tone mapping (Reinhard)
     color = vec3(1.0f) - exp(-color);
 
-    imageStore(u_PostProcessImage, imageCoords, vec4(color, 1.0f));
+    // Apply LUT color grading if enabled
+    //if (mainUniform.LUTIntensity > 0.0f)
+    //{
+        // Note: LUT size should match the actual 3D LUT dimensions
+        // Common sizes: 16, 32, 64
+        // This should ideally be passed as a uniform, but using 32 as default
+    const float lutSize = 32.0f;
+        
+    vec3 lutColor = applyLUT(color, u_LUTTexture, lutSize);
+        
+//        // Blend between original and LUT-processed color based on intensity
+//    color = mix(color, lutColor, mainUniform.LUTIntensity);
+//    //}
+//
+    imageStore(u_PostProcessImage, imageCoords, vec4(lutColor, 1.0f));
 }

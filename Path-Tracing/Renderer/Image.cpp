@@ -115,6 +115,57 @@ Image::Image(
 }
 
 Image::Image(
+    vk::Format format, vk::Extent3D extent, vk::ImageUsageFlags usageFlags,
+    const std::string &name
+)
+    : m_Format(format), m_Extent3D(extent), m_Layers(1), m_MipLevels(1)
+{
+    assert(extent.width > 0 && extent.height > 0 && extent.depth > 0);
+
+    m_Is3D = true;
+    
+    vk::ImageCreateFlags flags = {};
+    VkImageCreateInfo createInfo = vk::ImageCreateInfo(
+        flags, vk::ImageType::e3D, format, extent, 1, 1,
+        vk::SampleCountFlagBits::e1, vk::ImageTiling::eOptimal, usageFlags
+    );
+
+    VmaAllocationCreateInfo allocInfo = {
+        .usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
+    };
+
+    VkImage image = nullptr;
+    VkResult result = vmaCreateImage(
+        DeviceContext::GetAllocator(), &createInfo, &allocInfo, &image, &m_Allocation, nullptr
+    );
+    assert(result == VkResult::VK_SUCCESS);
+    m_Handle = image;
+
+    VmaAllocationInfo info;
+    vmaGetAllocationInfo(DeviceContext::GetAllocator(), m_Allocation, &info);
+    assert(result == VkResult::VK_SUCCESS);
+
+    VkMemoryPropertyFlags memoryProperties;
+    vmaGetMemoryTypeProperties(DeviceContext::GetAllocator(), info.memoryType, &memoryProperties);
+
+    if (!(memoryProperties & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT))
+    {
+        logger::warn("Image `{}` was allocated in RAM instead of VRAM", name);
+        m_IsDevice = false;
+    }
+
+    vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
+    vk::ImageViewType viewType = vk::ImageViewType::e3D;
+    vk::ImageViewCreateInfo viewCreateInfo =
+        vk::ImageViewCreateInfo(vk::ImageViewCreateFlags(), m_Handle, viewType, format)
+            .setSubresourceRange(range);
+
+    m_View = DeviceContext::GetLogical().createImageView(viewCreateInfo);
+
+    SetDebugName(name);
+}
+
+Image::Image(
     vk::Format format, vk::Extent2D extent, vk::ImageUsageFlags usageFlags, uint32_t layers, bool mips,
     bool isCube, const std::string &name
 )
@@ -149,6 +200,16 @@ Image &Image::operator=(Image &&image) noexcept
 vk::Extent2D Image::GetExtent() const
 {
     return m_Extent;
+}
+
+vk::Extent3D Image::GetExtent3D() const
+{
+    return m_Extent3D;
+}
+
+bool Image::Is3D() const
+{
+    return m_Is3D;
 }
 
 vk::Image Image::GetHandle() const
@@ -506,9 +567,19 @@ Image ImageBuilder::CreateImage(vk::Extent2D extent, const std::string &name) co
     return Image(m_Format, extent, m_UsageFlags, m_Layers, m_Mips, m_Cube, name);
 }
 
+Image ImageBuilder::CreateImage3D(vk::Extent3D extent, const std::string &name) const
+{
+    return Image(m_Format, extent, m_UsageFlags, name);
+}
+
 std::unique_ptr<Image> ImageBuilder::CreateImageUnique(vk::Extent2D extent, const std::string &name) const
 {
     return std::make_unique<Image>(m_Format, extent, m_UsageFlags, m_Layers, m_Mips, m_Cube, name);
+}
+
+std::unique_ptr<Image> ImageBuilder::CreateImage3DUnique(vk::Extent3D extent, const std::string &name) const
+{
+    return std::make_unique<Image>(m_Format, extent, m_UsageFlags, name);
 }
 
 }
