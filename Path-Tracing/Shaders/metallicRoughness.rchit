@@ -43,6 +43,7 @@ hitAttributeEXT vec3 attribs;
 #include "material.glsl"
 #include "tracing.glsl"
 #include "bsdf.glsl"
+#include "ray.glsl"
 
 void main()
 {
@@ -54,17 +55,6 @@ void main()
     const Vertex originalVertex = getInterpolatedVertex(vertices, indices, gl_PrimitiveID * 3, barycentricCoords);
     Vertex vertex = transform(originalVertex, sbt.TransformIndex);
 
-    const bool isHitFromInside = dot(vertex.Normal, gl_WorldRayDirectionEXT) > 0.0f;
-    if (isHitFromInside)
-    {
-        vertex.Normal *= -1;
-        vertex.Tangent *= -1;
-        vertex.Bitangent *= -1;
-    }
-
-    const vec3 origin = gl_WorldRayOriginEXT;
-    const vec3 viewDir = gl_WorldRayDirectionEXT;
-
     // Calculate geometric dP/du and dP/dv
     Vertex v0 = getVertex(vertices, indices, gl_PrimitiveID * 3);
     Vertex v1 = getVertex(vertices, indices, gl_PrimitiveID * 3 + 1);
@@ -74,19 +64,22 @@ void main()
     v1 = transform(v1, sbt.TransformIndex);
     v2 = transform(v2, sbt.TransformIndex);
 
-    vec3 tmpu = vertex.Position - v0.Position;
-    vec3 tmpv = vertex.Position - v1.Position;
-    vec3 tmpw = vertex.Position - v2.Position;
+    // Compute geometric normal
+    vec3 edge1 = v1.Position - v0.Position;
+    vec3 edge2 = v2.Position - v0.Position;
+    vec3 geometricNormal = normalize(cross(edge1, edge2));
+    
+    const bool isHitFromInside = dot(geometricNormal, gl_WorldRayDirectionEXT) > 0.0f;
+    if (isHitFromInside)
+    {
+        geometricNormal *= -1;
+        vertex.Normal *= -1;
+        vertex.Tangent *= -1;
+        vertex.Bitangent *= -1;
+    }
 
-    float dotu = min(0.0f, dot(tmpu, v0.Normal));
-    float dotv = min(0.0f, dot(tmpv, v1.Normal));
-    float dotw = min(0.0f, dot(tmpw, v2.Normal));
-
-    tmpu -= dotu * v0.Normal;
-    tmpv -= dotv * v1.Normal;
-    tmpw -= dotw * v2.Normal;
-
-    vec3 Pp = vertex.Position + barycentricCoords.x * tmpu + barycentricCoords.y * tmpv + barycentricCoords.z * tmpw;
+    const vec3 origin = gl_WorldRayOriginEXT;
+    const vec3 viewDir = gl_WorldRayDirectionEXT;
 
     vec3 dpdu, dpdv, dndu, dndv;
     computeDpnDuv(v0, v1, v2, vertex, dpdu, dpdv, dndu, dndv);
@@ -121,15 +114,29 @@ void main()
     
     uint rngState = payload.RngState;
 
+    BSDFSample bsdf = sampleBSDF(material, V, rngState);
+
+    if (isHitFromInside)
+    {
+        bsdf.Color.r *= pow(material.AttenuationColor.r, gl_RayTmaxEXT / material.AttenuationDistance);
+        bsdf.Color.g *= pow(material.AttenuationColor.g, gl_RayTmaxEXT / material.AttenuationDistance);
+        bsdf.Color.b *= pow(material.AttenuationColor.b, gl_RayTmaxEXT / material.AttenuationDistance);
+    }
+
+    const bool isRefracted = bsdf.Direction.z < 0.0f;
+
+    const vec3 rayOrigin = offsetRayOriginShadowTerminator(vertex, v0, v1, v2, barycentricCoords, isRefracted);
+
     float lightPdf, lightSmplPdf;  // unused
-    LightSample light = sampleLight(rand(rngState), Pp, lightPdf);
+    LightSample light = sampleLight(rand(rngState), rayOrigin, lightPdf);
     const vec3 L = normalize(inverse(TBN) * -light.Direction);
     const vec3 lightBsdf = evaluateBSDF(material, V, L, lightSmplPdf);
 
-    BSDFSample bsdf = sampleBSDF(material, V, rngState);
-
     payload.Direction = normalize(TBN * bsdf.Direction);
-    payload.Position = Pp;
+    if (isRefracted)
+        payload.Position = offsetRayOriginSelfIntersection(vertex.Position, -geometricNormal);
+    else
+        payload.Position = rayOrigin;
     payload.Bsdf = bsdf.Color;
     payload.Pdf = bsdf.Pdf;
     payload.Emissive = material.EmissiveColor;
@@ -139,10 +146,10 @@ void main()
     payload.LightDirection = light.Direction;
     payload.LightDistance = light.Distance;
 
-    if (bsdf.Direction.z < 0.0f)
-        computeRefractedDifferentialRays(derivatives, vertex.Normal, Pp, -viewDir, payload.Direction, dndu, dndv, material.Eta, rxOrigin, rxDirection, ryOrigin, ryDirection);
+    if (isRefracted)
+        computeRefractedDifferentialRays(derivatives, vertex.Normal, rayOrigin, -viewDir, payload.Direction, dndu, dndv, material.Eta, rxOrigin, rxDirection, ryOrigin, ryDirection);
     else
-        computeReflectedDifferentialRays(derivatives, vertex.Normal, Pp, -viewDir, payload.Direction, dndu, dndv, rxOrigin, rxDirection, ryOrigin, ryDirection);
+        computeReflectedDifferentialRays(derivatives, vertex.Normal, rayOrigin, -viewDir, payload.Direction, dndu, dndv, rxOrigin, rxDirection, ryOrigin, ryDirection);
 
     payload.RayDifferentials0 = vec4(rxOrigin, rxDirection.x);
     payload.RayDifferentials1 = vec4(rxDirection.yz, ryOrigin.xy);

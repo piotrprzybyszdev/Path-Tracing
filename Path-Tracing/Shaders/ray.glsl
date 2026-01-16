@@ -1,5 +1,9 @@
 #include "common.glsl"
 
+const float origin_const = 1.0f / 32.0f;
+const float float_scale = 1.0f / 65536.0f;
+const float int_scale = 256.0f;
+
 struct Ray
 {
     vec3 Origin;
@@ -84,8 +88,41 @@ Ray constructPrimaryRay(uvec2 pixel, uvec2 resolution, Camera camera, out Ray rx
     return constructPrimaryRay(pixel, resolution, camera, vec2(0.5f), rx, ry);
 }
 
-// TODO: Fix the `shadow terminator problem` properly
-vec3 offsetRayOrigin(vec3 origin, vec3 normal)
+vec3 offsetRayOriginSelfIntersection(vec3 origin, vec3 normal)
 {
-    return origin + normal * 0.01f;
+    ivec3 of_i = ivec3(int_scale * normal);
+    vec3 p_i = vec3(
+        intBitsToFloat(floatBitsToInt(origin.x) + ((origin.x < 0) ? -of_i.x : of_i.x)),
+        intBitsToFloat(floatBitsToInt(origin.y) + ((origin.y < 0) ? -of_i.y : of_i.y)),
+        intBitsToFloat(floatBitsToInt(origin.z) + ((origin.z < 0) ? -of_i.z : of_i.z))
+    );
+    return vec3(
+        (abs(origin.x) < origin_const) ? origin.x + float_scale * normal.x : p_i.x,
+        (abs(origin.y) < origin_const) ? origin.y + float_scale * normal.y : p_i.y,
+        (abs(origin.z) < origin_const) ? origin.z + float_scale * normal.z : p_i.z
+    );
+}
+
+vec3 offsetRayOriginShadowTerminator(Vertex vertex, Vertex v0, Vertex v1, Vertex v2, vec3 barycentricCoords, bool isRefracted)
+{   
+    vec3 tmpu = vertex.Position - v0.Position;
+    vec3 tmpv = vertex.Position - v1.Position;
+    vec3 tmpw = vertex.Position - v2.Position;
+
+    if (isRefracted)
+    {
+        v0.Normal *= -1;
+        v1.Normal *= -1;
+        v2.Normal *= -1;
+    }
+
+    float dotu = min(0.0f, dot(tmpu, v0.Normal));
+    float dotv = min(0.0f, dot(tmpv, v1.Normal));
+    float dotw = min(0.0f, dot(tmpw, v2.Normal));
+
+    tmpu -= dotu * v0.Normal;
+    tmpv -= dotv * v1.Normal;
+    tmpw -= dotw * v2.Normal;
+
+    return vertex.Position + barycentricCoords.x * tmpu + barycentricCoords.y * tmpv + barycentricCoords.z * tmpw;
 }

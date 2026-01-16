@@ -138,20 +138,25 @@ struct TransmissionInfo
 {
     float Ior;
     float Transmission;
+    glm::vec3 AttenuationColor;
+    float AttenuationDistance;
 };
 
 TransmissionInfo LoadTransmission(
     const std::filesystem::path &path, SceneBuilder &sceneBuilder, const aiMaterial *material
 )
 {
-    float ior = 1.5f, transmission = 0.0f;
+    float ior = 1.5f, transmission = 0.0f, attenuationDistance = 1e32f;
+    aiColor3D attenuationColor = aiColor3D(1.0f, 1.0f, 1.0f);
 
     // TODO: Handle transmission texture
 
     material->Get(AI_MATKEY_REFRACTI, ior);
     material->Get(AI_MATKEY_TRANSMISSION_FACTOR, transmission);
+    material->Get(AI_MATKEY_VOLUME_ATTENUATION_COLOR, attenuationColor);
+    material->Get(AI_MATKEY_VOLUME_ATTENUATION_DISTANCE, attenuationDistance);
 
-    return TransmissionInfo(ior, transmission);
+    return TransmissionInfo(ior, transmission, TrivialCopyUnsafe<aiColor3D, glm::vec3>(attenuationColor), attenuationDistance);
 }
 
 struct MaterialInfo
@@ -185,6 +190,8 @@ MaterialInfo LoadMetallicRoughnessMaterial(
         .Metalness = metalness,
         .Ior = transmission.Ior,
         .Transmission = transmission.Transmission,
+        .AttenuationColor = transmission.AttenuationColor,
+        .AttenuationDistance = transmission.AttenuationDistance,
         .EmissiveIdx = emissive.TextureIdx,
         .ColorIdx = AddTexture(
             sceneBuilder, path.parent_path(), material, mapping.ColorTexture, &hasTransparency

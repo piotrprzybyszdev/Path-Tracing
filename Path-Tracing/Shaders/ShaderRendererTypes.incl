@@ -127,6 +127,8 @@ struct MaterialSample
     float Metalness;
     float Transmission;
     float Eta;
+    vec3 AttenuationColor;
+    float AttenuationDistance;
 };
 
 #ifndef GL_core_profile

@@ -91,12 +91,6 @@ vec3 EvaluateRefraction(vec3 V, vec3 L, vec3 F, float alpha, float eta, out floa
     const float VdotH = dot(V, H);
     const float LdotH = dot(L, H);
 
-    if ((VdotH > 0.0f && LdotH < 0.0f) || (VdotH < 0.0f && LdotH > 0.0f))
-    {
-        pdf = 0.0f;
-        return vec3(0.0f);
-    }
-
     const float D = GGXDistribution(H, alpha);
     const float GV = GGXSmith(V, alpha);
     const float GL = GGXSmith(L, alpha);

@@ -326,6 +326,8 @@ void CreateDefaultScene(SceneBuilder &sceneBuilder)
             .Metalness = 0.0f,
             .Ior = ior,
             .Transmission = transmission,
+            .AttenuationColor = glm::vec3(1.0f),
+            .AttenuationDistance = 1e32f,
             .EmissiveIdx = Scene::GetDefaultTextureIndex(TextureType::Emisive),
             .ColorIdx = Scene::GetDefaultTextureIndex(TextureType::Color),
             .NormalIdx = Scene::GetDefaultTextureIndex(TextureType::Normal),

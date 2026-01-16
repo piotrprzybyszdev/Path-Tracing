@@ -47,6 +47,8 @@ MaterialSample sampleMaterial(MetallicRoughnessMaterial material, vec2 texCoords
     ret.Roughness = textureGrad(textures[roughnessIdx], texCoords, dpdx, dpdy).g * material.Roughness;
     ret.Metalness = textureGrad(textures[metallicIdx], texCoords, dpdx, dpdy).b * material.Metalness;
     ret.Transmission = material.Transmission;
+    ret.AttenuationColor = material.AttenuationColor;
+    ret.AttenuationDistance = material.AttenuationDistance;
 
     ret.Eta = isHitFromInside ? material.Ior : (1.0f / material.Ior);
 
