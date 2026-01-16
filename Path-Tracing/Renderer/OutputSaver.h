@@ -58,7 +58,7 @@ private:
 
     std::jthread m_Thread;
     bool m_HasFFmpeg = false;
-    std::unique_ptr<subprocess_s> m_FFmpegSubprocess = nullptr;
+    subprocess_s *m_FFmpegSubprocess = nullptr;
 
 private:
     bool WriteImage(const OutputInfo &info, std::span<const std::byte> data);

@@ -90,11 +90,11 @@ vk::Image OutputSaver::RegisterOutput(const OutputInfo &info)
             nullptr,
         };
 
-        m_FFmpegSubprocess = std::make_unique<subprocess_s>();
-        int result = subprocess_create(cmd, 0, m_FFmpegSubprocess.get());
+        m_FFmpegSubprocess = new subprocess_s;
+        int result = subprocess_create(cmd, 0, m_FFmpegSubprocess);
         assert(result == 0);
-        fclose(subprocess_stdout(m_FFmpegSubprocess.get()));
-        fclose(subprocess_stderr(m_FFmpegSubprocess.get()));
+        fclose(subprocess_stdout(m_FFmpegSubprocess));
+        fclose(subprocess_stderr(m_FFmpegSubprocess));
     }
 
     m_Info = info;
@@ -164,13 +164,14 @@ void OutputSaver::EndOutput()
     {
         logger::info("Flushing output file {}", m_Info.Path.string());
         
-        int result = subprocess_join(m_FFmpegSubprocess.get(), nullptr);
+        int result = subprocess_join(m_FFmpegSubprocess, nullptr);
         assert(result == 0);
 
-        result = subprocess_destroy(m_FFmpegSubprocess.get());
+        result = subprocess_destroy(m_FFmpegSubprocess);
         assert(result == 0);
 
-        m_FFmpegSubprocess.reset();
+        delete m_FFmpegSubprocess;
+        m_FFmpegSubprocess = nullptr;
         logger::info("Done flushing output file {}", m_Info.Path.string());
     }
 }
@@ -182,16 +183,17 @@ void OutputSaver::CancelOutput()
 
     if (m_FFmpegSubprocess != nullptr)
     {
-        int result = subprocess_terminate(m_FFmpegSubprocess.get());
+        int result = subprocess_terminate(m_FFmpegSubprocess);
         assert(result == 0);
 
-        result = subprocess_join(m_FFmpegSubprocess.get(), nullptr);
+        result = subprocess_join(m_FFmpegSubprocess, nullptr);
         assert(result == 0);
 
-        result = subprocess_destroy(m_FFmpegSubprocess.get());
+        result = subprocess_destroy(m_FFmpegSubprocess);
         assert(result == 0);
 
-        m_FFmpegSubprocess.reset();
+        delete m_FFmpegSubprocess;
+        m_FFmpegSubprocess = nullptr;
     }
 
     std::filesystem::remove(m_Info.Path);
@@ -220,7 +222,7 @@ bool OutputSaver::WriteImage(const OutputInfo &info, std::span<const std::byte> 
         );
         break;
     case OutputFormat::Mp4:
-        ret = fwrite(data.data(), data.size(), 1, subprocess_stdin(m_FFmpegSubprocess.get()));
+        ret = fwrite(data.data(), data.size(), 1, subprocess_stdin(m_FFmpegSubprocess));
         break;
     default:
         throw error("Unsupported output format");

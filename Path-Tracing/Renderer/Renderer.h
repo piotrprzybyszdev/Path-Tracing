@@ -66,7 +66,7 @@ public:
 
     struct RenderSettings
     {
-        OutputInfo OutputInfo;
+        OutputInfo Output;
         uint32_t FrameCount;
         uint32_t MaxSampleCount;
         std::chrono::seconds MaxTime;

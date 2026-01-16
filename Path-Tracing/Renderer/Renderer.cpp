@@ -186,7 +186,7 @@ uint32_t Renderer::GetPreferredImageCount()
 
 uint32_t Renderer::GetRenderFramerate()
 {
-    return s_RenderSettings.OutputInfo.Framerate;
+    return s_RenderSettings.Output.Framerate;
 }
 
 bool Renderer::CanRenderVideo()
@@ -706,8 +706,8 @@ void Renderer::SetSettings(const RenderSettings &settings)
 {
     s_RenderSettings = settings;
     DeviceContext::GetGraphicsQueue().WaitIdle();
-    OnResize(settings.OutputInfo.Extent);
-    s_OutputImage = s_OutputSaver->RegisterOutput(s_RenderSettings.OutputInfo);
+    OnResize(settings.Output.Extent);
+    s_OutputImage = s_OutputSaver->RegisterOutput(s_RenderSettings.Output);
     Application::ResetBackgroundTask(BackgroundTaskType::Rendering);
     Application::AddBackgroundTask(
         BackgroundTaskType::Rendering, settings.MaxSampleCount * settings.FrameCount

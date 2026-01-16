@@ -4,8 +4,6 @@
 #include <iostream>
 #include <ranges>
 
-#define CONFIG_DISABLE_SHADER_PRECOMPILATION
-
 #include "Config.h"
 
 namespace PathTracing

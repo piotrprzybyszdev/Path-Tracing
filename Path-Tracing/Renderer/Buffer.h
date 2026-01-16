@@ -57,7 +57,7 @@ public:
     void UploadStaging(vk::CommandBuffer commandBuffer, const Buffer &staging) const;
     void UploadStaging(vk::CommandBuffer commandBuffer, const Buffer &staging, vk::DeviceSize size) const;
 
-    [[nodiscard]] void Readback(std::span<std::byte> output) const;
+    void Readback(std::span<std::byte> output) const;
 
     [[nodiscard]] bool IsDevice() const;
     [[nodiscard]] vk::Buffer GetHandle() const;

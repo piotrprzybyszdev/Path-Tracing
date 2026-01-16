@@ -675,7 +675,7 @@ void OfflineRenderContent::Render()
     {
         ImGui::EndDisabled();
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-            ImGui::SetTooltip(reason);
+            ImGui::SetTooltip("%s", reason);
     }
 }
 

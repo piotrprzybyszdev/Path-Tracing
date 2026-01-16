@@ -65,7 +65,8 @@ public:
     using Base = Options<CheckboxOption<T>, T>;
 
 public:
-    using Base::Options, Base::m_Options, Base::m_Value, Base::m_Changed, Base::ApplyLeftMargin;
+    using Options<CheckboxOption<T>, T>::Options, Base::m_Options, Base::m_Value, Base::m_Changed,
+        Base::ApplyLeftMargin;
     ~CheckboxOptions() override = default;
 
     void Render() override;
@@ -83,7 +84,8 @@ public:
     using Base = Options<RadioOption<T>, T>;
 
 public:
-    using Base::Options, Base::m_Options, Base::m_Value, Base::m_Changed, Base::ApplyLeftMargin;
+    using Options<RadioOption<T>, T>::Options, Base::m_Options, Base::m_Value, Base::m_Changed,
+        Base::ApplyLeftMargin;
     ~RadioOptions() override = default;
 
     void Render() override;
@@ -173,7 +175,7 @@ template<typename T> void ComboOptions<T>::Render()
             m_Current = option.Name;
 
     ApplyLeftMargin();
-    ImGui::Text(m_Title.c_str());
+    ImGui::Text("%s", m_Title.c_str());
     ImGui::SameLine();
     m_Changed = false;
     if (ImGui::BeginCombo(m_Id.c_str(), m_Current))
@@ -250,7 +252,7 @@ Widget<T, N>::Widget(const std::string &title, std::array<T, N> &&contents, floa
 template<typename T, size_t N> void Widget<T, N>::Render()
 {
     ImGui::Dummy({ 0.0f, m_TopMargin });
-    ImGui::Text(m_Title.c_str());
+    ImGui::Text("%s", m_Title.c_str());
     ImGui::Dummy({ 0.0f, 2.0f });
     for (auto &content : m_Contents)
         content.Render();
@@ -291,7 +293,7 @@ template<typename T, size_t N> void FixedWindow<T, N>::Render(ImVec2 pos)
         m_Name.c_str(), nullptr,
         ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove
     );
-    
+
     m_Widget.Render();
 
     ImGui::End();

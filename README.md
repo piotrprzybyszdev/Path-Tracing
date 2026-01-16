@@ -2,15 +2,15 @@
 Path Tracer written in Vulkan for an engineering thesis.
 
 ## Requirements
-* [Vulkan SDK 1.3 or higher](https://www.lunarg.com/vulkan-sdk/)
+* [Vulkan SDK 1.3 or higher](https://vulkan.lunarg.com/)
 * [CMake 3.25 or higher](https://cmake.org/)
-* C++ 20 capable compiler (tested with MSVC and gcc)
+* C++ 20 capable compiler (tested with MSVC on Windows, g++ and clang++ on Linux)
 
 Additionally for rendering to a video file [FFmpeg](https://www.ffmpeg.org/) has to be installed and added to the system PATH.
 
 To run the Debug version of the application on Windows, you must install the "shader toolchain debug symbols" through the Vulkan SDK installer.
 
-On Linux, you also must install the [dependencies of the GLFW library](https://www.glfw.org/docs/latest/compile.html#compile_deps).
+On Linux, you also must install the [dependencies of the GLFW library](https://www.glfw.org/docs/latest/compile.html#compile_deps) and [dependencies of the NFDE library](https://github.com/btzy/nativefiledialog-extended#linux).
 
 ## Build
 To build the project, execute the following commands:
@@ -63,7 +63,7 @@ The default configuration is `Release`.
 | MAX_TEXTURE_LOADER_THREADS             | ❌        | ❌           | 2     | 2       |
 | MAX_BUFFERS_PER_LOADER_THREAD          | ❌        | ❌           | 1     | 1       |
 | MAX_SHADER_COMPILATION_THREADS         | ❌        | ❌           | 2     | 2       |
-| MAX_SHADER_COMPILATION_BATCH_SIZE      | 32        | 32            | 16    | 16      |
+| MAX_SHADER_COMPILATION_BATCH_SIZE      | 16        | 16            | 8     | 8       |
 | MAX_SAMPELS_PER_FRAME                  | ❌        | 1            | 1     | 1       |
 
 Other configuration options:
