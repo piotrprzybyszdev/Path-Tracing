@@ -74,6 +74,20 @@ void main()
     v1 = transform(v1, sbt.TransformIndex);
     v2 = transform(v2, sbt.TransformIndex);
 
+    vec3 tmpu = vertex.Position - v0.Position;
+    vec3 tmpv = vertex.Position - v1.Position;
+    vec3 tmpw = vertex.Position - v2.Position;
+
+    float dotu = min(0.0f, dot(tmpu, v0.Normal));
+    float dotv = min(0.0f, dot(tmpv, v1.Normal));
+    float dotw = min(0.0f, dot(tmpw, v2.Normal));
+
+    tmpu -= dotu * v0.Normal;
+    tmpv -= dotv * v1.Normal;
+    tmpw -= dotw * v2.Normal;
+
+    vec3 Pp = vertex.Position + barycentricCoords.x * tmpu + barycentricCoords.y * tmpv + barycentricCoords.z * tmpw;
+
     vec3 dpdu, dpdv, dndu, dndv;
     computeDpnDuv(v0, v1, v2, vertex, dpdu, dpdv, dndu, dndv);
 
@@ -108,14 +122,14 @@ void main()
     uint rngState = payload.RngState;
 
     float lightPdf, lightSmplPdf;  // unused
-    LightSample light = sampleLight(rand(rngState), vertex.Position, lightPdf);
+    LightSample light = sampleLight(rand(rngState), Pp, lightPdf);
     const vec3 L = normalize(inverse(TBN) * -light.Direction);
     const vec3 lightBsdf = evaluateBSDF(material, V, L, lightSmplPdf);
 
     BSDFSample bsdf = sampleBSDF(material, V, rngState);
 
     payload.Direction = normalize(TBN * bsdf.Direction);
-    payload.Position = vertex.Position + payload.Direction * 0.001f;  // TODO: Do we prefer offsetting by the normal?
+    payload.Position = Pp;
     payload.Bsdf = bsdf.Color;
     payload.Pdf = bsdf.Pdf;
     payload.Emissive = material.EmissiveColor;
@@ -126,9 +140,9 @@ void main()
     payload.LightDistance = light.Distance;
 
     if (bsdf.Direction.z < 0.0f)
-        computeRefractedDifferentialRays(derivatives, vertex.Normal, vertex.Position, -viewDir, payload.Direction, dndu, dndv, material.Eta, rxOrigin, rxDirection, ryOrigin, ryDirection);
+        computeRefractedDifferentialRays(derivatives, vertex.Normal, Pp, -viewDir, payload.Direction, dndu, dndv, material.Eta, rxOrigin, rxDirection, ryOrigin, ryDirection);
     else
-        computeReflectedDifferentialRays(derivatives, vertex.Normal, vertex.Position, -viewDir, payload.Direction, dndu, dndv, rxOrigin, rxDirection, ryOrigin, ryDirection);
+        computeReflectedDifferentialRays(derivatives, vertex.Normal, Pp, -viewDir, payload.Direction, dndu, dndv, rxOrigin, rxDirection, ryOrigin, ryDirection);
 
     payload.RayDifferentials0 = vec4(rxOrigin, rxDirection.x);
     payload.RayDifferentials1 = vec4(rxDirection.yz, ryOrigin.xy);

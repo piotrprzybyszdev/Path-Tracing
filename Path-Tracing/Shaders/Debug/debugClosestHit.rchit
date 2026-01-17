@@ -199,21 +199,35 @@ void main()
 
     vec3 totalLight = material.Color * ambient + material.EmissiveColor;
 
+    vec3 tmpu = vertex.Position - v0.Position;
+    vec3 tmpv = vertex.Position - v1.Position;
+    vec3 tmpw = vertex.Position - v2.Position;
+
+    float dotu = min(0.0f, dot(tmpu, v0.Normal));
+    float dotv = min(0.0f, dot(tmpv, v1.Normal));
+    float dotw = min(0.0f, dot(tmpw, v2.Normal));
+
+    tmpu -= dotu * v0.Normal;
+    tmpv -= dotv * v1.Normal;
+    tmpw -= dotw * v2.Normal;
+
+    vec3 Pp = vertex.Position + barycentricCoords.x * tmpu + barycentricCoords.y * tmpv + barycentricCoords.z * tmpw;
+
     bool shadowsDisabled = (s_HitGroupFlags & HitGroupFlagsDisableShadows) != HitGroupFlagsNone;
 
-    if (shadowsDisabled || !checkOccluded(u_DirectionalLight.Direction, vertex.Position, DirectionalLightDistance))
-        totalLight += DDDcomputeLightContribution(u_DirectionalLight.Direction, u_DirectionalLight.Color, 1.0f, vertex.Position, V, N, material.Color, material.Roughness, material.Metalness);
+    if (shadowsDisabled || !checkOccluded(u_DirectionalLight.Direction, Pp, DirectionalLightDistance))
+        totalLight += DDDcomputeLightContribution(u_DirectionalLight.Direction, u_DirectionalLight.Color, 1.0f, Pp, V, N, material.Color, material.Roughness, material.Metalness);
     
     for (uint lightIndex = 0; lightIndex < u_LightCount; lightIndex++)
     {
         const PointLight light = u_Lights[lightIndex];
-        const vec3 lightDirection = vertex.Position - light.Position;
+        const vec3 lightDirection = Pp - light.Position;
         const float dist = length(lightDirection);
         const float attenuation = 1.0f / (light.AttenuationConstant + dist * light.AttenuationLinear + dist * dist * light.AttenuationQuadratic);
         
-        if (shadowsDisabled || !checkOccluded(lightDirection, vertex.Position, dist))
+        if (shadowsDisabled || !checkOccluded(lightDirection, Pp, dist))
         {
-            const vec3 lightContribution = DDDcomputeLightContribution(lightDirection, light.Color, attenuation, vertex.Position, V, N, material.Color, material.Roughness, material.Metalness);
+            const vec3 lightContribution = DDDcomputeLightContribution(lightDirection, light.Color, attenuation, Pp, V, N, material.Color, material.Roughness, material.Metalness);
             totalLight += lightContribution;
         }
     }
