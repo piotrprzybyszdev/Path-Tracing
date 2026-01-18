@@ -77,10 +77,10 @@ void main()
     vec3 dpdu, dpdv, dndu, dndv;
     computeDpnDuv(v0, v1, v2, vertex, dpdu, dpdv, dndu, dndv);
 
-    vec3 rxOrigin = payload.RxOrigin;
-    vec3 rxDirection = payload.RxDirection;
-    vec3 ryOrigin = payload.RyOrigin;
-    vec3 ryDirection = payload.RyDirection;
+    vec3 rxOrigin = payload.RayDifferentials0.xyz;
+    vec3 rxDirection = vec3(payload.RayDifferentials0.w, payload.RayDifferentials1.xy);
+    vec3 ryOrigin = vec3(payload.RayDifferentials1.zw, payload.RayDifferentials2.x);
+    vec3 ryDirection = payload.RayDifferentials2.yzw;
 
     vec3 dpdx, dpdy;
     computeDpDxy(vertex.Position, origin, normalize(viewDir), rxOrigin, rxDirection, ryOrigin, ryDirection, vertex.Normal, dpdx, dpdy);
@@ -125,9 +125,12 @@ void main()
     payload.LightDirection = light.Direction;
     payload.LightDistance = light.Distance;
 
-    computeReflectedDifferentialRays(derivatives, vertex.Normal, vertex.Position, viewDir, payload.Direction, dndu, dndv, rxOrigin, rxDirection, ryOrigin, ryDirection);
-    payload.RxOrigin = rxOrigin;
-    payload.RxDirection = rxDirection;
-    payload.RyOrigin = ryOrigin;
-    payload.RyDirection = ryDirection;
+    if (bsdf.Direction.z < 0.0f)
+        computeRefractedDifferentialRays(derivatives, vertex.Normal, vertex.Position, -viewDir, payload.Direction, dndu, dndv, material.Eta, rxOrigin, rxDirection, ryOrigin, ryDirection);
+    else
+        computeReflectedDifferentialRays(derivatives, vertex.Normal, vertex.Position, -viewDir, payload.Direction, dndu, dndv, rxOrigin, rxDirection, ryOrigin, ryDirection);
+
+    payload.RayDifferentials0 = vec4(rxOrigin, rxDirection.x);
+    payload.RayDifferentials1 = vec4(rxDirection.yz, ryOrigin.xy);
+    payload.RayDifferentials2 = vec4(ryOrigin.z, ryDirection);
 }
