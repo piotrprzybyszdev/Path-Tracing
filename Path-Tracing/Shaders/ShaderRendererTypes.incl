@@ -100,18 +100,13 @@ struct Payload
     float DirectLightPdf;  // DecalDist
     vec3 LightDirection;   // DecalAlbedo
     float LightDistance;   // DecalAlpha
-    vec3 RxOrigin;
-    float pad2;
-    vec3 RxDirection;
-    float pad3;
-    vec3 RyOrigin;
-    float pad4;
-    vec3 RyDirection;
-    float pad5;
+    vec4 RayDifferentials0;
+    vec4 RayDifferentials1;
+    vec4 RayDifferentials2;
 };
 
 const uint MaxRecursionDepth                = 1u;
-const uint MaxPayloadSize                   = 160u;
+const uint MaxPayloadSize                   = 144u;
 const uint MaxHitAttributeSize              = 12u;
 
 const uint PrimaryRayHitGroupIndex          = 0u;

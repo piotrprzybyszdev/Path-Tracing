@@ -76,8 +76,8 @@ vec4 computeDerivatives(vec3 dpdx, vec3 dpdy, vec3 dpdu, vec3 dpdv)
 void computeReflectedDifferentialRays(vec4 derivatives, vec3 n, vec3 p, vec3 viewDir, vec3 reflectedDir, vec3 dndu, vec3 dndv, inout vec3 rxOrigin, inout vec3 rxDirection, inout vec3 ryOrigin, inout vec3 ryDirection)
 {
     float dudx = derivatives.x;
-    float dudy = derivatives.y;
-    float dvdx = derivatives.z;
+    float dvdx = derivatives.y;
+    float dudy = derivatives.z;
     float dvdy = derivatives.w;
 
     vec3 dndx = dndu * dudx + dndv * dvdx;
@@ -98,8 +98,47 @@ void computeReflectedDifferentialRays(vec4 derivatives, vec3 n, vec3 p, vec3 vie
     float dwoDotn_dx = dot(dwodx, n) + dot(viewDir, dndx);
     float dwoDotn_dy = dot(dwody, n) + dot(viewDir, dndy);
 
-    rxDirection = reflectedDir - dwodx + 2 * (dot(viewDir, n) * dndx + dwoDotn_dx * n);
-    ryDirection = reflectedDir - dwody + 2 * (dot(viewDir, n) * dndy + dwoDotn_dy * n);
+    rxDirection = normalize(reflectedDir - dwodx + 2 * (dot(viewDir, n) * dndx + dwoDotn_dx * n));
+    ryDirection = normalize(reflectedDir - dwody + 2 * (dot(viewDir, n) * dndy + dwoDotn_dy * n));
+}
+
+void computeRefractedDifferentialRays(vec4 derivatives, vec3 n, vec3 p, vec3 viewDir, vec3 refractedDir, vec3 dndu, vec3 dndv, float eta, inout vec3 rxOrigin, inout vec3 rxDirection, inout vec3 ryOrigin, inout vec3 ryDirection)
+{
+    float dudx = derivatives.x;
+    float dvdx = derivatives.y;
+    float dudy = derivatives.z;
+    float dvdy = derivatives.w;
+
+    vec3 dndx = dndu * dudx + dndv * dvdx;
+    vec3 dndy = dndu * dudy + dndv * dvdy;
+
+    float d = -dot(n, p);
+    float tx = (-dot(n, rxOrigin) - d) / dot(n, rxDirection);
+    vec3 px = rxOrigin + tx * rxDirection;
+    float ty = (-dot(n, ryOrigin) - d) / dot(n, ryDirection);
+    vec3 py = ryOrigin + ty * ryDirection;
+
+    vec3 dwodx = -rxDirection - viewDir;
+    vec3 dwody = -ryDirection - viewDir;
+
+    rxOrigin = px;
+    ryOrigin = py;
+
+    if (dot(viewDir, n) < 0.0f)
+    {
+        n = -n;
+        dndx = -dndx;
+        dndy = -dndy;
+    }
+
+    float dwoDotn_dx = dot(dwodx, n) + dot(viewDir, dndx);
+    float dwoDotn_dy = dot(dwody, n) + dot(viewDir, dndy);
+    float mu = dot(viewDir, n) / eta - abs(dot(refractedDir, n));
+    float dmudx = dwoDotn_dx * (1.0f / eta + 1.0f / (eta * eta) * dot(viewDir, n) / dot(refractedDir, n));
+    float dmudy = dwoDotn_dy * (1.0f / eta + 1.0f / (eta * eta) * dot(viewDir, n) / dot(refractedDir, n));
+
+    rxDirection = normalize(refractedDir - eta * dwodx + vec3(mu * dndx + dmudx * n));
+    ryDirection = normalize(refractedDir - eta * dwody + vec3(mu * dndy + dmudy * n));
 }
 
 float computeLod(vec4 derivatives)

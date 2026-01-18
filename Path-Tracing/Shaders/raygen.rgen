@@ -53,10 +53,9 @@ void main()
         else
             ray = constructPrimaryRay(gl_LaunchIDEXT.xy, gl_LaunchSizeEXT.xy, mainUniform.MainCamera, u, rx, ry);
         
-        payload.RxOrigin = rx.Origin;
-        payload.RxDirection = rx.Direction;
-        payload.RyOrigin = ry.Origin;
-        payload.RyDirection = ry.Direction;
+        payload.RayDifferentials0 = vec4(rx.Origin, rx.Direction.x);
+        payload.RayDifferentials1 = vec4(rx.Direction.yz, ry.Origin.xy);
+        payload.RayDifferentials2 = vec4(ry.Origin.z, ry.Direction);
 
         payload.MaxRoughness = 0.0f;
         
