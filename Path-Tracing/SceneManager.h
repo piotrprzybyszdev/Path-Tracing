@@ -70,7 +70,7 @@ public:
 
 private:
     static std::map<std::string, SceneGroup> s_SceneGroups;
-    static std::atomic<std::shared_ptr<Scene>> s_ActiveScene;
+    static std::shared_ptr<Scene> s_ActiveScene;
     static std::jthread s_LoadingThread;
 
 private:

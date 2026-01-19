@@ -32,6 +32,12 @@ if (WIN32)
         INTERFACE_INCLUDE_DIRECTORIES "$ENV{VULKAN_SDK}/include/vulkan"
         IMPORTED_LOCATION "$ENV{VULKAN_SDK}/Lib/vulkan-1.lib"
     )
+elseif (APPLE)
+     set_target_properties(vulkan PROPERTIES
+         IMPORTED_LINK_INTERFACE_LANGUAGES "CXX"
+         INTERFACE_INCLUDE_DIRECTORIES "$ENV{VULKAN_SDK}/include/vulkan"
+         IMPORTED_LOCATION "$ENV{VULKAN_SDK}/lib/libvulkan.dylib"
+     )
 else()
     set_target_properties(vulkan PROPERTIES
         IMPORTED_LINK_INTERFACE_LANGUAGES "CXX"

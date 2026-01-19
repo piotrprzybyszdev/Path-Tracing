@@ -147,6 +147,8 @@ void Application::Init(int argc, const char *argv[])
     std::vector<const char *> requestedExtensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
     std::vector<const char *> requestedLayers;
 
+    requestedExtensions.push_back("VK_KHR_portability_enumeration");
+    requestedExtensions.push_back("VK_KHR_get_physical_device_properties2");
 #if defined(CONFIG_VALIDATION_LAYERS) || defined(CONFIG_SHADER_DEBUG_INFO)
     requestedExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 #endif
@@ -158,7 +160,8 @@ void Application::Init(int argc, const char *argv[])
         throw error("Instance doesn't have required extensions or layers");
 
     vk::InstanceCreateInfo createInfo(
-        vk::InstanceCreateFlags(), &applicationInfo, requestedLayers, requestedExtensions
+        vk::InstanceCreateFlagBits::eEnumeratePortabilityKHR, &applicationInfo, requestedLayers,
+        requestedExtensions
     );
 
     s_Instance = vk::createInstance(createInfo);

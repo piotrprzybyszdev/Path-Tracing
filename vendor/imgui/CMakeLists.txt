@@ -6,4 +6,4 @@ target_include_directories(imgui PUBLIC ${CMAKE_SOURCE_DIR}/vendor/imgui/imgui/b
 target_include_directories(imgui PUBLIC ${CMAKE_SOURCE_DIR}/vendor/imgui/imgui)
 target_include_directories(imgui PUBLIC ${CMAKE_SOURCE_DIR}/vendor/glfw/include)
 
-target_link_libraries(imgui PUBLIC Vulkan::Vulkan)
+target_link_libraries(imgui PUBLIC glfw Vulkan::Vulkan)

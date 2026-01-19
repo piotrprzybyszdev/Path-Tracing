@@ -4,13 +4,13 @@ Path Tracer written in Vulkan for an engineering thesis.
 ## Requirements
 * [Vulkan SDK 1.3 or higher](https://vulkan.lunarg.com/)
 * [CMake 3.25 or higher](https://cmake.org/)
-* C++ 20 capable compiler (tested with MSVC on Windows, g++ and clang++ on Linux)
+* C++ 20 capable compiler (tested with MSVC on Windows, g++ and clang++ on Linux and MacOS)
 
 Additionally for rendering to a video file [FFmpeg](https://www.ffmpeg.org/) has to be installed and added to the system PATH.
 
 To run the Debug version of the application on Windows, you must install the "shader toolchain debug symbols" through the Vulkan SDK installer.
 
-On Linux, you also must install the [dependencies of the GLFW library](https://www.glfw.org/docs/latest/compile.html#compile_deps) and [dependencies of the NFDE library](https://github.com/btzy/nativefiledialog-extended#linux).
+On Linux, you also must install the [dependencies of the GLFW library](https://www.glfw.org/docs/latest/compile.html#compile_deps) and [dependencies of the NFD library](https://github.com/btzy/nativefiledialog-extended#linux).
 
 ## Build
 To build the project, execute the following commands:

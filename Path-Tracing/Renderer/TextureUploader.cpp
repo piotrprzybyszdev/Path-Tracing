@@ -31,7 +31,9 @@ size_t GetTextureBudget()
     const size_t totalMemory = Image::GetImageMemoryBudget();
     const size_t desiredMemoryBudget =
         totalMemory * Application::GetConfig().MaxTextureMemoryBudgetVramPercent / 100;
-    return std::min(desiredMemoryBudget, Application::GetConfig().MaxTextureMemoryBudgetAbsolute);
+    return std::min(
+        desiredMemoryBudget, static_cast<size_t>(Application::GetConfig().MaxTextureMemoryBudgetAbsolute)
+    );
 }
 
 }

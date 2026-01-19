@@ -64,7 +64,7 @@ void CombinedSceneLoader::Load(SceneBuilder &sceneBuilder)
 }
 
 std::map<std::string, SceneGroup> SceneManager::s_SceneGroups = {};
-std::atomic<std::shared_ptr<Scene>> SceneManager::s_ActiveScene = nullptr;
+std::shared_ptr<Scene> SceneManager::s_ActiveScene = nullptr;
 std::jthread SceneManager::s_LoadingThread = {};
 
 void SceneManager::Init()
@@ -77,7 +77,7 @@ void SceneManager::Init()
 void SceneManager::Shutdown()
 {
     WaitLoadFinish();
-    s_ActiveScene.load().reset();
+    s_ActiveScene.reset();
     s_SceneGroups.clear();
 }
 
@@ -128,7 +128,7 @@ void SceneManager::SetActiveScene(const std::string &groupName, const std::strin
 
 std::shared_ptr<Scene> SceneManager::GetActiveScene()
 {
-    auto scene = s_ActiveScene.load();
+    auto scene = s_ActiveScene;
     assert(scene != nullptr);
     return scene;
 }

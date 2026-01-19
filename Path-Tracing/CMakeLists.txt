@@ -28,8 +28,12 @@ if (CMAKE_GENERATOR MATCHES "^Visual Studio")
     target_link_options(Path-Tracing PRIVATE "/ignore:4099")
 endif()
 
-if(MSVC)
+if (MSVC)
     target_compile_options(Path-Tracing PRIVATE "/MP")
+endif()
+
+if (APPLE)
+    target_compile_options(Path-Tracing PRIVATE "-Wno-missing-template-arg-list-after-template-kw")
 endif()
 
 target_compile_definitions(Path-Tracing PRIVATE "${PATH_TRACING_CONFIG}")
