@@ -21,7 +21,5 @@ void main()
 
     vec3 color = mainUniform.BloomIntensity * 0.1f * bloomColor + 1.0f * postProcessColor;
 
-    color = vec3(1.0f) - exp(-color);
-
     imageStore(u_PostProcessImage, imageCoords, vec4(color, 1.0f));
 }

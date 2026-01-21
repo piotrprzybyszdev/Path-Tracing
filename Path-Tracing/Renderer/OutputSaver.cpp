@@ -61,7 +61,7 @@ bool OutputSaver::CanOutputVideo() const
     return m_HasFFmpeg;
 }
 
-vk::Image OutputSaver::RegisterOutput(const OutputInfo &info)
+const Image *OutputSaver::RegisterOutput(const OutputInfo &info)
 {
     EndOutput();
 
@@ -72,6 +72,14 @@ vk::Image OutputSaver::RegisterOutput(const OutputInfo &info)
                   )
                   .SetFormat(SelectImageFormat(info.Format))
                   .CreateImage(info.Extent, "Output Image");
+
+    m_LinearImage = ImageBuilder()
+                        .SetUsageFlags(
+                            vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc |
+                            vk::ImageUsageFlagBits::eStorage
+                        )
+                .SetFormat(vk::Format::eR16G16B16A16Sfloat)
+                .CreateImage(info.Extent, "Linear Output Image");
 
     m_Buffer = BufferBuilder()
                    .SetUsageFlags(vk::BufferUsageFlagBits::eTransferDst)
@@ -99,7 +107,7 @@ vk::Image OutputSaver::RegisterOutput(const OutputInfo &info)
 
     m_Info = info;
 
-    return m_Image.GetHandle();
+    return &m_LinearImage;
 }
 
 void OutputSaver::StartOutputWait()
@@ -115,6 +123,23 @@ void OutputSaver::StartOutputWait()
         vk::Extent3D(m_Image.GetExtent(), 1)
     );
 
+    m_LinearImage.Transition(
+        m_CommandBuffer, vk::ImageLayout::eGeneral, vk::ImageLayout::eTransferSrcOptimal
+    );
+
+    m_Image.Transition(m_CommandBuffer, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
+
+    auto area = Image::GetMipLevelArea(m_Image.GetExtent());
+    vk::ImageSubresourceLayers subresource(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
+    vk::ImageBlit2 imageBlit(subresource, area, subresource, area);
+
+    vk::BlitImageInfo2 blitInfo(
+        m_LinearImage.GetHandle(), vk::ImageLayout::eTransferSrcOptimal, m_Image.GetHandle(),
+        vk::ImageLayout::eTransferDstOptimal, imageBlit, vk::Filter::eLinear
+    );
+
+    m_CommandBuffer.blitImage2(blitInfo);
+
     m_Image.Transition(
         m_CommandBuffer, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferSrcOptimal
     );
@@ -127,7 +152,7 @@ void OutputSaver::StartOutputWait()
 
     vk::CommandBufferSubmitInfo cmdInfo(m_CommandBuffer);
     vk::SemaphoreSubmitInfo waitInfo(
-        m_Semaphore, 0, vk::PipelineStageFlagBits2::eColorAttachmentOutput
+        m_Semaphore, 0, vk::PipelineStageFlagBits2::eAllCommands
     );
     vk::SubmitInfo2 submitInfo(vk::SubmitFlags(), waitInfo, cmdInfo, {});
 

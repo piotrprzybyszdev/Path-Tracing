@@ -15,11 +15,12 @@ class UserInterface
 {
 public:
     static void Init(
-        vk::Instance instance, vk::Format format, uint32_t swapchainImageCount,
-        std::span<const vk::PresentModeKHR> presentModes
+        vk::Instance instance, uint32_t swapchainImageCount, std::span<const vk::PresentModeKHR> presentModes
     );
 
     static void Shutdown();
+
+    static void Reinitialize(vk::Instance instance, uint32_t swapchainImageCount);
 
     static void OnUpdate(float timeStep);
     static void OnRender(vk::CommandBuffer commandBuffer);
@@ -29,6 +30,9 @@ public:
     static bool GetIsFocused();
 
     static vk::PresentModeKHR GetPresentMode();
+    static bool IsHdrAllowed();
+
+    static void SetHdrSupported(bool isSupported);
 
 private:
     static bool s_IsVisible;

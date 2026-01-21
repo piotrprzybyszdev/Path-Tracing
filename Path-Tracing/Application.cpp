@@ -147,8 +147,9 @@ void Application::Init(int argc, const char *argv[])
     std::vector<const char *> requestedExtensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
     std::vector<const char *> requestedLayers;
 
-    requestedExtensions.push_back("VK_KHR_portability_enumeration");
-    requestedExtensions.push_back("VK_KHR_get_physical_device_properties2");
+    requestedExtensions.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+    requestedExtensions.push_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
+    requestedExtensions.push_back(VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME);
 #if defined(CONFIG_VALIDATION_LAYERS) || defined(CONFIG_SHADER_DEBUG_INFO)
     requestedExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 #endif
@@ -197,15 +198,10 @@ void Application::Init(int argc, const char *argv[])
     DeviceContext::Init(s_Instance, s_Surface);
     s_State = State::HasDevice;
 
-    s_Swapchain = std::make_unique<Swapchain>(
-        s_Surface, vk::SurfaceFormatKHR(vk::Format::eR8G8B8A8Srgb, vk::ColorSpaceKHR::eSrgbNonlinear),
-        vk::Format::eR8G8B8A8Unorm, UserInterface::GetPresentMode(), windowSize, 2
-    );
+    s_Swapchain = std::make_unique<Swapchain>(s_Surface, UserInterface::GetPresentMode(), windowSize, 2);
     s_State = State::HasSwapchain;
 
-    UserInterface::Init(
-        s_Instance, vk::Format::eR8G8B8A8Unorm, s_Swapchain->GetImageCount(), s_Swapchain->GetPresentModes()
-    );
+    UserInterface::Init(s_Instance, s_Swapchain->GetImageCount(), s_Swapchain->GetPresentModes());
     s_State = State::HasUserInterface;
 
     SceneImporter::Init();
@@ -282,6 +278,15 @@ void Application::Run()
             recreateSwapchain = false;
         }
 
+        if (s_Swapchain->IsHdrAllowed() != UserInterface::IsHdrAllowed())
+        {
+            DeviceContext::GetGraphicsQueue().WaitIdle();
+            s_Swapchain->Recreate(UserInterface::IsHdrAllowed());
+            UserInterface::Reinitialize(s_Instance, s_Swapchain->GetImageCount());
+            Renderer::UpdateHdr();
+            recreateSwapchain = false;
+        }
+
         if (s_Swapchain->GetImageCount() != Renderer::GetPreferredImageCount())
         {
             DeviceContext::GetGraphicsQueue().WaitIdle();
@@ -297,8 +302,7 @@ void Application::Run()
             DeviceContext::GetGraphicsQueue().WaitIdle();
             s_Swapchain->Recreate(windowSize);
 
-            if (!IsRendering())
-                Renderer::OnResize(windowSize);
+            Renderer::OnResize(windowSize);
 
             previousSize = windowSize;
             recreateSwapchain = false;
@@ -311,6 +315,7 @@ void Application::Run()
         }
 
         assert(recreateSwapchain == false);
+        UserInterface::SetHdrSupported(s_Swapchain->IsHdrSupported());
 
         {
             MaxTimer timer("Frame total");

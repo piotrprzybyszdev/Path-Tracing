@@ -1,0 +1,24 @@
+#version 460
+#extension GL_EXT_buffer_reference : require
+
+#include "ShaderRendererTypes.incl"
+#include "common.glsl"
+
+layout(constant_id = 0) const uint s_ToneMappingMode = ToneMappingModeSDR;
+
+layout(binding = 0, set = 0, rgba16f) uniform image2D u_Image;
+
+layout (local_size_x = PostProcessShaderGroupSizeX, local_size_y = PostProcessShaderGroupSizeY, local_size_z = 1) in;
+
+void main()
+{
+    const ivec2 imageCoords = ivec2(gl_GlobalInvocationID.xy);
+    
+    const vec3 color = imageLoad(u_Image, imageCoords).rgb;
+
+    const bool isHdr = s_ToneMappingMode == ToneMappingModeHDR;
+
+    const vec3 outColor = isHdr ? color : (vec3(1.0f) - exp(-color));
+
+    imageStore(u_Image, imageCoords, vec4(outColor, 1.0f));
+}
