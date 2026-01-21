@@ -33,6 +33,8 @@ using PostProcessPipelineConfig = PipelineConfig<0>;
 using CompositionPipelineConfig = PipelineConfig<0>;
 using BloomDownsamplePipelineConfig = PipelineConfig<0>;
 using BloomUpsamplePipelineConfig = PipelineConfig<0>;
+using UICompositionPipelineConfig = PipelineConfig<1>;
+using ToneMappingPipelineConfig = PipelineConfig<1>;
 
 class Renderer
 {
@@ -54,6 +56,7 @@ public:
 
     static void SetPathTracingPipeline(PathTracingPipelineConfig config);
     static void SetDebugRaytracingPipeline(DebugRaytracingPipelineConfig config);
+    static void UpdateHdr();
 
     struct PathTracingSettings
     {
@@ -105,6 +108,8 @@ private:
         ShaderId CompositionCompute = ShaderLibrary::g_UnusedShaderId;
         ShaderId BloomDownsampleCompute = ShaderLibrary::g_UnusedShaderId;
         ShaderId BloomUpsampleCompute = ShaderLibrary::g_UnusedShaderId;
+        ShaderId UICompositionCompute = ShaderLibrary::g_UnusedShaderId;
+        ShaderId TonemappingCompute = ShaderLibrary::g_UnusedShaderId;
 
         ShaderId DebugRaygen = ShaderLibrary::g_UnusedShaderId;
         ShaderId DebugMiss = ShaderLibrary::g_UnusedShaderId;
@@ -139,6 +144,9 @@ private:
 
         Image BloomImage;
         std::vector<vk::ImageView> BloomImageViews;
+
+        Image UIImage;
+        Image ScreenImage;
 
         Buffer RaygenUniformBuffer;
         Buffer PostProcessUniformBuffer;
@@ -182,11 +190,11 @@ private:
 
         Buffer VertexBuffer;
         Buffer IndexBuffer;
-        
+
         Buffer AnimatedVertexBuffer;
         Buffer AnimatedVertexMapBuffer;
         Buffer AnimatedIndexBuffer;
-        
+
         Buffer TransformBuffer;
         Buffer MetallicRoughnessMaterialBuffer;
         Buffer SpecularGlossinessMaterialBuffer;
@@ -211,7 +219,7 @@ private:
     static bool s_TextureOwnershipBufferHasCommands;
 
     static std::unique_ptr<OutputSaver> s_OutputSaver;
-    static vk::Image s_OutputImage;
+    static const Image *s_OutputImage;
 
     static std::unique_ptr<RaytracingPipeline> s_PathTracingPipeline;
     static std::unique_ptr<RaytracingPipeline> s_DebugRayTracingPipeline;
@@ -220,6 +228,9 @@ private:
     static std::unique_ptr<ComputePipeline> s_CompositionPipeline;
     static std::unique_ptr<ComputePipeline> s_BloomDownsamplePipeline;
     static std::unique_ptr<ComputePipeline> s_BloomUpsamplePipeline;
+    static std::unique_ptr<ComputePipeline> s_UICompositionPipeline;
+    static std::unique_ptr<ComputePipeline> s_ToneMappingPipeline;
+    static std::unique_ptr<ComputePipeline> s_UIToneMappingPipeline;
 
     static RaytracingPipeline *s_ActiveRayTracingPipeline;
 
@@ -247,10 +258,11 @@ private:
     static void RecordSaveOutputCommands(const RenderingResources &resources);
 
     static void CreateSceneRenderingResources(RenderingResources &res, uint32_t frameIndex);
+    static void CreateImageResourcesInternal(RenderingResources &res, uint32_t frameIndex, vk::Extent2D extent);
     static void CreateImageResources(RenderingResources &res, uint32_t frameIndex, vk::Extent2D extent);
     static void CreateGeometryBuffer(RenderingResources &resources);
     static void CreateAccelerationStructure(RenderingResources &resources);
-    
+
     static void OnInFlightCountChange();
     static void RecreateDescriptorSet();
 

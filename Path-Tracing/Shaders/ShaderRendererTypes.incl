@@ -64,6 +64,11 @@ const uint PostProcessShaderGroupSizeY      = 32u;
 
 const uint MaxBloomMipmapLevel              = 12u;
 
+const uint ToneMappingModeSDR               = 0u;
+const uint ToneMappingModeHDR               = 1u;
+const uint ToneMappingModeMax               = 1u;
+
+
 struct SkinningPushConstants
 {
     AnimatedVertexBuffer inAnimatedVertices;

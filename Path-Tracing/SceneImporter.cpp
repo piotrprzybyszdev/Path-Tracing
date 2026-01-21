@@ -886,7 +886,7 @@ void LoadCameras(
         const float aspect = camera->mAspect == 0.0f ? 16.0f / 9.0f : camera->mAspect;
         const float verticalFov = camera->mHorizontalFOV == 0.0f
                                       ? 45.0f
-                                      : (2.0f * glm::atan(glm::tan(camera->mHorizontalFOV / 2.0f) * aspect));
+                                      : (2.0f * glm::atan(glm::tan(camera->mHorizontalFOV / 2.0f) * (1.0f / aspect)));
         glm::vec3 up = TrivialCopy<aiVector3D, glm::vec3>(camera->mUp);
         up.y *= -1;
 

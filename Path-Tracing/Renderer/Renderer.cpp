@@ -53,7 +53,7 @@ std::unique_ptr<CommandBuffer> Renderer::s_TextureOwnershipCommandBuffer = nullp
 bool Renderer::s_TextureOwnershipBufferHasCommands = false;
 
 std::unique_ptr<OutputSaver> Renderer::s_OutputSaver = nullptr;
-vk::Image Renderer::s_OutputImage = nullptr;
+const Image *Renderer::s_OutputImage = nullptr;
 
 std::unique_ptr<ShaderLibrary> Renderer::s_ShaderLibrary = nullptr;
 std::unique_ptr<RaytracingPipeline> Renderer::s_PathTracingPipeline = nullptr;
@@ -63,6 +63,9 @@ std::unique_ptr<ComputePipeline> Renderer::s_PostProcessPipeline = nullptr;
 std::unique_ptr<ComputePipeline> Renderer::s_CompositionPipeline = nullptr;
 std::unique_ptr<ComputePipeline> Renderer::s_BloomDownsamplePipeline = nullptr;
 std::unique_ptr<ComputePipeline> Renderer::s_BloomUpsamplePipeline = nullptr;
+std::unique_ptr<ComputePipeline> Renderer::s_UICompositionPipeline = nullptr;
+std::unique_ptr<ComputePipeline> Renderer::s_ToneMappingPipeline = nullptr;
+std::unique_ptr<ComputePipeline> Renderer::s_UIToneMappingPipeline = nullptr;
 RaytracingPipeline *Renderer::s_ActiveRayTracingPipeline = nullptr;
 
 std::unique_ptr<BufferBuilder> Renderer::s_BufferBuilder = nullptr;
@@ -172,7 +175,10 @@ void Renderer::Shutdown()
     }
     s_RenderingResources.clear();
 
+    s_UIToneMappingPipeline.reset();
+    s_ToneMappingPipeline.reset();
     s_PostProcessPipeline.reset();
+    s_UICompositionPipeline.reset();
     s_CompositionPipeline.reset();
     s_BloomDownsamplePipeline.reset();
     s_BloomUpsamplePipeline.reset();
@@ -519,13 +525,18 @@ void Renderer::CreatePipelines()
         s_ShaderLibrary->AddShader("bloomDownsample.comp", vk::ShaderStageFlagBits::eCompute);
     s_Shaders.BloomUpsampleCompute =
         s_ShaderLibrary->AddShader("bloomUpsample.comp", vk::ShaderStageFlagBits::eCompute);
+    s_Shaders.UICompositionCompute =
+        s_ShaderLibrary->AddShader("uiComposition.comp", vk::ShaderStageFlagBits::eCompute);
+    s_Shaders.TonemappingCompute =
+        s_ShaderLibrary->AddShader("toneMapping.comp", vk::ShaderStageFlagBits::eCompute);
     s_Shaders.DebugRaygen =
         s_ShaderLibrary->AddShader("Debug/debugRaygen.rgen", vk::ShaderStageFlagBits::eRaygenKHR);
     s_Shaders.DebugMiss =
         s_ShaderLibrary->AddShader("Debug/debugMiss.rmiss", vk::ShaderStageFlagBits::eMissKHR);
     s_Shaders.DebugClosestHit =
         s_ShaderLibrary->AddShader("Debug/debugClosestHit.rchit", vk::ShaderStageFlagBits::eClosestHitKHR);
-    s_Shaders.DebugAnyHit = s_ShaderLibrary->AddShader("Debug/debugAnyhit.rahit", vk::ShaderStageFlagBits::eAnyHitKHR);
+    s_Shaders.DebugAnyHit =
+        s_ShaderLibrary->AddShader("Debug/debugAnyhit.rahit", vk::ShaderStageFlagBits::eAnyHitKHR);
 
     s_ShaderLibrary->CompileShaders();
 
@@ -627,6 +638,25 @@ void Renderer::CreatePipelines()
         static BloomUpsamplePipelineConfig maxBloomUpsampleConfig = {};
         s_BloomUpsamplePipeline = builder.CreatePipelineUnique(maxBloomUpsampleConfig);
     }
+
+    {
+        ComputePipelineBuilder builder(*s_ShaderLibrary, s_Shaders.UICompositionCompute);
+        static UICompositionPipelineConfig maxUICompositionConfig = { Shaders::ToneMappingModeMax };
+        s_UICompositionPipeline = builder.CreatePipelineUnique(maxUICompositionConfig);
+    }
+
+    {
+        ComputePipelineBuilder builder(*s_ShaderLibrary, s_Shaders.TonemappingCompute);
+        builder.AddHintIsPartial(0, true);
+        static ToneMappingPipelineConfig maxTonemappingConfig = { Shaders::ToneMappingModeMax };
+        s_ToneMappingPipeline = builder.CreatePipelineUnique(maxTonemappingConfig);
+    }
+
+    {
+        ComputePipelineBuilder builder(*s_ShaderLibrary, s_Shaders.TonemappingCompute);
+        static ToneMappingPipelineConfig maxTonemappingConfig = { Shaders::ToneMappingModeMax };
+        s_UIToneMappingPipeline = builder.CreatePipelineUnique(maxTonemappingConfig);
+    }
 }
 
 void Renderer::UpdateShaderBindingTable()
@@ -682,8 +712,11 @@ void Renderer::UpdatePipelineSpecializations()
     s_SkinningPipeline->CancelUpdate();
     s_PostProcessPipeline->CancelUpdate();
     s_CompositionPipeline->CancelUpdate();
+    s_UICompositionPipeline->CancelUpdate();
     s_BloomDownsamplePipeline->CancelUpdate();
     s_BloomUpsamplePipeline->CancelUpdate();
+    s_ToneMappingPipeline->CancelUpdate();
+    s_UIToneMappingPipeline->CancelUpdate();
     Application::ResetBackgroundTask(BackgroundTaskType::ShaderCompilation);
 
     if (s_ActiveRayTracingPipeline == s_PathTracingPipeline.get())
@@ -691,11 +724,27 @@ void Renderer::UpdatePipelineSpecializations()
     else
         s_ActiveRayTracingPipeline->Update(s_DebugRayTracingPipelineConfig);
 
+    ToneMappingPipelineConfig toneMappingConfig = {
+        s_RenderSettings.Output.Format == OutputFormat::Hdr ? Shaders::ToneMappingModeHDR
+                                                            : Shaders::ToneMappingModeSDR,
+    };
+
+    ToneMappingPipelineConfig uiToneMappingConfig = {
+        s_Swapchain->IsHdr() ? Shaders::ToneMappingModeHDR : Shaders::ToneMappingModeSDR,
+    };
+
+    UICompositionPipelineConfig uiCompositionConfig = {
+        s_Swapchain->IsHdr() ? Shaders::ToneMappingModeHDR : Shaders::ToneMappingModeSDR,
+    };
+
     s_PostProcessPipeline->Update(PostProcessPipelineConfig());
     s_CompositionPipeline->Update(CompositionPipelineConfig());
     s_BloomDownsamplePipeline->Update(BloomDownsamplePipelineConfig());
     s_BloomUpsamplePipeline->Update(BloomUpsamplePipelineConfig());
     s_SkinningPipeline->Update(SkinningPipelineConfig());
+    s_ToneMappingPipeline->Update(toneMappingConfig);
+    s_UIToneMappingPipeline->Update(uiToneMappingConfig);
+    s_UICompositionPipeline->Update(uiCompositionConfig);
     UpdateShaderBindingTable();
     ResetAccumulationImage();
 }
@@ -721,6 +770,30 @@ void Renderer::SetDebugRaytracingPipeline(DebugRaytracingPipelineConfig config)
     UpdatePipelineSpecializations();
 }
 
+void Renderer::UpdateHdr()
+{
+    s_ToneMappingPipeline->CancelUpdate();
+    s_UIToneMappingPipeline->CancelUpdate();
+    s_UICompositionPipeline->CancelUpdate();
+
+    ToneMappingPipelineConfig toneMappingConfig = {
+        s_RenderSettings.Output.Format == OutputFormat::Hdr ? Shaders::ToneMappingModeHDR
+                                                            : Shaders::ToneMappingModeSDR,
+    };
+
+    ToneMappingPipelineConfig uiToneMappingConfig = {
+        s_Swapchain->IsHdr() ? Shaders::ToneMappingModeHDR : Shaders::ToneMappingModeSDR,
+    };
+
+    UICompositionPipelineConfig uiCompositionConfig = {
+        s_Swapchain->IsHdr() ? Shaders::ToneMappingModeHDR : Shaders::ToneMappingModeSDR,
+    };
+
+    s_ToneMappingPipeline->Update(toneMappingConfig);
+    s_UIToneMappingPipeline->Update(uiToneMappingConfig);
+    s_UICompositionPipeline->Update(uiCompositionConfig);
+}
+
 void Renderer::ResetAccumulationImage()
 {
     s_RenderTimeSeconds = 0.0f;
@@ -738,9 +811,9 @@ void Renderer::CancelRendering()
 
     Application::EndOfflineRendering();
     Application::SetBackgroundTaskDone(BackgroundTaskType::Rendering);
- 
+
     logger::info("Render cancelled");
-    
+
     DeviceContext::GetGraphicsQueue().WaitIdle();
     OnResize(s_Swapchain->GetExtent());
 }
@@ -760,8 +833,14 @@ void Renderer::SetSettings(const RenderSettings &settings)
 {
     s_RenderSettings = settings;
     DeviceContext::GetGraphicsQueue().WaitIdle();
-    OnResize(settings.Output.Extent);
+    for (int i = 0; i < s_RenderingResources.size(); i++)
+        CreateImageResourcesInternal(s_RenderingResources[i], i, s_RenderSettings.Output.Extent);
+    OnResize(s_Swapchain->GetExtent());
     s_OutputImage = s_OutputSaver->RegisterOutput(s_RenderSettings.Output);
+    for (int i = 0; i < s_RenderingResources.size(); i++)
+        s_ToneMappingPipeline->GetDescriptorSet()->UpdateImage(
+            0, i, *s_OutputImage, vk::Sampler(), vk::ImageLayout::eGeneral
+        );
     Application::ResetBackgroundTask(BackgroundTaskType::Rendering);
     Application::AddBackgroundTask(
         BackgroundTaskType::Rendering, settings.MaxSampleCount * settings.FrameCount
@@ -845,10 +924,11 @@ void Renderer::RecordPathTracingCommands(const RenderingResources &resources)
 void Renderer::RecordPostProcessCommands(const RenderingResources &resources)
 {
     vk::CommandBuffer commandBuffer = resources.CommandBuffer;
-    vk::Image swapchainImage = s_Swapchain->GetCurrentFrame().Image;
-    vk::Extent2D swapchainExtent = s_Swapchain->GetExtent();
+    vk::Image screenImage = resources.ScreenImage.GetHandle();
+    vk::Extent2D screenExtent = resources.ScreenImage.GetExtent();
     vk::Extent2D storageExtent = resources.AccumulationImage.GetExtent();
     assert(storageExtent == resources.PostProcessImage.GetExtent());
+    assert(screenExtent == s_Swapchain->GetExtent());
 
     {
         Utils::DebugLabel label(commandBuffer, "Post Processing pass", { 0.92f, 0.05f, 0.16f, 1.0f });
@@ -867,7 +947,7 @@ void Renderer::RecordPostProcessCommands(const RenderingResources &resources)
         const uint32_t groupSizeY =
             std::ceil(static_cast<float>(storageExtent.height) / Shaders::PostProcessShaderGroupSizeY);
         commandBuffer.dispatch(groupSizeX, groupSizeY, 1);
-        
+
         const uint32_t maxMipLevel =
             std::min(resources.BloomImage.GetMipLevels() - 3, Shaders::MaxBloomMipmapLevel);
 
@@ -929,9 +1009,7 @@ void Renderer::RecordPostProcessCommands(const RenderingResources &resources)
                 vk::PipelineStageFlagBits2::eComputeShader, flags, flags, i - 1
             );
 
-            commandBuffer.bindPipeline(
-                vk::PipelineBindPoint::eCompute, s_BloomUpsamplePipeline->GetHandle()
-            );
+            commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, s_BloomUpsamplePipeline->GetHandle());
             commandBuffer.bindDescriptorSets(
                 vk::PipelineBindPoint::eCompute, s_BloomUpsamplePipeline->GetLayout(), 0,
                 { s_BloomUpsamplePipeline->GetDescriptorSet()->GetSet(
@@ -941,8 +1019,8 @@ void Renderer::RecordPostProcessCommands(const RenderingResources &resources)
             );
 
             commandBuffer.pushConstants(
-                s_BloomUpsamplePipeline->GetLayout(), vk::ShaderStageFlagBits::eCompute, 0u,
-                sizeof(uint32_t), &i
+                s_BloomUpsamplePipeline->GetLayout(), vk::ShaderStageFlagBits::eCompute, 0u, sizeof(uint32_t),
+                &i
             );
 
             vk::Extent2D mipmapExtent = resources.BloomImage.GetMipExtent(i - 1);
@@ -968,7 +1046,7 @@ void Renderer::RecordPostProcessCommands(const RenderingResources &resources)
             vk::PipelineStageFlagBits2::eComputeShader, vk::AccessFlagBits2::eShaderStorageWrite,
             vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite
         );
-  
+
         commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, s_CompositionPipeline->GetHandle());
         commandBuffer.bindDescriptorSets(
             vk::PipelineBindPoint::eCompute, s_CompositionPipeline->GetLayout(), 0,
@@ -981,22 +1059,22 @@ void Renderer::RecordPostProcessCommands(const RenderingResources &resources)
         commandBuffer.dispatch(groupSizeX, groupSizeY, 1);
 
         Image::Transition(
-            commandBuffer, swapchainImage, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
+            commandBuffer, screenImage, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
             vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::PipelineStageFlagBits2::eTransfer,
             vk::AccessFlagBits2::eNone, vk::AccessFlagBits2::eTransferWrite
         );
 
         resources.PostProcessImage.Transition(
-            commandBuffer, vk::ImageLayout::eGeneral, vk::ImageLayout::eTransferSrcOptimal
+            commandBuffer, vk::ImageLayout::eGeneral, vk::ImageLayout::eGeneral
         );
 
         auto srcarea = Image::GetMipLevelArea(storageExtent);
-        auto dstarea = Image::GetMipLevelArea(swapchainExtent);
+        auto dstarea = Image::GetMipLevelArea(screenExtent);
         vk::ImageSubresourceLayers subresource(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
         vk::ImageBlit2 imageBlit(subresource, srcarea, subresource, dstarea);
 
         vk::BlitImageInfo2 blitInfo(
-            resources.PostProcessImage.GetHandle(), vk::ImageLayout::eTransferSrcOptimal, swapchainImage,
+            resources.PostProcessImage.GetHandle(), vk::ImageLayout::eGeneral, screenImage,
             vk::ImageLayout::eTransferDstOptimal, imageBlit, vk::Filter::eLinear
         );
 
@@ -1007,36 +1085,116 @@ void Renderer::RecordPostProcessCommands(const RenderingResources &resources)
 void Renderer::RecordUICommands(const RenderingResources &resources)
 {
     vk::CommandBuffer commandBuffer = resources.CommandBuffer;
-    vk::ImageView linearImageView = s_Swapchain->GetCurrentFrame().LinearImageView;
-    vk::Extent2D swapchainExtent = s_Swapchain->GetExtent();
+    vk::Extent2D screenExtent = resources.ScreenImage.GetExtent();
+    vk::Image screenImage = resources.ScreenImage.GetHandle();
+    vk::ImageView uiImageView = resources.UIImage.GetView();
     vk::Image swapchainImage = s_Swapchain->GetCurrentFrame().Image;
 
     {
         Utils::DebugLabel label(commandBuffer, "UI pass", { 0.24f, 0.34f, 0.93f, 1.0f });
 
-        std::array<vk::RenderingAttachmentInfo, 1> colorAttachments = {
-            vk::RenderingAttachmentInfo(linearImageView, vk::ImageLayout::eAttachmentOptimal)
-        };
+        Image::Transition(
+            commandBuffer, resources.UIImage.GetHandle(), vk::ImageLayout::eGeneral,
+            vk::ImageLayout::eTransferDstOptimal, vk::PipelineStageFlagBits2::eNone,
+            vk::PipelineStageFlagBits2::eClear, vk::AccessFlagBits2::eNone,
+            vk::AccessFlagBits2::eTransferWrite
+        );
+
+        vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
+        commandBuffer.clearColorImage(
+            resources.UIImage.GetHandle(), vk::ImageLayout::eTransferDstOptimal,
+            vk::ClearColorValue(0, 0, 0, 0), range
+        );
 
         Image::Transition(
-            commandBuffer, swapchainImage, vk::ImageLayout::eTransferDstOptimal,
-            vk::ImageLayout::eAttachmentOptimal
+            commandBuffer, resources.UIImage.GetHandle(), vk::ImageLayout::eTransferDstOptimal,
+            vk::ImageLayout::eColorAttachmentOptimal, vk::PipelineStageFlagBits2::eClear,
+            vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eTransferWrite,
+            vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite
         );
 
-        resources.PostProcessImage.Transition(
-            commandBuffer, vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eGeneral
-        );
+        std::array<vk::RenderingAttachmentInfo, 1> colorAttachments = {
+            vk::RenderingAttachmentInfo(uiImageView, vk::ImageLayout::eGeneral)
+        };
 
         commandBuffer.beginRendering(
-            vk::RenderingInfo(vk::RenderingFlags(), vk::Rect2D({}, swapchainExtent), 1, 0, colorAttachments)
+            vk::RenderingInfo(vk::RenderingFlags(), vk::Rect2D({}, screenExtent), 1, 0, colorAttachments)
         );
         UserInterface::OnRender(commandBuffer);
         commandBuffer.endRendering();
 
-        Image::Transition(
-            commandBuffer, swapchainImage, vk::ImageLayout::eAttachmentOptimal,
-            vk::ImageLayout::ePresentSrcKHR
+        resources.UIImage.Transition(
+            commandBuffer, vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::eGeneral
         );
+
+        resources.ScreenImage.Transition(
+            commandBuffer, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eGeneral
+        );
+
+        commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, s_UIToneMappingPipeline->GetHandle());
+        commandBuffer.bindDescriptorSets(
+            vk::PipelineBindPoint::eCompute, s_UIToneMappingPipeline->GetLayout(), 0,
+            { s_UIToneMappingPipeline->GetDescriptorSet()->GetSet(
+                s_Swapchain->GetCurrentFrameInFlightIndex()
+            ) },
+            {}
+        );
+
+        const uint32_t groupSizeX =
+            std::ceil(static_cast<float>(screenExtent.width) / Shaders::PostProcessShaderGroupSizeX);
+        const uint32_t groupSizeY =
+            std::ceil(static_cast<float>(screenExtent.height) / Shaders::PostProcessShaderGroupSizeY);
+        commandBuffer.dispatch(groupSizeX, groupSizeY, 1);
+
+        Image::Transition(
+            commandBuffer, swapchainImage, vk::ImageLayout::eGeneral, vk::ImageLayout::eGeneral,
+            vk::PipelineStageFlagBits2::eComputeShader, vk::PipelineStageFlagBits2::eComputeShader,
+            vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite,
+            vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite
+        );
+
+        commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, s_UICompositionPipeline->GetHandle());
+        commandBuffer.bindDescriptorSets(
+            vk::PipelineBindPoint::eCompute, s_UICompositionPipeline->GetLayout(), 0,
+            { s_UICompositionPipeline->GetDescriptorSet()->GetSet(
+                s_Swapchain->GetCurrentFrameInFlightIndex()
+            ) },
+            {}
+        );
+        commandBuffer.dispatch(groupSizeX, groupSizeY, 1);
+
+        resources.ScreenImage.Transition(
+            commandBuffer, vk::ImageLayout::eGeneral, vk::ImageLayout::eTransferSrcOptimal
+        );
+
+        {
+            auto area = Image::GetMipLevelArea(screenExtent);
+            vk::ImageSubresourceLayers subresource(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
+            vk::ImageBlit2 imageBlit(subresource, area, subresource, area);
+
+            Image::Transition(
+                commandBuffer, swapchainImage, vk::ImageLayout::eUndefined,
+                vk::ImageLayout::eTransferDstOptimal, vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+                vk::PipelineStageFlagBits2::eBlit, vk::AccessFlagBits2::eNone,
+                vk::AccessFlagBits2::eTransferWrite
+            );
+
+            vk::BlitImageInfo2 blitInfo(
+                resources.ScreenImage.GetHandle(), vk::ImageLayout::eTransferSrcOptimal, swapchainImage,
+                vk::ImageLayout::eTransferDstOptimal, imageBlit, vk::Filter::eLinear
+            );
+
+            commandBuffer.blitImage2(blitInfo);
+
+            resources.ScreenImage.Transition(
+                commandBuffer, vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eGeneral
+            );
+
+            Image::Transition(
+                commandBuffer, swapchainImage, vk::ImageLayout::eTransferDstOptimal,
+                vk::ImageLayout::ePresentSrcKHR
+            );
+        }
     }
 }
 
@@ -1045,23 +1203,43 @@ void Renderer::RecordSaveOutputCommands(const RenderingResources &resources)
     const Swapchain::SynchronizationObjects &sync = s_Swapchain->GetCurrentSyncObjects();
     vk::CommandBuffer commandBuffer = resources.CommandBuffer;
     vk::Extent2D storageExtent = resources.AccumulationImage.GetExtent();
-    
+
     auto area = Image::GetMipLevelArea(storageExtent);
     vk::ImageSubresourceLayers subresource(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
     vk::ImageBlit2 imageBlit(subresource, area, subresource, area);
 
     Image::Transition(
-        commandBuffer, s_OutputImage, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
-        vk::PipelineStageFlagBits2::eAllCommands, vk::PipelineStageFlagBits2::eTransfer,
-        vk::AccessFlagBits2::eNone, vk::AccessFlagBits2::eTransferWrite
+        commandBuffer, s_OutputImage->GetHandle(), vk::ImageLayout::eUndefined,
+        vk::ImageLayout::eTransferDstOptimal, vk::PipelineStageFlagBits2::eAllCommands,
+        vk::PipelineStageFlagBits2::eTransfer, vk::AccessFlagBits2::eNone, vk::AccessFlagBits2::eTransferWrite
     );
 
     vk::BlitImageInfo2 blitInfo(
-        resources.PostProcessImage.GetHandle(), vk::ImageLayout::eTransferSrcOptimal, s_OutputImage,
-        vk::ImageLayout::eTransferDstOptimal, imageBlit, vk::Filter::eLinear
+        resources.PostProcessImage.GetHandle(), vk::ImageLayout::eGeneral,
+        s_OutputImage->GetHandle(), vk::ImageLayout::eTransferDstOptimal, imageBlit, vk::Filter::eLinear
     );
 
     commandBuffer.blitImage2(blitInfo);
+
+    Image::Transition(
+        commandBuffer, s_OutputImage->GetHandle(), vk::ImageLayout::eTransferDstOptimal,
+        vk::ImageLayout::eGeneral, vk::PipelineStageFlagBits2::eBlit,
+        vk::PipelineStageFlagBits2::eComputeShader, vk::AccessFlagBits2::eTransferWrite,
+        vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite
+    );
+
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, s_ToneMappingPipeline->GetHandle());
+    commandBuffer.bindDescriptorSets(
+        vk::PipelineBindPoint::eCompute, s_ToneMappingPipeline->GetLayout(), 0,
+        { s_ToneMappingPipeline->GetDescriptorSet()->GetSet(s_Swapchain->GetCurrentFrameInFlightIndex()) },
+        {}
+    );
+
+    const uint32_t groupSizeX =
+        std::ceil(static_cast<float>(storageExtent.width) / Shaders::PostProcessShaderGroupSizeX);
+    const uint32_t groupSizeY =
+        std::ceil(static_cast<float>(storageExtent.height) / Shaders::PostProcessShaderGroupSizeY);
+    commandBuffer.dispatch(groupSizeX, groupSizeY, 1);
 }
 
 void Renderer::CreateSceneRenderingResources(RenderingResources &res, uint32_t frameIndex)
@@ -1095,7 +1273,7 @@ void Renderer::CreateSceneRenderingResources(RenderingResources &res, uint32_t f
     CreateAccelerationStructure(res);
 }
 
-void Renderer::CreateImageResources(RenderingResources &res, uint32_t frameIndex, vk::Extent2D extent)
+void Renderer::CreateImageResourcesInternal(RenderingResources &res, uint32_t frameIndex, vk::Extent2D extent)
 {
     s_ImageBuilder->ResetFlags();
 
@@ -1103,6 +1281,7 @@ void Renderer::CreateImageResources(RenderingResources &res, uint32_t frameIndex
         s_ImageBuilder->SetFormat(vk::Format::eR32G32B32A32Sfloat)
             .SetUsageFlags(vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eTransferDst)
             .CreateImage(extent, std::format("Accumulation Image {}", frameIndex));
+    res.TotalSamples = 0;
 
     res.PostProcessImage =
         s_ImageBuilder->SetFormat(vk::Format::eR16G16B16A16Sfloat)
@@ -1110,12 +1289,12 @@ void Renderer::CreateImageResources(RenderingResources &res, uint32_t frameIndex
             .CreateImage(extent, std::format("Post-process Image {}", frameIndex));
 
     res.BloomImage = s_ImageBuilder->SetFormat(vk::Format::eR16G16B16A16Sfloat)
-                            .SetUsageFlags(
-                                vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled |
-                                vk::ImageUsageFlagBits::eTransferSrc
-                            )
-                            .EnableMips()
-                            .CreateImage(extent, std::format("Bloom Image {}", frameIndex));
+                         .SetUsageFlags(
+                             vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled |
+                             vk::ImageUsageFlagBits::eTransferSrc
+                         )
+                         .EnableMips()
+                         .CreateImage(extent, std::format("Bloom Image {}", frameIndex));
 
     for (auto view : res.BloomImageViews)
         DeviceContext::GetLogical().destroyImageView(view);
@@ -1142,6 +1321,38 @@ void Renderer::CreateImageResources(RenderingResources &res, uint32_t frameIndex
     );
 
     res.BloomImage.Transition(
+        s_MainCommandBuffer->Buffer, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral
+    );
+    s_MainCommandBuffer->SubmitBlocking();
+}
+
+void Renderer::CreateImageResources(RenderingResources &res, uint32_t frameIndex, vk::Extent2D extent)
+{
+    if (!Application::IsRendering())
+        CreateImageResourcesInternal(res, frameIndex, extent);
+
+    res.UIImage = s_ImageBuilder->ResetFlags()
+                      .SetFormat(vk::Format::eR8G8B8A8Unorm)
+                      .SetUsageFlags(
+                          vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eColorAttachment |
+                          vk::ImageUsageFlagBits::eStorage
+                      )
+                      .CreateImage(s_Swapchain->GetExtent(), std::format("UI Image {}", frameIndex));
+
+    res.ScreenImage = s_ImageBuilder->ResetFlags()
+                          .SetFormat(vk::Format::eR16G16B16A16Sfloat)
+                          .SetUsageFlags(
+                              vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eTransferSrc |
+                              vk::ImageUsageFlagBits::eTransferDst
+                          )
+                          .CreateImage(s_Swapchain->GetExtent(), std::format("Screen Image {}", frameIndex));
+
+    s_MainCommandBuffer->Begin();
+    res.UIImage.Transition(
+        s_MainCommandBuffer->Buffer, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral
+    );
+
+    res.ScreenImage.Transition(
         s_MainCommandBuffer->Buffer, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral
     );
 
@@ -1185,11 +1396,8 @@ void Renderer::OnResize(vk::Extent2D extent)
     for (int i = 0; i < s_RenderingResources.size(); i++)
     {
         RenderingResources &res = s_RenderingResources[i];
-        res.TotalSamples = 0;
 
         assert(res.AccumulationImage.GetExtent() == res.PostProcessImage.GetExtent());
-        if (res.AccumulationImage.GetExtent() == extent)
-            continue;
 
         CreateImageResources(res, i, extent);
 
@@ -1215,7 +1423,15 @@ void Renderer::OnResize(vk::Extent2D extent)
         s_CompositionPipeline->GetDescriptorSet()->UpdateImage(
             1, i, res.BloomImage, vk::Sampler(), vk::ImageLayout::eGeneral
         );
-
+        s_UICompositionPipeline->GetDescriptorSet()->UpdateImage(
+            0, i, res.UIImage, vk::Sampler(), vk::ImageLayout::eGeneral
+        );
+        s_UICompositionPipeline->GetDescriptorSet()->UpdateImage(
+            1, i, res.ScreenImage, vk::Sampler(), vk::ImageLayout::eGeneral
+        );
+        s_UIToneMappingPipeline->GetDescriptorSet()->UpdateImage(
+            0, i, res.ScreenImage, vk::Sampler(), vk::ImageLayout::eGeneral
+        );
         s_BloomDownsamplePipeline->GetDescriptorSet()->UpdateImageArrayFromViews(
             0, i, res.BloomImageViews, s_BloomSampler, vk::ImageLayout::eGeneral
         );
@@ -1256,7 +1472,8 @@ void Renderer::OnInFlightCountChange()
             sizeof(Shaders::RaygenUniformData), std::format("Raygen Uniform Buffer {}", frameIndex)
         );
         res.PostProcessUniformBuffer = s_BufferBuilder->CreateHostBuffer(
-            sizeof(Shaders::PostProcessingUniformData), std::format("Post-process Uniform Buffer {}", frameIndex)
+            sizeof(Shaders::PostProcessingUniformData),
+            std::format("Post-process Uniform Buffer {}", frameIndex)
         );
 
         CreateSceneRenderingResources(res, frameIndex);
@@ -1280,11 +1497,17 @@ void Renderer::RecreateDescriptorSet()
     s_SkinningPipeline->CreateDescriptorSet(s_RenderingResources.size());
     s_PostProcessPipeline->CreateDescriptorSet(s_RenderingResources.size());
     s_CompositionPipeline->CreateDescriptorSet(s_RenderingResources.size());
+    s_UICompositionPipeline->CreateDescriptorSet(s_RenderingResources.size());
+    s_ToneMappingPipeline->CreateDescriptorSet(s_RenderingResources.size());
+    s_UIToneMappingPipeline->CreateDescriptorSet(s_RenderingResources.size());
     s_BloomDownsamplePipeline->CreateDescriptorSet(s_RenderingResources.size());
     s_BloomUpsamplePipeline->CreateDescriptorSet(s_RenderingResources.size());
     DescriptorSet *skinningDescriptorSet = s_SkinningPipeline->GetDescriptorSet();
     DescriptorSet *postProcessDescriptorSet = s_PostProcessPipeline->GetDescriptorSet();
     DescriptorSet *compositionDescriptorSet = s_CompositionPipeline->GetDescriptorSet();
+    DescriptorSet *uiCompositionDescriptorSet = s_UICompositionPipeline->GetDescriptorSet();
+    DescriptorSet *toneMappingDescriptorSet = s_ToneMappingPipeline->GetDescriptorSet();
+    DescriptorSet *uiToneMappingDescriptorSet = s_UIToneMappingPipeline->GetDescriptorSet();
     DescriptorSet *bloomDownsampleDescriptorSet = s_BloomDownsamplePipeline->GetDescriptorSet();
     DescriptorSet *bloomUpsampleDescriptorSet = s_BloomUpsamplePipeline->GetDescriptorSet();
 
@@ -1346,7 +1569,7 @@ void Renderer::RecreateDescriptorSet()
             2, frameIndex, res.BloomImage, vk::Sampler(), vk::ImageLayout::eGeneral
         );
         postProcessDescriptorSet->UpdateBuffer(3, frameIndex, res.PostProcessUniformBuffer);
-        
+
         compositionDescriptorSet->UpdateImage(
             0, frameIndex, res.PostProcessImage, vk::Sampler(), vk::ImageLayout::eGeneral
         );
@@ -1354,18 +1577,31 @@ void Renderer::RecreateDescriptorSet()
             1, frameIndex, res.BloomImage, vk::Sampler(), vk::ImageLayout::eGeneral
         );
         compositionDescriptorSet->UpdateBuffer(2, frameIndex, res.PostProcessUniformBuffer);
-        
-        s_BloomDownsamplePipeline->GetDescriptorSet()->UpdateImageArrayFromViews(
+
+        bloomDownsampleDescriptorSet->UpdateImageArrayFromViews(
             0, frameIndex, res.BloomImageViews, s_BloomSampler, vk::ImageLayout::eGeneral
         );
-        s_BloomDownsamplePipeline->GetDescriptorSet()->UpdateImageArrayFromViews(
+        bloomDownsampleDescriptorSet->UpdateImageArrayFromViews(
             1, frameIndex, res.BloomImageViews, vk::Sampler(), vk::ImageLayout::eGeneral
         );
-        s_BloomUpsamplePipeline->GetDescriptorSet()->UpdateImageArrayFromViews(
+        bloomUpsampleDescriptorSet->UpdateImageArrayFromViews(
             0, frameIndex, res.BloomImageViews, s_BloomSampler, vk::ImageLayout::eGeneral
         );
-        s_BloomUpsamplePipeline->GetDescriptorSet()->UpdateImageArrayFromViews(
+        bloomUpsampleDescriptorSet->UpdateImageArrayFromViews(
             1, frameIndex, res.BloomImageViews, vk::Sampler(), vk::ImageLayout::eGeneral
+        );
+        uiCompositionDescriptorSet->UpdateImage(
+            0, frameIndex, res.UIImage, vk::Sampler(), vk::ImageLayout::eGeneral
+        );
+        uiCompositionDescriptorSet->UpdateImage(
+            1, frameIndex, res.ScreenImage, vk::Sampler(), vk::ImageLayout::eGeneral
+        );
+        if (s_OutputImage != nullptr)
+            toneMappingDescriptorSet->UpdateImage(
+                0, frameIndex, *s_OutputImage, vk::Sampler(), vk::ImageLayout::eGeneral
+            );
+        uiToneMappingDescriptorSet->UpdateImage(
+            0, frameIndex, res.ScreenImage, vk::Sampler(), vk::ImageLayout::eGeneral
         );
     }
 }
@@ -1419,6 +1655,9 @@ void Renderer::Render()
     s_SkinningPipeline->GetDescriptorSet()->FlushUpdate(s_Swapchain->GetCurrentFrameInFlightIndex());
     s_PostProcessPipeline->GetDescriptorSet()->FlushUpdate(s_Swapchain->GetCurrentFrameInFlightIndex());
     s_CompositionPipeline->GetDescriptorSet()->FlushUpdate(s_Swapchain->GetCurrentFrameInFlightIndex());
+    s_UICompositionPipeline->GetDescriptorSet()->FlushUpdate(s_Swapchain->GetCurrentFrameInFlightIndex());
+    s_ToneMappingPipeline->GetDescriptorSet()->FlushUpdate(s_Swapchain->GetCurrentFrameInFlightIndex());
+    s_UIToneMappingPipeline->GetDescriptorSet()->FlushUpdate(s_Swapchain->GetCurrentFrameInFlightIndex());
     s_BloomDownsamplePipeline->GetDescriptorSet()->FlushUpdate(s_Swapchain->GetCurrentFrameInFlightIndex());
     s_BloomUpsamplePipeline->GetDescriptorSet()->FlushUpdate(s_Swapchain->GetCurrentFrameInFlightIndex());
 
@@ -1440,11 +1679,14 @@ void Renderer::Render()
 
     Camera &camera = s_SceneData->Handle->GetActiveCamera();
     camera.OnResize(res.AccumulationImage.GetExtent().width, res.AccumulationImage.GetExtent().height);
-    Shaders::RaygenUniformData rgenData = { camera.GetInvViewMatrix(), camera.GetInvProjectionMatrix(),
-                                            s_PathTracingSettings.BounceCount, s_PathTracingSettings.LensRadius,
-                                            s_PathTracingSettings.FocalDistance, s_RefreshRate.SamplesPerFrame,
+    Shaders::RaygenUniformData rgenData = { camera.GetInvViewMatrix(),
+                                            camera.GetInvProjectionMatrix(),
+                                            s_PathTracingSettings.BounceCount,
+                                            s_PathTracingSettings.LensRadius,
+                                            s_PathTracingSettings.FocalDistance,
+                                            s_RefreshRate.SamplesPerFrame,
                                             res.TotalSamples };
-    
+
     bool resetAccumulationImage = false, saveOutput = false;
     if (s_ActiveRayTracingPipeline != s_DebugRayTracingPipeline.get())
     {
@@ -1454,7 +1696,9 @@ void Renderer::Render()
         {
             saveOutput |= res.TotalSamples >= s_RenderSettings.MaxSampleCount;
             saveOutput |= s_RenderTimeSeconds >= s_RenderSettings.MaxTime.count();
-            Application::IncrementBackgroundTaskDone(BackgroundTaskType::Rendering, s_RefreshRate.SamplesPerFrame);
+            Application::IncrementBackgroundTaskDone(
+                BackgroundTaskType::Rendering, s_RefreshRate.SamplesPerFrame
+            );
         }
     }
     else
@@ -1463,8 +1707,7 @@ void Renderer::Render()
     Shaders::PostProcessingUniformData postprocessData = { res.TotalSamples, s_PostProcessSettings.Exposure,
                                                            s_PostProcessSettings.BloomThreshold,
                                                            s_PostProcessSettings.BloomIntensity };
-    
-    
+
     res.RaygenUniformBuffer.Upload(&rgenData);
     res.PostProcessUniformBuffer.Upload(&postprocessData);
     res.LightUniformBuffer.Upload(ToByteSpan(res.LightCount));
@@ -1516,12 +1759,10 @@ void Renderer::Render()
 
     vk::CommandBufferSubmitInfo cmdInfo(res.CommandBuffer);
     vk::SemaphoreSubmitInfo waitInfo(
-        sync.ImageAcquiredSemaphore, 0, vk::PipelineStageFlagBits2::eColorAttachmentOutput
+        sync.ImageAcquiredSemaphore, 0, vk::PipelineStageFlagBits2::eAllCommands
     );
     std::array<vk::SemaphoreSubmitInfo, 2> signalInfo = {
-        vk::SemaphoreSubmitInfo(
-            sync.RenderCompleteSemaphore, 0, vk::PipelineStageFlagBits2::eColorAttachmentOutput
-        ),
+        vk::SemaphoreSubmitInfo(sync.RenderCompleteSemaphore, 0, vk::PipelineStageFlagBits2::eAllCommands),
         vk::SemaphoreSubmitInfo(
             s_OutputSaver->GetSignalSemaphore(), 0, vk::PipelineStageFlagBits2::eAllCommands
         ),
@@ -1538,14 +1779,16 @@ void Renderer::Render()
     if (saveOutput)
     {
         s_OutputSaver->StartOutputWait();
-        s_RenderTimeSeconds = 0.0f;
         s_RenderCompletedFrames++;
         Application::AdvanceFrameOfflineRendering();
         Application::IncrementBackgroundTaskDone(
             BackgroundTaskType::Rendering, s_RenderSettings.MaxSampleCount - res.TotalSamples
         );
+        logger::info("Total Time: {}s", s_RenderTimeSeconds);
+        logger::info("Total Samples: {}", res.TotalSamples);
+        s_RenderTimeSeconds = 0.0f;
         res.TotalSamples = 0;
-        
+
         if (s_RenderCompletedFrames == s_RenderSettings.FrameCount)
         {
             s_RenderCompletedFrames = 0;

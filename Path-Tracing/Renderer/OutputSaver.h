@@ -42,13 +42,14 @@ public:
     [[nodiscard]] vk::Semaphore GetSignalSemaphore() const;
     [[nodiscard]] bool CanOutputVideo() const;
 
-    [[nodiscard]] vk::Image RegisterOutput(const OutputInfo &info);
+    [[nodiscard]] const Image *RegisterOutput(const OutputInfo &info);
     void StartOutputWait();
     void EndOutput();
     void CancelOutput();
 
 private:
     Image m_Image;
+    Image m_LinearImage;
     Buffer m_Buffer;
     OutputInfo m_Info;
     vk::Semaphore m_Semaphore;

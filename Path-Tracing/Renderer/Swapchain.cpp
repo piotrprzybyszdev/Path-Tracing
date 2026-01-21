@@ -1,3 +1,5 @@
+#include <array>
+
 #include "Core/Core.h"
 
 #include "DeviceContext.h"
@@ -9,11 +11,9 @@ namespace PathTracing
 {
 
 Swapchain::Swapchain(
-    vk::SurfaceKHR surface, vk::SurfaceFormatKHR surfaceFormat, vk::Format linearFormat,
-    vk::PresentModeKHR presentMode, vk::Extent2D extent, uint32_t imageCount
+    vk::SurfaceKHR surface, vk::PresentModeKHR presentMode, vk::Extent2D extent, uint32_t imageCount
 )
-    : m_Surface(surface), m_SurfaceFormat(surfaceFormat), m_Extent(extent), m_LinearFormat(linearFormat),
-      m_ImageCount(imageCount)
+    : m_Surface(surface), m_Extent(extent), m_ImageCount(imageCount)
 {
     Recreate(presentMode);
 }
@@ -59,6 +59,15 @@ void Swapchain::Recreate(uint32_t imageCount)
     Recreate();
 }
 
+void Swapchain::Recreate(bool allowHdr)
+{
+    if (m_IsHdrAllowed == allowHdr)
+        return;
+
+    m_IsHdrAllowed = allowHdr;
+    Recreate();
+}
+
 void Swapchain::Recreate(vk::PresentModeKHR presentMode)
 {
     auto surfaceCapabilities = DeviceContext::GetPhysical().getSurfaceCapabilitiesKHR(m_Surface);
@@ -68,14 +77,13 @@ void Swapchain::Recreate(vk::PresentModeKHR presentMode)
         "Supported composite alpha: {}", vk::to_string(surfaceCapabilities.supportedCompositeAlpha)
     );
 
-    auto formats = DeviceContext::GetPhysical().getSurfaceFormatsKHR(m_Surface);
-    for (vk::SurfaceFormatKHR format : formats)
+    auto supportedFormats = DeviceContext::GetPhysical().getSurfaceFormatsKHR(m_Surface);
+    for (vk::SurfaceFormatKHR format : supportedFormats)
         logger::trace(
             "Supported format: {} ({})", vk::to_string(format.format), vk::to_string(format.colorSpace)
         );
-     
-    if (std::ranges::find(formats, m_SurfaceFormat) == formats.end())
-        throw error("Desired surface format not supported");
+
+    SelectFormat(supportedFormats);
 
     m_PresentModes = DeviceContext::GetPhysical().getSurfacePresentModesKHR(m_Surface);
 
@@ -117,16 +125,13 @@ void Swapchain::Recreate(vk::PresentModeKHR presentMode)
 
     auto queueFamilyIndices = DeviceContext::GetQueueFamilyIndices();
 
-    std::array<vk::Format, 2> imageFormats = { m_SurfaceFormat.format, m_LinearFormat };
-    vk::ImageFormatListCreateInfo formatList(imageFormats);
-
     vk::SwapchainCreateInfoKHR createInfo(
-        vk::SwapchainCreateFlagBitsKHR::eMutableFormat, m_Surface, m_ImageCount, m_SurfaceFormat.format,
+        vk::SwapchainCreateFlagsKHR(), m_Surface, m_ImageCount, m_SurfaceFormat.format,
         m_SurfaceFormat.colorSpace, m_Extent, 1,
         vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferDst,
         queueFamilyIndices.size() > 1 ? vk::SharingMode::eConcurrent : vk::SharingMode::eExclusive,
         queueFamilyIndices, surfaceCapabilities.currentTransform, vk::CompositeAlphaFlagBitsKHR::eOpaque,
-        m_PresentMode, vk::True, m_Handle, &formatList
+        m_PresentMode, vk::True, m_Handle
     );
 
     vk::SwapchainKHR oldSwapchainHandle = m_Handle;
@@ -147,8 +152,8 @@ void Swapchain::Recreate(vk::PresentModeKHR presentMode)
         );
 
         auto nonLinearImageView = DeviceContext::GetLogical().createImageView(createInfo);
-        
-        createInfo.setFormat(m_LinearFormat);
+
+        createInfo.setFormat(m_SurfaceFormat.format);
         auto linearImageView = DeviceContext::GetLogical().createImageView(createInfo);
 
         m_Frames.emplace_back(image, linearImageView, nonLinearImageView);
@@ -156,11 +161,15 @@ void Swapchain::Recreate(vk::PresentModeKHR presentMode)
 
     while (m_SynchronizationObjects.size() < m_Frames.size())
     {
-        m_SynchronizationObjects.push_back({
-            DeviceContext::GetLogical().createSemaphore(vk::SemaphoreCreateInfo()),
-            DeviceContext::GetLogical().createSemaphore(vk::SemaphoreCreateInfo()),
-            DeviceContext::GetLogical().createFence(vk::FenceCreateInfo(vk::FenceCreateFlagBits::eSignaled)),
-        });
+        m_SynchronizationObjects.push_back(
+            {
+                DeviceContext::GetLogical().createSemaphore(vk::SemaphoreCreateInfo()),
+                DeviceContext::GetLogical().createSemaphore(vk::SemaphoreCreateInfo()),
+                DeviceContext::GetLogical().createFence(
+                    vk::FenceCreateInfo(vk::FenceCreateFlagBits::eSignaled)
+                ),
+            }
+        );
     }
 
     DeviceContext::GetLogical().destroySwapchainKHR(oldSwapchainHandle);
@@ -172,7 +181,9 @@ void Swapchain::Recreate(vk::PresentModeKHR presentMode)
     {
         Utils::SetDebugName(m_Frames[i].Image, std::format("Swapchain Image {}", i));
         Utils::SetDebugName(m_Frames[i].LinearImageView, std::format("Swapchain Linear ImageView {}", i));
-        Utils::SetDebugName(m_Frames[i].NonLinearImageView, std::format("Swapchain NonLinear ImageView {}", i));
+        Utils::SetDebugName(
+            m_Frames[i].NonLinearImageView, std::format("Swapchain NonLinear ImageView {}", i)
+        );
     }
 }
 
@@ -287,4 +298,67 @@ vk::PresentModeKHR Swapchain::GetPresentMode() const
 {
     return m_PresentMode;
 }
+
+bool Swapchain::IsHdr() const
+{
+    return m_SurfaceFormat.colorSpace == vk::ColorSpaceKHR::eHdr10St2084EXT;
+}
+
+bool Swapchain::IsHdrAllowed() const
+{
+    return m_IsHdrAllowed;
+}
+
+bool Swapchain::IsHdrSupported() const
+{
+    return m_IsHdrSupported;
+}
+
+void Swapchain::SelectFormat(std::span<const vk::SurfaceFormatKHR> supportedFormats)
+{
+    auto hdr = FindColorSpace(supportedFormats, vk::ColorSpaceKHR::eHdr10St2084EXT);
+    m_IsHdrSupported = hdr.has_value();
+    if (hdr.has_value() && m_IsHdrAllowed)
+    {
+        m_SurfaceFormat = hdr.value();
+        logger::info("HDR Enabled");
+        return;
+    }
+
+    std::array<vk::Format, 2> formats = { vk::Format::eB8G8R8A8Srgb, vk::Format::eR8G8B8A8Srgb };
+    for (auto format : formats)
+    {
+        auto fmt = FindFormat(supportedFormats, format);
+        if (fmt.has_value())
+        {
+            m_SurfaceFormat = fmt.value();
+            return;
+        }
+    }
+
+    throw error("No desired surface formats are supported");
+}
+
+std::optional<vk::SurfaceFormatKHR> Swapchain::FindColorSpace(
+    std::span<const vk::SurfaceFormatKHR> formats, vk::ColorSpaceKHR space
+)
+{
+    for (auto format : formats)
+        if (format.colorSpace == space)
+            return format;
+
+    return std::nullopt;
+}
+
+std::optional<vk::SurfaceFormatKHR> Swapchain::FindFormat(
+    std::span<const vk::SurfaceFormatKHR> formats, vk::Format format
+)
+{
+    for (auto surfaceFormat : formats)
+        if (surfaceFormat.format == format && surfaceFormat.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear)
+            return surfaceFormat;
+
+    return std::nullopt;
+}
+
 }

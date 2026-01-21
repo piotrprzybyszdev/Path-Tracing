@@ -28,6 +28,8 @@ ImGuiIO *UserInterface::s_Io = nullptr;
 struct UIComponents;
 
 vk::PresentModeKHR s_PresentMode = vk::PresentModeKHR::eFifo;
+bool s_AllowHdr = false;
+bool s_IsHdrSupported = false;
 Shaders::SpecializationConstant s_RenderMode = Shaders::RenderModeColor;
 Shaders::SpecializationConstant s_RaygenFlags = Shaders::RaygenFlagsNone;
 Shaders::SpecializationConstant s_HitGroupFlags = Shaders::HitGroupFlagsNone;
@@ -69,8 +71,7 @@ static const std::string &ToProgressString(BackgroundTaskType type)
 }
 
 void UserInterface::Init(
-    vk::Instance instance, vk::Format format, uint32_t swapchainImageCount,
-    std::span<const vk::PresentModeKHR> presentModes
+    vk::Instance instance, uint32_t swapchainImageCount, std::span<const vk::PresentModeKHR> presentModes
 )
 {
     IMGUI_CHECKVERSION();
@@ -93,7 +94,7 @@ void UserInterface::Init(
     initInfo.ImageCount = swapchainImageCount;
     initInfo.CheckVkResultFn = CheckVkResult;
     initInfo.UseDynamicRendering = true;
-    std::array<vk::Format, 1> formats = { format };
+    std::array<vk::Format, 1> formats = { vk::Format::eR8G8B8A8Unorm };
     initInfo.PipelineRenderingCreateInfo = vk::PipelineRenderingCreateInfoKHR(0, formats);
     
     bool imguiResult = ImGui_ImplVulkan_Init(&initInfo);
@@ -119,6 +120,31 @@ void UserInterface::Shutdown()
     ImGui::DestroyContext();
 
     s_IniFilePath.clear();
+}
+
+void UserInterface::Reinitialize(vk::Instance instance, uint32_t swapchainImageCount)
+{
+    ImGui_ImplVulkan_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+
+    ImGui_ImplGlfw_InitForVulkan(Window::GetHandle(), true);
+    ImGui_ImplVulkan_InitInfo initInfo = {};
+    initInfo.Instance = instance;
+    initInfo.PhysicalDevice = DeviceContext::GetPhysical();
+    initInfo.Device = DeviceContext::GetLogical();
+    initInfo.QueueFamily = DeviceContext::GetGraphicsQueue().FamilyIndex;
+    initInfo.Queue = DeviceContext::GetGraphicsQueue().Handle;
+    initInfo.DescriptorPoolSize = IMGUI_IMPL_VULKAN_MINIMUM_IMAGE_SAMPLER_POOL_SIZE;
+    initInfo.MinImageCount = swapchainImageCount;
+    initInfo.ImageCount = swapchainImageCount;
+    initInfo.CheckVkResultFn = CheckVkResult;
+    initInfo.UseDynamicRendering = true;
+    std::array<vk::Format, 1> formats = { vk::Format::eR8G8B8A8Unorm };
+    initInfo.PipelineRenderingCreateInfo = vk::PipelineRenderingCreateInfoKHR(0, formats);
+
+    bool imguiResult = ImGui_ImplVulkan_Init(&initInfo);
+    if (imguiResult == false)
+        throw error("Failed to initialize ImGui");
 }
 
 void UserInterface::OnUpdate(float timeStep)
@@ -169,6 +195,16 @@ bool UserInterface::GetIsFocused()
 vk::PresentModeKHR UserInterface::GetPresentMode()
 {
     return s_PresentMode;
+}
+
+bool UserInterface::IsHdrAllowed()
+{
+    return s_AllowHdr;
+}
+
+void UserInterface::SetHdrSupported(bool isSupported)
+{
+    s_IsHdrSupported = isSupported;
 }
 
 class SceneListContent : public Content
@@ -698,6 +734,7 @@ void OfflineRenderContent::Render()
                 m_IsImageOutput ? 1 : m_FrameCount, m_MaxSampleCount, GetTime()
             )
         );
+        Renderer::UpdateHdr();
         s_ShowingOfflineRender = false;
     }
     if (isRenderDisabled)
@@ -1093,6 +1130,22 @@ void DisplayTab::RenderContent()
     {
         Window::SetMode(m_Mode);
         m_Resolution = Window::GetSize();
+    }
+
+    if (!s_IsHdrSupported)
+    {
+        ImGui::BeginDisabled();
+        s_AllowHdr = false;
+    }
+    ImGui::Dummy({ 0.0f, 5.0f });
+    ImGui::Dummy({ 5.0f, 0.0f });
+    ImGui::SameLine();
+    ImGui::Checkbox("HDR", &s_AllowHdr);
+    if (!s_IsHdrSupported)
+    {
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("HDR is not supported");
+        ImGui::EndDisabled();
     }
 }
 

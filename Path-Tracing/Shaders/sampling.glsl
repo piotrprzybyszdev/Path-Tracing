@@ -32,7 +32,7 @@ LightSample sampleLight(float u, vec3 position, out float pdf)
     {
         ret.Direction = normalize(u_DirectionalLight.Direction);
         // TODO: Proper sampling
-        ret.Color = hdrToLdr(u_DirectionalLight.Color);
+        ret.Color = u_DirectionalLight.Color;
         ret.Distance = DirectionalLightDistance;
         ret.Attenuation = 1.0f;
         return ret;

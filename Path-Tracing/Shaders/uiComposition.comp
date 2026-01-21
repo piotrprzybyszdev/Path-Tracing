@@ -1,0 +1,61 @@
+#version 460
+#extension GL_EXT_buffer_reference : require
+
+#include "ShaderRendererTypes.incl"
+#include "common.glsl"
+
+layout(constant_id = 0) const uint s_ToneMappingMode = ToneMappingModeSDR;
+
+layout(binding = 0, set = 0, rgba8) uniform image2D u_UIImage;
+layout(binding = 1, set = 0, rgba16f) uniform image2D u_ScreenImage;
+
+layout (local_size_x = PostProcessShaderGroupSizeX, local_size_y = PostProcessShaderGroupSizeY, local_size_z = 1) in;
+
+vec3 linear_to_hdr10(vec3 color, float white_point)
+{
+    const mat3 from709to2020 =
+    {
+        { 0.6274040f, 0.3292820f, 0.0433136f },
+        { 0.0690970f, 0.9195400f, 0.0113612f },
+        { 0.0163916f, 0.0880132f, 0.8955950f }
+    };   
+    color = color * from709to2020;
+
+    const float st2084_max = 10000.0f;
+    color *= white_point / st2084_max;
+
+    const float m1 = 2610.0 / 4096.0 / 4;
+    const float m2 = 2523.0 / 4096.0 * 128;
+    const float c1 = 3424.0 / 4096.0;
+    const float c2 = 2413.0 / 4096.0 * 32;
+    const float c3 = 2392.0 / 4096.0 * 32;
+    vec3 cp = pow(abs(color), vec3(m1));
+    color = pow((c1 + c2 * cp) / (1 + c3 * cp), vec3(m2));
+
+    return color;
+}
+
+vec3 srgb_to_linear(vec3 color)
+{
+    float gamma = 2.4f;
+    vec3 linear_low = color / 12.92;
+    vec3 linear_high = pow((color + 0.055) / 1.055, vec3(gamma));
+    vec3 is_high = step(0.0404482362771082, color);
+    return mix(linear_low, linear_high, is_high);
+}
+
+void main()
+{
+    const ivec2 imageCoords = ivec2(gl_GlobalInvocationID.xy);
+    
+    const vec4 uiColor = imageLoad(u_UIImage, imageCoords);
+    const vec4 screenColor = imageLoad(u_ScreenImage, imageCoords);
+
+    const bool isHdr = s_ToneMappingMode == ToneMappingModeHDR;
+
+    const float bt2408whitePoint = 203.0f; // BT.2408 reference white
+    const vec3 color = uiColor.a > 0.0f ? srgb_to_linear(uiColor.rgb) * 0.99f + screenColor.rgb * 0.01f : screenColor.rgb;
+    const vec3 hdrColor = isHdr ? linear_to_hdr10(color, bt2408whitePoint) : color;
+
+    imageStore(u_ScreenImage, imageCoords, vec4(hdrColor, 1.0f));
+}

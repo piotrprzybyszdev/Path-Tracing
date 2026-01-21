@@ -327,7 +327,7 @@ vk::AccessFlags2 Image::GetAccessFlags(vk::ImageLayout layout)
     {
     case vk::ImageLayout::eUndefined:
         return vk::AccessFlagBits2::eNone;
-    case vk::ImageLayout::eAttachmentOptimal:
+    case vk::ImageLayout::eColorAttachmentOptimal:
         return vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite;
     case vk::ImageLayout::eShaderReadOnlyOptimal:
         return vk::AccessFlagBits2::eShaderSampledRead;
@@ -354,7 +354,7 @@ vk::PipelineStageFlags2 Image::GetPipelineStageFlags(vk::ImageLayout layout)
         return vk::PipelineStageFlagBits2::eTransfer;
     case vk::ImageLayout::eTransferDstOptimal:
         return vk::PipelineStageFlagBits2::eTransfer;
-    case vk::ImageLayout::eAttachmentOptimal:
+    case vk::ImageLayout::eColorAttachmentOptimal:
         return vk::PipelineStageFlagBits2::eColorAttachmentOutput;
     case vk::ImageLayout::eShaderReadOnlyOptimal:
         return vk::PipelineStageFlagBits2::eRayTracingShaderKHR;
@@ -498,6 +498,9 @@ ImageBuilder &ImageBuilder::ResetFlags()
 {
     m_Format = vk::Format();
     m_UsageFlags = vk::ImageUsageFlags();
+    m_Cube = false;
+    m_Layers = 1;
+    m_Mips = false;
     return *this;
 }
 

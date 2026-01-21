@@ -2,6 +2,7 @@
 
 #include <vulkan/vulkan.hpp>
 
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -12,8 +13,7 @@ class Swapchain
 {
 public:
     Swapchain(
-        vk::SurfaceKHR surface, vk::SurfaceFormatKHR surfaceFormat, vk::Format linearFormat,
-        vk::PresentModeKHR presentMode, vk::Extent2D extent, uint32_t imageCount
+        vk::SurfaceKHR surface, vk::PresentModeKHR presentMode, vk::Extent2D extent, uint32_t imageCount
     );
     ~Swapchain();
 
@@ -21,6 +21,7 @@ public:
     void Recreate(vk::PresentModeKHR presentMode);
     void Recreate(vk::Extent2D extent);
     void Recreate(uint32_t imageCount);
+    void Recreate(bool allowHdr);
 
     Swapchain(const Swapchain &) = delete;
     Swapchain &operator=(const Swapchain &) = delete;
@@ -53,16 +54,20 @@ public:
     [[nodiscard]] vk::SurfaceFormatKHR GetSurfaceFormat() const;
     [[nodiscard]] std::span<const vk::PresentModeKHR> GetPresentModes() const;
     [[nodiscard]] vk::PresentModeKHR GetPresentMode() const;
+    [[nodiscard]] bool IsHdr() const;
+    [[nodiscard]] bool IsHdrAllowed() const;
+    [[nodiscard]] bool IsHdrSupported() const;
 
 private:
     vk::SwapchainKHR m_Handle { nullptr };
 
     const vk::SurfaceKHR m_Surface;
-    const vk::SurfaceFormatKHR m_SurfaceFormat;
-    const vk::Format m_LinearFormat;
+    vk::SurfaceFormatKHR m_SurfaceFormat;
     std::vector<vk::PresentModeKHR> m_PresentModes;
 
     vk::PresentModeKHR m_PresentMode = vk::PresentModeKHR::eFifo;
+    bool m_IsHdrAllowed = false;
+    bool m_IsHdrSupported = false;
 
     uint32_t m_ImageCount;
     uint32_t m_InFlightCount;
@@ -73,6 +78,13 @@ private:
 
     uint32_t m_CurrentFrameInFlightIndex = 0;
     uint32_t m_CurrentFrameIndex = 0;
+
+private:
+    void SelectFormat(std::span<const vk::SurfaceFormatKHR> supportedFormats);
+
+private:
+    static std::optional<vk::SurfaceFormatKHR> FindColorSpace(std::span<const vk::SurfaceFormatKHR> formats, vk::ColorSpaceKHR space);
+    static std::optional<vk::SurfaceFormatKHR> FindFormat(std::span<const vk::SurfaceFormatKHR> formats, vk::Format format);
 };
 
 }
