@@ -29,7 +29,11 @@ layout(binding = 7, set = 0) readonly buffer SpecularGlossinessMaterialBuffer {
     SpecularGlossinessMaterial[] specularGlossinessMaterials;
 };
 
-layout(binding = 8, set = 0) uniform LightsBuffer {
+layout(binding = 8, set = 0) readonly buffer PhongMaterialBuffer {
+    PhongMaterial[] phongMaterials;
+};
+
+layout(binding = 9, set = 0) uniform LightsBuffer {
     uint u_LightCount;
     DirectionalLight u_DirectionalLight;
     PointLight[MaxLightCount] u_Lights;

@@ -98,8 +98,7 @@ private:
     {
         ShaderId Raygen = ShaderLibrary::g_UnusedShaderId;
         ShaderId Miss = ShaderLibrary::g_UnusedShaderId;
-        ShaderId MetallicRoughnessClosestHit = ShaderLibrary::g_UnusedShaderId;
-        ShaderId SpecularGlossinessClosestHit = ShaderLibrary::g_UnusedShaderId;
+        ShaderId ClosestHit = ShaderLibrary::g_UnusedShaderId;
         ShaderId AnyHit = ShaderLibrary::g_UnusedShaderId;
         ShaderId OcclusionMiss = ShaderLibrary::g_UnusedShaderId;
         ShaderId OcclusionAnyHit = ShaderLibrary::g_UnusedShaderId;
@@ -122,8 +121,7 @@ private:
         uint32_t RaygenGroupIndex = -1;
         uint32_t PrimaryRayMissIndex = -1;
         uint32_t OcclusionRayMissIndex = -1;
-        uint32_t PrimaryRayMetallicRoughnessHitIndex = -1;
-        uint32_t PrimaryRaySpecularGlossinessHitIndex = -1;
+        uint32_t PrimaryRayHitIndex = -1;
         uint32_t OcclusionRayHitIndex = -1;
         uint32_t HitGroupCount = 2;
     } s_PathTracingShaderConfig, s_DebugRayTracingShaderConfig;
@@ -198,6 +196,7 @@ private:
         Buffer TransformBuffer;
         Buffer MetallicRoughnessMaterialBuffer;
         Buffer SpecularGlossinessMaterialBuffer;
+        Buffer PhongMaterialBuffer;
 
         Image Skybox;
 

@@ -40,6 +40,8 @@ std::span<const aiTextureType> GetTextureTypes(TextureType type)
     static std::array<aiTextureType, 1> metallicTextureTypes = { aiTextureType_METALNESS };
     static std::array<aiTextureType, 1> emissiveTextureTypes = { aiTextureType_EMISSIVE };
     static std::array<aiTextureType, 1> specularTextureTypes = { aiTextureType_SPECULAR };
+    static std::array<aiTextureType, 1> glossinessTextureTypes = { aiTextureType_SHININESS };
+    static std::array<aiTextureType, 1> shininessTextureTypes = { aiTextureType_SHININESS };
 
     switch (type)
     {
@@ -55,6 +57,10 @@ std::span<const aiTextureType> GetTextureTypes(TextureType type)
         return emissiveTextureTypes;
     case TextureType::Specular:
         return specularTextureTypes;
+    case TextureType::Glossiness:
+        return glossinessTextureTypes;
+    case TextureType::Shininess:
+        return shininessTextureTypes;
     default:
         throw error(std::format("Unsupported texture type {}", static_cast<uint8_t>(type)));
     }
@@ -209,23 +215,38 @@ MaterialInfo LoadMetallicRoughnessMaterial(
     };
 }
 
-// NOTE: Hasn't been tested on an actual specular-glossiness material
 MaterialInfo LoadSpecularGlossinessMaterial(
     const std::filesystem::path &path, SceneBuilder &sceneBuilder, const aiMaterial *material,
-    const std::string &materialName
+    const std::string &materialName, SpecularGlossinessTextureMapping mapping
 )
 {
+    aiColor4D color = aiColor4D(1.0f, 1.0f, 1.0f, 1.0f);
+    aiColor3D specular = aiColor3D(1.0f, 1.0f, 1.0f);
+    float glossiness = 1.0f;
+
+    material->Get(AI_MATKEY_COLOR_DIFFUSE, color);
+    material->Get(AI_MATKEY_SPECULAR_FACTOR, specular);
+    material->Get(AI_MATKEY_GLOSSINESS_FACTOR, glossiness);
+
     EmissiveInfo emissive = LoadEmissive(path, sceneBuilder, material);
+    TransmissionInfo transmission = LoadTransmission(path, sceneBuilder, material);
 
     bool hasTransparency;
     Shaders::SpecularGlossinessMaterial outMaterial = {
         .EmissiveColor = emissive.Color,
         .EmissiveIntensity = emissive.Intensity,
+        .Color = TrivialCopyUnsafe<aiColor4D, glm::vec4>(color),
+        .Specular = TrivialCopyUnsafe<aiColor3D, glm::vec3>(specular),
+        .Glossiness = glossiness,
+        .AttenuationColor = transmission.AttenuationColor,
+        .AttenuationDistance = transmission.AttenuationDistance,
+        .Ior = transmission.Ior,
+        .Transmission = transmission.Transmission,
         .EmissiveIdx = emissive.TextureIdx,
-        .DiffuseIdx =
-            AddTexture(sceneBuilder, path.parent_path(), material, TextureType::Color, &hasTransparency),
-        .NormalIdx = AddTexture(sceneBuilder, path.parent_path(), material, TextureType::Normal),
-        .GlossSpecularIdx = AddTexture(sceneBuilder, path.parent_path(), material, TextureType::Specular),
+        .ColorIdx = AddTexture(sceneBuilder, path.parent_path(), material, mapping.ColorTexture, &hasTransparency),
+        .NormalIdx = AddTexture(sceneBuilder, path.parent_path(), material, mapping.NormalTexture),
+        .SpecularIdx = AddTexture(sceneBuilder, path.parent_path(), material, mapping.SpecularTexture),
+        .GlossinessIdx = AddTexture(sceneBuilder, path.parent_path(), material, mapping.GlossinessTexture),
     };
 
     return MaterialInfo {
@@ -233,6 +254,68 @@ MaterialInfo LoadSpecularGlossinessMaterial(
         .Type = MaterialType::SpecularGlossiness,
         .IsOpaque = !hasTransparency,
     };
+}
+
+MaterialInfo LoadPhongMaterial(
+    const std::filesystem::path &path, SceneBuilder &sceneBuilder, const aiMaterial *material,
+    const std::string &materialName, PhongTextureMapping mapping
+)
+{
+    aiColor4D color = aiColor4D(1.0f, 1.0f, 1.0f, 1.0f);
+    aiColor3D specular = aiColor3D(1.0f, 1.0f, 1.0f);
+    float shininess = 1.0f;
+
+    material->Get(AI_MATKEY_COLOR_DIFFUSE, color);
+    material->Get(AI_MATKEY_SPECULAR_FACTOR, specular);
+    material->Get(AI_MATKEY_SHININESS, shininess);
+
+    EmissiveInfo emissive = LoadEmissive(path, sceneBuilder, material);
+    TransmissionInfo transmission = LoadTransmission(path, sceneBuilder, material);
+
+    bool hasTransparency;
+    Shaders::PhongMaterial outMaterial = {
+        .EmissiveColor = emissive.Color,
+        .EmissiveIntensity = emissive.Intensity,
+        .Color = TrivialCopyUnsafe<aiColor4D, glm::vec4>(color),
+        .Specular = TrivialCopyUnsafe<aiColor3D, glm::vec3>(specular),
+        .Shininess = shininess,
+        .AttenuationColor = transmission.AttenuationColor,
+        .AttenuationDistance = transmission.AttenuationDistance,
+        .Ior = transmission.Ior,
+        .Transmission = transmission.Transmission,
+        .EmissiveIdx = emissive.TextureIdx,
+        .ColorIdx = AddTexture(sceneBuilder, path.parent_path(), material, mapping.ColorTexture, &hasTransparency),
+        .NormalIdx = AddTexture(sceneBuilder, path.parent_path(), material, mapping.NormalTexture),
+        .SpecularIdx = AddTexture(sceneBuilder, path.parent_path(), material, mapping.SpecularTexture),
+        .ShininessIdx = AddTexture(sceneBuilder, path.parent_path(), material, mapping.ShininessTexture),
+    };
+
+    return MaterialInfo {
+        .MaterialIndex = sceneBuilder.AddMaterial(materialName, outMaterial),
+        .Type = MaterialType::Phong,
+        .IsOpaque = !hasTransparency,
+    };
+}
+
+MaterialType ChooseMaterialType(const aiMaterial *material)
+{
+    float factor;
+    aiColor3D color;
+
+    if (material->Get(AI_MATKEY_METALLIC_FACTOR, factor) == aiReturn::aiReturn_SUCCESS)
+        return MaterialType::MetallicRoughness;
+    if (material->Get(AI_MATKEY_ROUGHNESS_FACTOR, factor) == aiReturn::aiReturn_SUCCESS)
+        return MaterialType::MetallicRoughness;
+
+    if (material->Get(AI_MATKEY_SHININESS, factor) == aiReturn::aiReturn_SUCCESS)
+        return MaterialType::Phong;
+
+    if (material->Get(AI_MATKEY_SPECULAR_FACTOR, color) == aiReturn::aiReturn_SUCCESS)
+        return MaterialType::SpecularGlossiness;
+    if (material->Get(AI_MATKEY_GLOSSINESS_FACTOR, factor) == aiReturn::aiReturn_SUCCESS)
+        return MaterialType::SpecularGlossiness;
+    
+    return MaterialType::MetallicRoughness;
 }
 
 std::vector<MaterialInfo> LoadMaterials(
@@ -247,7 +330,23 @@ std::vector<MaterialInfo> LoadMaterials(
         .MetallicTexture = TextureType::Metallic,
     };
 
+    static const SpecularGlossinessTextureMapping defaultSpecularGlossinessMapping = {
+        .ColorTexture = TextureType::Color,
+        .NormalTexture = TextureType::Normal,
+        .SpecularTexture = TextureType::Specular,
+        .GlossinessTexture = TextureType::Glossiness,
+    };
+
+    static const PhongTextureMapping defaultPhongMapping = {
+        .ColorTexture = TextureType::Color,
+        .NormalTexture = TextureType::Normal,
+        .SpecularTexture = TextureType::Specular,
+        .ShininessTexture = TextureType::Shininess,
+    };
+
     const MetallicRoughnessTextureMapping *metallicRoughnessMapping = &defaultMetallicRoughnessMapping;
+    const SpecularGlossinessTextureMapping *specularGlossinessMapping = &defaultSpecularGlossinessMapping;
+    const PhongTextureMapping *phongMapping = &defaultPhongMapping;
 
     std::vector<MaterialInfo> materialInfoMap(scene->mNumMaterials);
 
@@ -258,16 +357,22 @@ std::vector<MaterialInfo> LoadMaterials(
         const std::string materialName =
             originalName.length != 0 ? originalName.C_Str() : std::format("Unnamed Material at index {}", i);
 
-        float factor;
-        MaterialType materialType =
-            material->Get(AI_MATKEY_METALLIC_FACTOR, factor) == aiReturn::aiReturn_SUCCESS
-                ? MaterialType::MetallicRoughness
-                : MaterialType::SpecularGlossiness;
+        MaterialType materialType = ChooseMaterialType(material);
 
         if (const auto *mapping = std::get_if<MetallicRoughnessTextureMapping>(&textureMapping))
         {
             materialType = MaterialType::MetallicRoughness;
             metallicRoughnessMapping = mapping;
+        }
+        else if (const auto* mapping = std::get_if<SpecularGlossinessTextureMapping>(&textureMapping))
+        {
+            materialType = MaterialType::SpecularGlossiness;
+            specularGlossinessMapping = mapping;
+        }
+        else if (const auto *mapping = std::get_if<PhongTextureMapping>(&textureMapping))
+        {
+            materialType = MaterialType::Phong;
+            phongMapping = mapping;
         }
 
         switch (materialType)
@@ -278,8 +383,12 @@ std::vector<MaterialInfo> LoadMaterials(
             );
             break;
         case MaterialType::SpecularGlossiness:
-            materialInfoMap[i] = LoadSpecularGlossinessMaterial(path, sceneBuilder, material, materialName);
+            materialInfoMap[i] = LoadSpecularGlossinessMaterial(
+                path, sceneBuilder, material, materialName, *specularGlossinessMapping
+            );
             break;
+        case MaterialType::Phong:
+            materialInfoMap[i] = LoadPhongMaterial(path, sceneBuilder, material, materialName, *phongMapping);
         default:
             throw error("Unsupported material type");
         }

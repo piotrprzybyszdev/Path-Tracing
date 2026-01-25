@@ -145,6 +145,18 @@ void Renderer::Init(const Swapchain *swapchain)
             Shaders::DefaultTextureEmissive, TextureType::Emisive, TextureFormat::RGBAU8, { 1, 1 },
             "Default Emissive Texture"
         );
+        uint32_t specularIndex = AddTexture(
+            Shaders::DefaultTextureSpecular, TextureType::Specular, TextureFormat::RGBAU8, { 1, 1 },
+            "Default Specular Texture"
+        );
+        uint32_t glossinessIndex = AddTexture(
+            Shaders::DefaultTextureGlossiness, TextureType::Glossiness, TextureFormat::RGBAU8, { 1, 1 },
+            "Default Glossiness Texture"
+        );
+        uint32_t shininessIndex = AddTexture(
+            Shaders::DefaultTextureShininess, TextureType::Shininess, TextureFormat::RGBAU8, { 1, 1 },
+            "Default Shininess Texture"
+        ); 
         uint32_t placeholderIndex =
             AddTexture(Resources::g_PlaceholderTextureData, TextureType::Color, "Placeholder Texture");
 
@@ -154,6 +166,9 @@ void Renderer::Init(const Swapchain *swapchain)
         s_TextureMap[Shaders::DefaultRoughnessTextureIndex] = roughnessIndex;
         s_TextureMap[Shaders::DefaultMetallicTextureIndex] = metallicIndex;
         s_TextureMap[Shaders::DefaultEmissiveTextureIndex] = emissiveIndex;
+        s_TextureMap[Shaders::DefaultSpecularTextureIndex] = specularIndex;
+        s_TextureMap[Shaders::DefaultGlossinessTextureIndex] = glossinessIndex;
+        s_TextureMap[Shaders::DefaultShininessTextureIndex] = shininessIndex;
         s_TextureMap[Shaders::PlaceholderTextureIndex] = placeholderIndex;
     }
 }
@@ -308,6 +323,10 @@ void Renderer::UpdateSceneData(const std::shared_ptr<Scene> &scene, bool updated
         s_SceneData->SpecularGlossinessMaterialBuffer =
             CreateDeviceBufferUnflushed(specularGlossinessMaterials, "SpecularGlossiness Material Buffer");
 
+        const auto &phongMaterials = s_SceneData->Handle->GetPhongMaterials();
+        s_SceneData->PhongMaterialBuffer =
+            CreateDeviceBufferUnflushed(phongMaterials, "Phong Material Buffer");
+
         // Ensure all scene buffers are flushed to device memory
         s_StagingBuffer->Flush();
 
@@ -368,24 +387,13 @@ void Renderer::UpdateSceneData(const std::shared_ptr<Scene> &scene, bool updated
 
                 std::array<SBTEntryInfo, 2> entries = {};
                 entries[Shaders::PrimaryRayHitGroupIndex] = SBTEntryInfo {
+                    .HitGroupIndex = s_ActiveShaderConfig->PrimaryRayHitIndex,
                     .Buffer = data,
                 };
                 entries[Shaders::OcclusionRayHitGroupIndex] = SBTEntryInfo {
                     .HitGroupIndex = s_ActiveShaderConfig->OcclusionRayHitIndex,
                     .Buffer = data,
                 };
-
-                switch (mesh.ShaderMaterialType)
-                {
-                case MaterialType::MetallicRoughness:
-                    entries[Shaders::PrimaryRayHitGroupIndex].HitGroupIndex =
-                        s_ActiveShaderConfig->PrimaryRayMetallicRoughnessHitIndex;
-                    break;
-                case MaterialType::SpecularGlossiness:
-                    entries[Shaders::PrimaryRayHitGroupIndex].HitGroupIndex =
-                        s_ActiveShaderConfig->PrimaryRaySpecularGlossinessHitIndex;
-                    break;
-                }
 
                 s_SceneData->SceneShaderBindingTable->AddRecord(entries);
             }
@@ -506,10 +514,8 @@ void Renderer::CreatePipelines()
 
     s_Shaders.Raygen = s_ShaderLibrary->AddShader("raygen.rgen", vk::ShaderStageFlagBits::eRaygenKHR);
     s_Shaders.Miss = s_ShaderLibrary->AddShader("miss.rmiss", vk::ShaderStageFlagBits::eMissKHR);
-    s_Shaders.MetallicRoughnessClosestHit =
-        s_ShaderLibrary->AddShader("metallicRoughness.rchit", vk::ShaderStageFlagBits::eClosestHitKHR);
-    s_Shaders.SpecularGlossinessClosestHit =
-        s_ShaderLibrary->AddShader("specularGlossiness.rchit", vk::ShaderStageFlagBits::eClosestHitKHR);
+    s_Shaders.ClosestHit =
+        s_ShaderLibrary->AddShader("closestHit.rchit", vk::ShaderStageFlagBits::eClosestHitKHR);
     s_Shaders.AnyHit = s_ShaderLibrary->AddShader("anyhit.rahit", vk::ShaderStageFlagBits::eAnyHitKHR);
     s_Shaders.OcclusionMiss =
         s_ShaderLibrary->AddShader("occlusion.rmiss", vk::ShaderStageFlagBits::eMissKHR);
@@ -546,18 +552,17 @@ void Renderer::CreatePipelines()
         s_PathTracingShaderConfig.RaygenGroupIndex = builder.AddGeneralGroup(s_Shaders.Raygen);
         s_PathTracingShaderConfig.PrimaryRayMissIndex = builder.AddGeneralGroup(s_Shaders.Miss);
         s_PathTracingShaderConfig.OcclusionRayMissIndex = builder.AddGeneralGroup(s_Shaders.OcclusionMiss);
-        s_PathTracingShaderConfig.PrimaryRayMetallicRoughnessHitIndex =
-            builder.AddHitGroup(s_Shaders.MetallicRoughnessClosestHit, s_Shaders.AnyHit);
-        s_PathTracingShaderConfig.PrimaryRaySpecularGlossinessHitIndex =
-            builder.AddHitGroup(s_Shaders.SpecularGlossinessClosestHit, s_Shaders.AnyHit);
+        s_PathTracingShaderConfig.PrimaryRayHitIndex =
+            builder.AddHitGroup(s_Shaders.ClosestHit, s_Shaders.AnyHit);
         s_PathTracingShaderConfig.OcclusionRayHitIndex =
             builder.AddHitGroup(ShaderLibrary::g_UnusedShaderId, s_Shaders.OcclusionAnyHit);
 
         builder.AddHintIsPartial(3, true);
         builder.AddHintIsPartial(6, true);
         builder.AddHintIsPartial(7, true);
-        builder.AddHintIsPartial(9, true);
+        builder.AddHintIsPartial(8, true);
         builder.AddHintIsPartial(10, true);
+        builder.AddHintIsPartial(11, true);
         builder.AddHintSize(3, Shaders::MaxTextureCount);
 
         static PathTracingPipelineConfig maxPathTracingConfig = {};
@@ -578,9 +583,7 @@ void Renderer::CreatePipelines()
         s_DebugRayTracingShaderConfig.PrimaryRayMissIndex = builder.AddGeneralGroup(s_Shaders.DebugMiss);
         s_DebugRayTracingShaderConfig.OcclusionRayMissIndex =
             builder.AddGeneralGroup(s_Shaders.OcclusionMiss);
-        s_DebugRayTracingShaderConfig.PrimaryRayMetallicRoughnessHitIndex =
-            builder.AddHitGroup(s_Shaders.DebugClosestHit, s_Shaders.DebugAnyHit);
-        s_DebugRayTracingShaderConfig.PrimaryRaySpecularGlossinessHitIndex =
+        s_DebugRayTracingShaderConfig.PrimaryRayHitIndex =
             builder.AddHitGroup(s_Shaders.DebugClosestHit, s_Shaders.DebugAnyHit);
         s_DebugRayTracingShaderConfig.OcclusionRayHitIndex =
             builder.AddHitGroup(ShaderLibrary::g_UnusedShaderId, s_Shaders.OcclusionAnyHit);
@@ -588,8 +591,9 @@ void Renderer::CreatePipelines()
         builder.AddHintIsPartial(3, true);
         builder.AddHintIsPartial(6, true);
         builder.AddHintIsPartial(7, true);
-        builder.AddHintIsPartial(9, true);
+        builder.AddHintIsPartial(8, true);
         builder.AddHintIsPartial(10, true);
+        builder.AddHintIsPartial(11, true);
         builder.AddHintSize(3, Shaders::MaxTextureCount);
 
         static DebugRaytracingPipelineConfig maxDebugRaytracingConfig = {};
@@ -1531,15 +1535,17 @@ void Renderer::RecreateDescriptorSet()
                 set->UpdateBuffer(6, frameIndex, s_SceneData->MetallicRoughnessMaterialBuffer);
             if (s_SceneData->SpecularGlossinessMaterialBuffer.GetHandle() != nullptr)
                 set->UpdateBuffer(7, frameIndex, s_SceneData->SpecularGlossinessMaterialBuffer);
-            set->UpdateBuffer(8, frameIndex, res.LightUniformBuffer);
+            if (s_SceneData->PhongMaterialBuffer.GetHandle() != nullptr)
+                set->UpdateBuffer(8, frameIndex, s_SceneData->PhongMaterialBuffer);
+            set->UpdateBuffer(9, frameIndex, res.LightUniformBuffer);
             if ((missFlags & Shaders::MissFlagsSkybox2D) != Shaders::MissFlagsNone)
                 set->UpdateImage(
-                    9, frameIndex, s_SceneData->Skybox, s_TextureSampler,
+                    10, frameIndex, s_SceneData->Skybox, s_TextureSampler,
                     vk::ImageLayout::eShaderReadOnlyOptimal
                 );
             if ((missFlags & Shaders::MissFlagsSkyboxCube) != Shaders::MissFlagsNone)
                 set->UpdateImage(
-                    10, frameIndex, s_SceneData->Skybox, s_TextureSampler,
+                    11, frameIndex, s_SceneData->Skybox, s_TextureSampler,
                     vk::ImageLayout::eShaderReadOnlyOptimal
                 );
         };

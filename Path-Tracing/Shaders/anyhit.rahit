@@ -20,12 +20,18 @@ layout(binding = 7, set = 0) readonly buffer SpecularGlossinessMaterialBuffer {
     SpecularGlossinessMaterial[] specularGlossinessMaterials;
 };
 
+layout(binding = 8, set = 0) readonly buffer PhongMaterialBuffer {
+    PhongMaterial[] phongMaterials;
+};
+
 layout(shaderRecordEXT, std430) buffer SBT {
     SBTBuffer sbt;
 };
 
 layout(location = 0) rayPayloadInEXT Payload payload;
 hitAttributeEXT vec3 attribs;
+
+#include "material.glsl"
 
 void main()
 {
@@ -39,10 +45,8 @@ void main()
     uint materialType;
     uint materialIndex = unpackMaterialId(sbt.MaterialId, materialType);
 
-    const uint colorTextureIdx = materialType == MaterialTypeMetallicRoughness ?
-        metallicRoughnessMaterials[materialIndex].ColorIdx : specularGlossinessMaterials[materialIndex].DiffuseIdx;
-    const vec4 colorFactor = materialType == MaterialTypeMetallicRoughness ?
-        metallicRoughnessMaterials[materialIndex].Color : vec4(1.0f);
+    const uint colorTextureIdx = getColorTextureIdx(materialIndex, materialType);
+    const vec4 colorFactor = getColorFactor(materialIndex, materialType);
 
     const vec4 color = texture(textures[colorTextureIdx], vertex.TexCoords) * colorFactor;
 

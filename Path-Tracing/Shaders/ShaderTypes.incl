@@ -18,10 +18,13 @@ const uint MaxUniformBufferSize                     = 64 * 1024u;
 const uint DefaultColorTextureIndex                 = 0;
 const uint DefaultNormalTextureIndex                = 1;
 const uint DefaultRoughnessTextureIndex             = 2;
-const uint DefaultMetallicTextureIndex               = 3;
+const uint DefaultMetallicTextureIndex              = 3;
 const uint DefaultEmissiveTextureIndex              = 4;
-const uint PlaceholderTextureIndex                  = 5;
-const uint SceneTextureOffset                       = 6;
+const uint DefaultSpecularTextureIndex              = 5;
+const uint DefaultGlossinessTextureIndex            = 6;
+const uint DefaultShininessTextureIndex             = 7;
+const uint PlaceholderTextureIndex                  = 8;
+const uint SceneTextureOffset                       = 9;
 
 const uint MaxTextureCount                          = 1024u;
 const uint MaxLightCount                            = 64u;
@@ -80,10 +83,38 @@ struct SpecularGlossinessMaterial
 {
     vec3 EmissiveColor;
     float EmissiveIntensity;
+    vec4 Color;
+    vec3 Specular;
+    float Glossiness;
+    vec3 AttenuationColor;
+    float AttenuationDistance;
+    float Ior;
+    float Transmission;
     uint EmissiveIdx;
-    uint DiffuseIdx;
+    uint ColorIdx;
     uint NormalIdx;
-    uint GlossSpecularIdx;
+    uint SpecularIdx;
+    uint GlossinessIdx;
+    float pad0;
+};
+
+struct PhongMaterial
+{
+    vec3 EmissiveColor;
+    float EmissiveIntensity;
+    vec4 Color;
+    vec3 Specular;
+    float Shininess;
+    vec3 AttenuationColor;
+    float AttenuationDistance;
+    float Ior;
+    float Transmission;
+    uint EmissiveIdx;
+    uint ColorIdx;
+    uint NormalIdx;
+    uint SpecularIdx;
+    uint ShininessIdx;
+    float pad0;
 };
 
 struct DirectionalLight
@@ -110,7 +141,8 @@ const uint DirectionalLightStructAlignment  = 16u;
 const uint PointLightStructAlignment        = 16u;
 
 const uint MaterialTypeMetallicRoughness     = 0u;
-const uint MaterialTypeSpecularGlossiness   = 1u;
+const uint MaterialTypeSpecularGlossiness    = 1u;
+const uint MaterialTypePhong                 = 2u;
 
 
 #ifndef GL_core_profile

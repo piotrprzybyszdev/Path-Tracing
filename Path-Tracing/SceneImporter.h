@@ -16,7 +16,24 @@ struct MetallicRoughnessTextureMapping
     TextureType MetallicTexture;
 };
 
-using TextureMapping = std::variant<std::monostate, MetallicRoughnessTextureMapping>;
+struct SpecularGlossinessTextureMapping
+{
+    TextureType ColorTexture;
+    TextureType NormalTexture;
+    TextureType SpecularTexture;
+    TextureType GlossinessTexture;
+};
+
+struct PhongTextureMapping
+{
+    TextureType ColorTexture;
+    TextureType NormalTexture;
+    TextureType SpecularTexture;
+    TextureType ShininessTexture;
+};
+
+using TextureMapping = std::variant<
+    std::monostate, MetallicRoughnessTextureMapping, SpecularGlossinessTextureMapping, PhongTextureMapping>;
 
 class SceneImporter
 {

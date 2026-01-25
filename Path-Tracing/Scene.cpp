@@ -13,9 +13,10 @@ Scene::Scene(
     std::vector<Shaders::Vertex> &&vertices, std::vector<Shaders::AnimatedVertex> &&animatedVertices,
     std::vector<uint32_t> &&indices, std::vector<uint32_t> &&animatedIndices,
     std::vector<glm::mat3x4> &&transforms, std::vector<Geometry> &&geometries,
-    std::vector<Shaders::MetallicRoughnessMaterial> &&MetallicRoughnessMaterials,
+    std::vector<Shaders::MetallicRoughnessMaterial> &&metallicRoughnessMaterials,
     std::vector<TextureInfo> &&textures,
-    std::vector<Shaders::SpecularGlossinessMaterial> &&solidColorMaterials, std::vector<Model> &&models,
+    std::vector<Shaders::SpecularGlossinessMaterial> &&specularGlossinessMaterials,
+    std::vector<Shaders::PhongMaterial> &&phongMaterials, std::vector<Model> &&models,
     std::vector<ModelInstance> &&modelInstances, std::vector<Bone> &&bones, SceneGraph &&sceneGraph,
     std::vector<LightInfo> &&lightInfos, DirectionalLightInfo &&directionalLightInfo,
     std::vector<Shaders::PointLight> &&pointLights, Shaders::DirectionalLight &&directionalLight,
@@ -25,8 +26,9 @@ Scene::Scene(
     : m_Vertices(std::move(vertices)), m_AnimatedVertices(std::move(animatedVertices)),
       m_Indices(std::move(indices)), m_AnimatedIndices(std::move(animatedIndices)),
       m_Transforms(std::move(transforms)), m_Geometries(std::move(geometries)),
-      m_MetallicRoughnessMaterials(std::move(MetallicRoughnessMaterials)), m_Textures(std::move(textures)),
-      m_SpecularGlossinessMaterials(std::move(solidColorMaterials)), m_Models(std::move(models)),
+      m_MetallicRoughnessMaterials(std::move(metallicRoughnessMaterials)), m_Textures(std::move(textures)),
+      m_SpecularGlossinessMaterials(std::move(specularGlossinessMaterials)),
+      m_PhongMaterials(std::move(phongMaterials)), m_Models(std::move(models)),
       m_ModelInstances(std::move(modelInstances)), m_Bones(std::move(bones)),
       m_BoneTransforms(m_Bones.size()), m_Graph(std::move(sceneGraph)), m_LightInfos(std::move(lightInfos)),
       m_PointLights(std::move(pointLights)), m_DirectionalLight(std::move(directionalLight)),
@@ -151,7 +153,7 @@ Shaders::MaterialId SceneBuilder::AddMaterial(std::string name, Shaders::Metalli
     );
     
     m_MetallicRoughnessMaterialIds[std::move(name)] = materialId;
-    logger::trace("Added textured material {} to Scene", name);
+    logger::trace("Added metallic roughness {} to Scene", name);
 
     return materialId;
 }
@@ -169,7 +171,24 @@ Shaders::MaterialId SceneBuilder::AddMaterial(std::string name, Shaders::Specula
     );
     
     m_SpecularGlossinessMaterialIds[std::move(name)] = materialId;
-    logger::trace("Added solid color material {} to Scene", name);
+    logger::trace("Added specular glossiness material {} to Scene", name);
+
+    return materialId;
+}
+
+Shaders::MaterialId SceneBuilder::AddMaterial(std::string name, Shaders::PhongMaterial material)
+{
+    if (m_PhongMaterialIds.contains(name))
+        return m_PhongMaterialIds[name];
+
+    assert(m_PhongMaterials.size() < Shaders::MaxMaterialCount);
+    m_PhongMaterials.push_back(material);
+
+    Shaders::MaterialId materialId =
+        Shaders::CreateMaterialId(m_PhongMaterials.size() - 1, Shaders::MaterialTypePhong);
+
+    m_PhongMaterialIds[std::move(name)] = materialId;
+    logger::trace("Added phong material {} to Scene", name);
 
     return materialId;
 }
@@ -272,10 +291,11 @@ std::shared_ptr<Scene> SceneBuilder::CreateSceneShared(const std::string &name)
         std::move(m_Vertices), std::move(m_AnimatedVertices), std::move(m_Indices),
         std::move(m_AnimatedIndices), std::move(m_Transforms), std::move(m_Geometries),
         std::move(m_MetallicRoughnessMaterials), std::move(m_Textures),
-        std::move(m_SpecularGlossinessMaterials), std::move(m_Models), std::move(modelInstances),
-        std::move(m_Bones), SceneGraph(std::move(m_SceneNodes), std::move(m_IsRelativeTransform),
-        std::move(m_Animations)), std::move(m_LightInfos), std::move(m_DirectionalLightInfo),
-        std::move(m_PointLights), std::move(m_DirectionalLight), std::move(m_Skybox), std::move(m_CameraInfos), hasAnimatedInstances,
+        std::move(m_SpecularGlossinessMaterials), std::move(m_PhongMaterials), std::move(m_Models),
+        std::move(modelInstances), std::move(m_Bones),
+        SceneGraph(std::move(m_SceneNodes), std::move(m_IsRelativeTransform), std::move(m_Animations)),
+        std::move(m_LightInfos), std::move(m_DirectionalLightInfo), std::move(m_PointLights),
+        std::move(m_DirectionalLight), std::move(m_Skybox), std::move(m_CameraInfos), hasAnimatedInstances,
         m_HasDxNormalTextures, m_ForceFullTextureSize, name
     );
 
@@ -290,6 +310,8 @@ std::shared_ptr<Scene> SceneBuilder::CreateSceneShared(const std::string &name)
     m_MetallicRoughnessMaterialIds.clear();
     m_SpecularGlossinessMaterials.clear();
     m_SpecularGlossinessMaterialIds.clear();
+    m_PhongMaterials.clear();
+    m_PhongMaterialIds.clear();
     m_Textures.clear();
     m_TextureIndices.clear();
     m_Models.clear();
@@ -370,6 +392,11 @@ std::span<const Shaders::MetallicRoughnessMaterial> Scene::GetMetallicRoughnessM
 std::span<const Shaders::SpecularGlossinessMaterial> Scene::GetSpecularGlossinessMaterials() const
 {
     return m_SpecularGlossinessMaterials;
+}
+
+std::span<const Shaders::PhongMaterial> Scene::GetPhongMaterials() const
+{
+    return m_PhongMaterials;
 }
 
 std::span<const TextureInfo> Scene::GetTextures() const
@@ -484,7 +511,11 @@ uint32_t Scene::GetDefaultTextureIndex(TextureType type)
     case TextureType::Emisive:
         return Shaders::DefaultEmissiveTextureIndex;
     case TextureType::Specular:
-        return Shaders::DefaultColorTextureIndex;
+        return Shaders::DefaultSpecularTextureIndex;
+    case TextureType::Glossiness:
+        return Shaders::DefaultGlossinessTextureIndex;
+    case TextureType::Shininess:
+        return Shaders::DefaultShininessTextureIndex;
     default:
         throw error(std::format("Unsupported Texture type {}", static_cast<uint8_t>(type)));
     }

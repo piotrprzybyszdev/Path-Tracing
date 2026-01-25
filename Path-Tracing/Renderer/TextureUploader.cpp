@@ -575,7 +575,8 @@ vk::Format TextureUploader::GetImageFormat(TextureType type, TextureFormat forma
     // We assume that color textures are in srgb space
     // We assume all other textures to be in linear space
     auto isColorTexture = [](TextureType type) {
-        return type == TextureType::Color || type == TextureType::Emisive || type == TextureType::Skybox;
+        return type == TextureType::Color || type == TextureType::Specular || type == TextureType::Emisive ||
+               type == TextureType::Skybox;
     };
 
     switch (format)
