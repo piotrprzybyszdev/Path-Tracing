@@ -68,47 +68,6 @@ static void AddKhronosScenes(std::map<std::string, SceneGroup> &scenes)
     }
 }
 
-struct SceneDescription
-{
-    std::vector<std::filesystem::path> ComponentPaths;
-    std::optional<std::filesystem::path> SkyboxPath;
-    TextureMapping Mapping;
-    bool HasDxNormalTextures = false;
-    bool ForceFullTextureSize = false;
-
-    [[nodiscard]] std::unique_ptr<CombinedSceneLoader> ToLoader() const;
-};
-
-std::unique_ptr<CombinedSceneLoader> SceneDescription::ToLoader() const
-{
-    auto loader = std::make_unique<CombinedSceneLoader>();
-    loader->AddTextureMapping(Mapping);
-
-    for (const auto &path : ComponentPaths)
-    {
-        if (std::filesystem::exists(path))
-            loader->AddComponent(path);
-        else
-            logger::warn("Scene component not found: {}", path.string());
-    }
-
-    if (SkyboxPath.has_value())
-    {
-        if (std::filesystem::exists(SkyboxPath.value()))
-            loader->AddSkybox2D(SkyboxPath.value());
-        else
-            logger::warn("Skybox file not found: {}", SkyboxPath.value().string());
-    }
-
-    if (HasDxNormalTextures)
-        loader->SetDxNormalTextures();
-
-    if (ForceFullTextureSize)
-        loader->ForceFullTextureSize();
-
-    return loader;
-}
-
 static void AddSceneByDescription(
     SceneGroup &sceneGroup, const std::string &name, SceneDescription &&description
 )
@@ -305,82 +264,81 @@ static std::array<uint32_t, 6> AddCube(SceneBuilder &sceneBuilder)
 
 void CreateDefaultScene(SceneBuilder &sceneBuilder)
 {
-    auto makeMaterialFromColor = [](glm::vec3 color, float roughness = 1.0f) {
-        return Shaders::MetallicRoughnessMaterial {
-            .Color = glm::vec4(color, 1.0f),
-            .Roughness = roughness,
-            .Metalness = 0.0f,
-            .Ior = 1.5f,
-            .EmissiveIdx = Scene::GetDefaultTextureIndex(TextureType::Emisive),
-            .ColorIdx = Scene::GetDefaultTextureIndex(TextureType::Color),
-            .NormalIdx = Scene::GetDefaultTextureIndex(TextureType::Normal),
-            .RoughnessIdx = Scene::GetDefaultTextureIndex(TextureType::Roughness),
-            .MetallicIdx = Scene::GetDefaultTextureIndex(TextureType::Metallic),
-        };
-    };
-    auto makeTransmissiveMaterialFromColor = [](glm::vec3 color, float ior, float transmission,
-                                                float roughness = 1.0f) {
-        return Shaders::MetallicRoughnessMaterial {
-            .Color = glm::vec4(color, 1.0f),
-            .Roughness = roughness,
-            .Metalness = 0.0f,
-            .Ior = ior,
-            .Transmission = transmission,
-            .AttenuationColor = glm::vec3(1.0f),
-            .AttenuationDistance = 1e32f,
-            .EmissiveIdx = Scene::GetDefaultTextureIndex(TextureType::Emisive),
-            .ColorIdx = Scene::GetDefaultTextureIndex(TextureType::Color),
-            .NormalIdx = Scene::GetDefaultTextureIndex(TextureType::Normal),
-            .RoughnessIdx = Scene::GetDefaultTextureIndex(TextureType::Roughness),
-            .MetallicIdx = Scene::GetDefaultTextureIndex(TextureType::Metallic),
-        };
-    };
-    auto makeMaterialFromEmissiveColor = [](glm::vec3 color) {
-        return Shaders::MetallicRoughnessMaterial {
-            .EmissiveColor = color,
-            .EmissiveIntensity = 1.0f,
-            .Roughness = 1.0f,
-            .Metalness = 0.0f,
-            .Ior = 1.5f,
-            .EmissiveIdx = Scene::GetDefaultTextureIndex(TextureType::Emisive),
-            .ColorIdx = Scene::GetDefaultTextureIndex(TextureType::Color),
-            .NormalIdx = Scene::GetDefaultTextureIndex(TextureType::Normal),
-            .RoughnessIdx = Scene::GetDefaultTextureIndex(TextureType::Roughness),
-            .MetallicIdx = Scene::GetDefaultTextureIndex(TextureType::Metallic),
-        };
-    };
-    auto makeMaterialFromTexture = [&](std::span<const uint8_t>) {
-        return Shaders::MetallicRoughnessMaterial {
-            .Color = glm::vec4(1.0f),
-            .Roughness = 1.0f,
-            .Metalness = 0.0f,
-            .Ior = 1.5f,
-            .EmissiveIdx = Scene::GetDefaultTextureIndex(TextureType::Emisive),
-            .ColorIdx = sceneBuilder.AddTexture(
-                TextureImporter::GetTextureInfo(
-                    Resources::g_PlaceholderTextureData, TextureType::Color, "Logo Texture"
-                )
-            ),
-            .NormalIdx = Scene::GetDefaultTextureIndex(TextureType::Normal),
-            .RoughnessIdx = Scene::GetDefaultTextureIndex(TextureType::Roughness),
-            .MetallicIdx = Scene::GetDefaultTextureIndex(TextureType::Metallic),
-        };
+    const Shaders::MetallicRoughnessMaterial defaultMaterialInfo = {
+        .Color = glm::vec4(1.0f),
+        .Roughness = 1.0f,
+        .Metalness = 0.0f,
+        .Ior = 1.5f,
+        .AttenuationColor = glm::vec3(1.0f),
+        .AttenuationDistance = 1e32f,
+        .EmissiveIdx = Scene::GetDefaultTextureIndex(TextureType::Emisive),
+        .ColorIdx = Scene::GetDefaultTextureIndex(TextureType::Color),
+        .NormalIdx = Scene::GetDefaultTextureIndex(TextureType::Normal),
+        .RoughnessIdx = Scene::GetDefaultTextureIndex(TextureType::Roughness),
+        .MetallicIdx = Scene::GetDefaultTextureIndex(TextureType::Metallic),
     };
 
-    Shaders::MaterialId whiteMaterial =
-        sceneBuilder.AddMaterial("White Material", makeMaterialFromColor(glm::vec3(1.0f)));
-    Shaders::MaterialId greenMaterial =
-        sceneBuilder.AddMaterial("Green Material", makeMaterialFromColor(glm::vec3(0.0f, 1.0f, 0.0f), 0.1f));
-    Shaders::MaterialId redMaterial =
-        sceneBuilder.AddMaterial("Red Material", makeMaterialFromColor(glm::vec3(1.0f, 0.0f, 0.0f), 0.1f));
-    Shaders::MaterialId logoMaterial = sceneBuilder.AddMaterial(
-        "Logo Material", makeMaterialFromTexture(Resources::g_PlaceholderTextureData)
+    const uint32_t logoColorTexture = sceneBuilder.AddTexture(
+        TextureImporter::GetTextureInfo(
+            Resources::g_PlaceholderTextureData, TextureType::Color, "Logo Color Texture"
+        )
     );
-    Shaders::MaterialId lightMaterial =
-        sceneBuilder.AddMaterial("Light Material", makeMaterialFromEmissiveColor(glm::vec3(1.0f)));
-    Shaders::MaterialId glassMaterial = sceneBuilder.AddMaterial(
-        "Glass Material", makeTransmissiveMaterialFromColor(glm::vec3(1.0f), 1.5f, 1.0f, 0.0f)
+
+    const uint32_t vulkanPathTracingTexture = sceneBuilder.AddTexture(
+        TextureImporter::GetTextureInfo(
+            Resources::g_VulkanPathTracingTextureData, TextureType::Color, "Vulkan Path-Tracing Texture"
+        )
     );
+
+    const uint32_t authorsTexture = sceneBuilder.AddTexture(
+        TextureImporter::GetTextureInfo(
+            Resources::g_AuthorsTextureData, TextureType::Color, "Authors Texture"
+        )
+    );
+
+    const uint32_t pressSpaceTexture = sceneBuilder.AddTexture(
+        TextureImporter::GetTextureInfo(
+            Resources::g_PressSpaceTextureData, TextureType::Color, "Press Space Texture"
+        )
+    );
+
+    auto whiteMaterialInfo = defaultMaterialInfo;
+    auto greenMaterialInfo = defaultMaterialInfo;
+    greenMaterialInfo.Color = glm::vec4(0.0f, 1.0f, 0.0f, 1.0f);
+    auto redMaterialInfo = defaultMaterialInfo;
+    redMaterialInfo.Color = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f);
+    auto logoMaterialInfo = defaultMaterialInfo;
+    logoMaterialInfo.ColorIdx = logoColorTexture;
+    auto lightMaterialInfo = defaultMaterialInfo;
+    lightMaterialInfo.EmissiveColor = glm::vec3(1.0f);
+    lightMaterialInfo.EmissiveIntensity = 1.0f;
+    auto glassMaterialInfo = defaultMaterialInfo;
+    glassMaterialInfo.Color = glm::vec4(0.70f, 0.81f, 0.85f, 1.0f);
+    glassMaterialInfo.Roughness = 0.0f;
+    glassMaterialInfo.Transmission = 1.0f;
+    glassMaterialInfo.Ior = 1.5f;
+    auto glassTexturedMaterialInfo = glassMaterialInfo;
+    glassTexturedMaterialInfo.ColorIdx = authorsTexture;
+    auto mirrorMaterialInfo = defaultMaterialInfo;
+    mirrorMaterialInfo.Roughness = 0.0f;
+    mirrorMaterialInfo.Metalness = 1.0f;
+    auto mirrorTexturedMaterialInfo = mirrorMaterialInfo;
+    mirrorTexturedMaterialInfo.ColorIdx = vulkanPathTracingTexture;
+    auto floorMaterialInfo = defaultMaterialInfo;
+    floorMaterialInfo.ColorIdx = pressSpaceTexture;
+
+    Shaders::MaterialId whiteMaterial = sceneBuilder.AddMaterial("White Material", whiteMaterialInfo);
+    Shaders::MaterialId greenMaterial = sceneBuilder.AddMaterial("Green Material", greenMaterialInfo);
+    Shaders::MaterialId redMaterial = sceneBuilder.AddMaterial("Red Material", redMaterialInfo);
+    Shaders::MaterialId logoMaterial = sceneBuilder.AddMaterial("Logo Material", logoMaterialInfo);
+    Shaders::MaterialId lightMaterial = sceneBuilder.AddMaterial("Light Material", lightMaterialInfo);
+    Shaders::MaterialId glassMaterial = sceneBuilder.AddMaterial("Glass Material", glassMaterialInfo);
+    Shaders::MaterialId glassTexturedMaterial =
+        sceneBuilder.AddMaterial("Glass Textured Material", glassTexturedMaterialInfo);
+    Shaders::MaterialId mirrorMaterial = sceneBuilder.AddMaterial("Mirror Material", mirrorMaterialInfo);
+    Shaders::MaterialId mirrorTexturedMaterial =
+        sceneBuilder.AddMaterial("Mirror Textured Material", mirrorTexturedMaterialInfo);
+    Shaders::MaterialId floorMaterial = sceneBuilder.AddMaterial("Floor Material", floorMaterialInfo);
 
     auto &vertices = sceneBuilder.GetVertices();
     vertices = {
@@ -399,10 +357,10 @@ void CreateDefaultScene(SceneBuilder &sceneBuilder)
         { { -1.1, 1.1, -1 }, { 1, 0 }, { 1, 0, 0 }, { 0, 0, -1 }, { 0, 1, 0 } },
         { { -1.1, 1.1, 1 }, { 0, 0 }, { 1, 0, 0 }, { 0, 0, -1 }, { 0, 1, 0 } },
 
-        { { -1.1, -1.1, 1 }, { 0, 1 }, { 0, 1, 0 }, { 1, 0, 0 }, { 0, 0, -1 } },
-        { { 1.1, -1.1, 1 }, { 1, 1 }, { 0, 1, 0 }, { 1, 0, 0 }, { 0, 0, -1 } },
-        { { 1.1, -1.1, -1 }, { 1, 0 }, { 0, 1, 0 }, { 1, 0, 0 }, { 0, 0, -1 } },
-        { { -1.1, -1.1, -1 }, { 0, 0 }, { 0, 1, 0 }, { 1, 0, 0 }, { 0, 0, -1 } },
+        { { -1.1, -1.1, 1 }, { 0, 0 }, { 0, 1, 0 }, { 1, 0, 0 }, { 0, 0, -1 } },
+        { { 1.1, -1.1, 1 }, { 0, 1 }, { 0, 1, 0 }, { 1, 0, 0 }, { 0, 0, -1 } },
+        { { 1.1, -1.1, -1 }, { 1, 1 }, { 0, 1, 0 }, { 1, 0, 0 }, { 0, 0, -1 } },
+        { { -1.1, -1.1, -1 }, { 1, 0 }, { 0, 1, 0 }, { 1, 0, 0 }, { 0, 0, -1 } },
 
         { { -1.1, 1.1, -1 }, { 0, 1 }, { 0, -1, 0 }, { 1, 0, 0 }, { 0, 0, 1 } },
         { { 1.1, 1.1, -1 }, { 1, 1 }, { 0, -1, 0 }, { 1, 0, 0 }, { 0, 0, 1 } },
@@ -426,19 +384,28 @@ void CreateDefaultScene(SceneBuilder &sceneBuilder)
         { 0, redMaterial, MaterialType::MetallicRoughness, glm::mat4(1.0f) },
         { 1, greenMaterial, MaterialType::MetallicRoughness, glm::mat4(1.0f) },
         { 2, logoMaterial, MaterialType::MetallicRoughness, glm::mat4(1.0f) },
-        { 3, whiteMaterial, MaterialType::MetallicRoughness, glm::mat4(1.0f) },
+        { 3, floorMaterial, MaterialType::MetallicRoughness, glm::mat4(1.0f) },
         { 4, whiteMaterial, MaterialType::MetallicRoughness, glm::mat4(1.0f) },
     } };
 
     std::array<uint32_t, 6> geometryIndices = AddCube(sceneBuilder);
 
-    std::array<MeshInfo, 6> cubeMeshes = { {
+    std::array<MeshInfo, 6> glassCubeMeshes = { {
         { geometryIndices[0], glassMaterial, MaterialType::MetallicRoughness, glm::mat4(1.0f) },
         { geometryIndices[1], glassMaterial, MaterialType::MetallicRoughness, glm::mat4(1.0f) },
         { geometryIndices[2], glassMaterial, MaterialType::MetallicRoughness, glm::mat4(1.0f) },
-        { geometryIndices[3], glassMaterial, MaterialType::MetallicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[3], glassTexturedMaterial, MaterialType::MetallicRoughness, glm::mat4(1.0f) },
         { geometryIndices[4], glassMaterial, MaterialType::MetallicRoughness, glm::mat4(1.0f) },
         { geometryIndices[5], glassMaterial, MaterialType::MetallicRoughness, glm::mat4(1.0f) },
+    } };
+
+    std::array<MeshInfo, 6> metallicCubeMeshes = { {
+        { geometryIndices[0], mirrorMaterial, MaterialType::MetallicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[1], mirrorMaterial, MaterialType::MetallicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[2], mirrorMaterial, MaterialType::MetallicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[3], mirrorTexturedMaterial, MaterialType::MetallicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[4], mirrorMaterial, MaterialType::MetallicRoughness, glm::mat4(1.0f) },
+        { geometryIndices[5], mirrorMaterial, MaterialType::MetallicRoughness, glm::mat4(1.0f) },
     } };
 
     const uint32_t lightVertexOffset = vertices.size();
@@ -472,11 +439,12 @@ void CreateDefaultScene(SceneBuilder &sceneBuilder)
     };
 
     const uint32_t box = sceneBuilder.AddModel(meshes);
-    const uint32_t cube = sceneBuilder.AddModel(cubeMeshes);
+    const uint32_t metallicCube = sceneBuilder.AddModel(metallicCubeMeshes);
+    const uint32_t glassCube = sceneBuilder.AddModel(glassCubeMeshes);
     const uint32_t light = sceneBuilder.AddModel({ lightMeshes });
 
     const glm::mat4 boxTransform = glm::transpose(
-        glm::translate(glm::scale(glm::mat4(1.0f), glm::vec3(2.0f)), glm::vec3(-1.9f, 0.5f, 0.0f))
+        glm::translate(glm::scale(glm::mat4(1.0f), glm::vec3(2.0f)), glm::vec3(-2.25f, 0.5f, 0.0f))
     );
 
     const uint32_t rootNode = sceneBuilder.AddSceneNode({ 0u, glm::mat4(1.0f), glm::mat4(1.0f) });
@@ -487,7 +455,7 @@ void CreateDefaultScene(SceneBuilder &sceneBuilder)
     const glm::mat4 leftCubeTransform = glm::transpose(
         glm::scale(
             glm::rotate(
-                glm::translate(glm::mat4(1.0f), glm::vec3(-0.4f, -0.7f, 0.5f)), glm::radians(25.0f),
+                glm::translate(glm::mat4(1.0f), glm::vec3(-0.4f, -0.795f, 0.5f)), glm::radians(25.0f),
                 glm::vec3(0.0f, 1.0f, 0.0f)
             ),
             glm::vec3(0.3f)
@@ -498,7 +466,7 @@ void CreateDefaultScene(SceneBuilder &sceneBuilder)
     const glm::mat4 rightCubeTransform = glm::transpose(
         glm::scale(
             glm::rotate(
-                glm::translate(glm::mat4(1.0f), glm::vec3(0.2f, -0.7f, -0.6f)), glm::radians(-20.0f),
+                glm::translate(glm::mat4(1.0f), glm::vec3(0.2f, -0.795f, -0.6f)), glm::radians(-20.0f),
                 glm::vec3(0.0f, 1.0f, 0.0f)
             ),
             glm::vec3(0.3f)
@@ -507,8 +475,8 @@ void CreateDefaultScene(SceneBuilder &sceneBuilder)
     const uint32_t rightCubeNode =
         sceneBuilder.AddSceneNode({ boxNode, rightCubeTransform, glm::mat4(1.0f) });
 
-    const uint32_t leftCubeInstance = sceneBuilder.AddModelInstance(cube, leftCubeNode);
-    const uint32_t rightCubeInstance = sceneBuilder.AddModelInstance(cube, rightCubeNode);
+    const uint32_t leftCubeInstance = sceneBuilder.AddModelInstance(metallicCube, leftCubeNode);
+    const uint32_t rightCubeInstance = sceneBuilder.AddModelInstance(glassCube, rightCubeNode);
 
     const glm::mat4 lightTransform =
         glm::transpose(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.099f, 0.0f)));

@@ -63,6 +63,36 @@ void CombinedSceneLoader::Load(SceneBuilder &sceneBuilder)
         sceneBuilder.ForceFullTextureSize();
 }
 
+std::unique_ptr<CombinedSceneLoader> SceneDescription::ToLoader() const
+{
+    auto loader = std::make_unique<CombinedSceneLoader>();
+    loader->AddTextureMapping(Mapping);
+
+    for (const auto &path : ComponentPaths)
+    {
+        if (std::filesystem::exists(path))
+            loader->AddComponent(path);
+        else
+            logger::warn("Scene component not found: {}", path.string());
+    }
+
+    if (SkyboxPath.has_value())
+    {
+        if (std::filesystem::exists(SkyboxPath.value()))
+            loader->AddSkybox2D(SkyboxPath.value());
+        else
+            logger::warn("Skybox file not found: {}", SkyboxPath.value().string());
+    }
+
+    if (HasDxNormalTextures)
+        loader->SetDxNormalTextures();
+
+    if (ForceFullTextureSize)
+        loader->ForceFullTextureSize();
+
+    return loader;
+}
+
 std::map<std::string, SceneGroup> SceneManager::s_SceneGroups = {};
 std::shared_ptr<Scene> SceneManager::s_ActiveScene = nullptr;
 std::jthread SceneManager::s_LoadingThread = {};

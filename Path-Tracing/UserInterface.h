@@ -20,8 +20,6 @@ public:
 
     static void Shutdown();
 
-    static void Reinitialize(vk::Instance instance, uint32_t swapchainImageCount);
-
     static void OnUpdate(float timeStep);
     static void OnRender(vk::CommandBuffer commandBuffer);
 

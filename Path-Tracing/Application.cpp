@@ -282,7 +282,6 @@ void Application::Run()
         {
             DeviceContext::GetGraphicsQueue().WaitIdle();
             s_Swapchain->Recreate(UserInterface::IsHdrAllowed());
-            UserInterface::Reinitialize(s_Instance, s_Swapchain->GetImageCount());
             Renderer::UpdateHdr();
             recreateSwapchain = false;
         }
