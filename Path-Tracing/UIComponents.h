@@ -174,9 +174,6 @@ template<typename T> void ComboOptions<T>::Render()
         if (option.Value == m_Value)
             m_Current = option.Name;
 
-    ApplyLeftMargin();
-    ImGui::Text("%s", m_Title.c_str());
-    ImGui::SameLine();
     m_Changed = false;
     if (ImGui::BeginCombo(m_Id.c_str(), m_Current))
     {
@@ -251,9 +248,12 @@ Widget<T, N>::Widget(const std::string &title, std::array<T, N> &&contents, floa
 
 template<typename T, size_t N> void Widget<T, N>::Render()
 {
-    ImGui::Dummy({ 0.0f, m_TopMargin });
-    ImGui::Text("%s", m_Title.c_str());
-    ImGui::Dummy({ 0.0f, 2.0f });
+    if (!m_Title.empty())
+    {
+        ImGui::Dummy({ 0.0f, m_TopMargin });
+        ImGui::Text("%s", m_Title.c_str());
+        ImGui::Dummy({ 0.0f, 2.0f });
+    }
     for (auto &content : m_Contents)
         content.Render();
 }
@@ -266,32 +266,34 @@ template<typename T, size_t N> std::span<const T> Widget<T, N>::GetContents() co
 template<typename T, size_t N> class FixedWindow
 {
 public:
-    FixedWindow(ImVec2 size, std::string &&name, Widget<T, N> &&widget);
+    FixedWindow(ImVec2 size, std::string &&name, Widget<T, N> &&widget, bool absolute = false);
 
     void Render(ImVec2 pos);
     void RenderBottomRight(ImVec2 size, ImVec2 margin);
     void RenderCenter(ImVec2 size);
 
 private:
+    bool m_Absolute = false;
     ImVec2 m_Size;
     const std::string m_Name;
     Widget<T, N> m_Widget;
 };
 
 template<typename T, size_t N>
-FixedWindow<T, N>::FixedWindow(ImVec2 size, std::string &&name, Widget<T, N> &&widget)
-    : m_Size(size), m_Name(std::move(name)), m_Widget(std::move(widget))
+FixedWindow<T, N>::FixedWindow(ImVec2 size, std::string &&name, Widget<T, N> &&widget, bool absolute)
+    : m_Size(size), m_Name(std::move(name)), m_Widget(std::move(widget)), m_Absolute(absolute)
 {
 }
 
 template<typename T, size_t N> void FixedWindow<T, N>::Render(ImVec2 pos)
 {
-    ImGui::SetNextWindowPos(pos);
+    ImGui::SetNextWindowPos(pos, ImGuiCond_Appearing);
     ImGui::SetNextWindowSize(m_Size);
 
     ImGui::Begin(
         m_Name.c_str(), nullptr,
-        ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove
+        (m_Absolute ? (ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove) : ImGuiWindowFlags_None) |
+            ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings
     );
 
     m_Widget.Render();
@@ -321,7 +323,7 @@ inline void AlignItemRight(float width, float itemWidth, float margin)
 
 inline void AlignItemBottom(float height, float itemHeight, float margin)
 {
-    ImGui::SetCursorPosY(height - itemHeight - margin);
+    ImGui::SetCursorPosY(std::max(height - itemHeight - margin, ImGui::GetCursorPosY()));
 }
 
 inline void ItemMarginTop(float margin)

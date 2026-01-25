@@ -107,6 +107,63 @@ void UserInterface::Init(
 
     s_PresentModes = presentModes;
     s_Components = std::make_unique<UIComponents>();
+
+    ImGuiStyle &style = ImGui::GetStyle();
+    ImVec4 *colors = style.Colors;
+
+    colors[ImGuiCol_WindowBg] = ImVec4(0.08f, 0.08f, 0.10f, 1.00f);
+    colors[ImGuiCol_ChildBg] = ImVec4(0.10f, 0.10f, 0.12f, 1.00f);
+    colors[ImGuiCol_PopupBg] = ImVec4(0.09f, 0.09f, 0.11f, 1.00f);
+
+    colors[ImGuiCol_Header] = ImVec4(0.20f, 0.22f, 0.26f, 1.00f);
+    colors[ImGuiCol_HeaderHovered] = ImVec4(0.28f, 0.30f, 0.34f, 1.00f);
+    colors[ImGuiCol_HeaderActive] = ImVec4(0.32f, 0.34f, 0.38f, 1.00f);
+
+    colors[ImGuiCol_Tab] = ImVec4(0.13f, 0.13f, 0.15f, 1.00f);
+    colors[ImGuiCol_TabHovered] = ImVec4(0.25f, 0.27f, 0.32f, 1.00f);
+    colors[ImGuiCol_TabActive] = ImVec4(0.20f, 0.22f, 0.26f, 1.00f);
+    colors[ImGuiCol_TabUnfocused] = ImVec4(0.10f, 0.10f, 0.12f, 1.00f);
+    colors[ImGuiCol_TabUnfocusedActive] = ImVec4(0.16f, 0.16f, 0.18f, 1.00f);
+
+    colors[ImGuiCol_FrameBg] = ImVec4(0.16f, 0.16f, 0.18f, 1.00f);
+    colors[ImGuiCol_FrameBgHovered] = ImVec4(0.22f, 0.22f, 0.25f, 1.00f);
+    colors[ImGuiCol_FrameBgActive] = ImVec4(0.26f, 0.26f, 0.30f, 1.00f);
+
+    colors[ImGuiCol_Button] = ImVec4(0.18f, 0.18f, 0.20f, 1.00f);
+    colors[ImGuiCol_ButtonHovered] = ImVec4(0.26f, 0.26f, 0.30f, 1.00f);
+    colors[ImGuiCol_ButtonActive] = ImVec4(0.30f, 0.30f, 0.34f, 1.00f);
+
+    colors[ImGuiCol_SliderGrab] = ImVec4(0.20f, 0.45f, 0.90f, 1.00f);
+    colors[ImGuiCol_SliderGrabActive] = ImVec4(0.30f, 0.55f, 1.00f, 1.00f);
+
+    colors[ImGuiCol_CheckMark] = ImVec4(0.30f, 0.55f, 1.00f, 1.00f);
+
+    colors[ImGuiCol_ScrollbarBg] = ImVec4(0.10f, 0.10f, 0.12f, 1.00f);
+    colors[ImGuiCol_ScrollbarGrab] = ImVec4(0.20f, 0.20f, 0.24f, 1.00f);
+    colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.26f, 0.26f, 0.30f, 1.00f);
+    colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.30f, 0.30f, 0.34f, 1.00f);
+
+    colors[ImGuiCol_Text] = ImVec4(0.90f, 0.90f, 0.92f, 1.00f);
+
+    colors[ImGuiCol_TitleBg] = ImVec4(0.10f, 0.10f, 0.12f, 1.00f);
+    colors[ImGuiCol_TitleBgActive] = ImVec4(0.14f, 0.14f, 0.16f, 1.00f);
+    colors[ImGuiCol_TitleBgCollapsed] = ImVec4(0.08f, 0.08f, 0.10f, 1.00f);
+
+    colors[ImGuiCol_PlotHistogram] = ImVec4(0.20f, 0.45f, 0.90f, 1.00f);
+    colors[ImGuiCol_PlotHistogramHovered] = ImVec4(0.30f, 0.55f, 1.00f, 1.00f);
+    colors[ImGuiCol_FrameBg] = ImVec4(0.12f, 0.12f, 0.14f, 1.00f);
+    colors[ImGuiCol_FrameBgHovered] = ImVec4(0.16f, 0.16f, 0.18f, 1.00f);
+    colors[ImGuiCol_FrameBgActive] = ImVec4(0.18f, 0.18f, 0.20f, 1.00f);
+
+    style.WindowRounding = 4.0f;
+    style.FrameRounding = 4.0f;
+    style.PopupRounding = 4.0f;
+    style.ScrollbarRounding = 4.0f;
+    style.GrabRounding = 4.0f;
+    style.TabRounding = 4.0f;
+    style.WindowPadding = ImVec2(10, 10);
+    style.FramePadding = ImVec2(6, 4);
+    style.ItemSpacing = ImVec2(8, 6);
 }
 
 void UserInterface::Shutdown()
@@ -120,31 +177,6 @@ void UserInterface::Shutdown()
     ImGui::DestroyContext();
 
     s_IniFilePath.clear();
-}
-
-void UserInterface::Reinitialize(vk::Instance instance, uint32_t swapchainImageCount)
-{
-    ImGui_ImplVulkan_Shutdown();
-    ImGui_ImplGlfw_Shutdown();
-
-    ImGui_ImplGlfw_InitForVulkan(Window::GetHandle(), true);
-    ImGui_ImplVulkan_InitInfo initInfo = {};
-    initInfo.Instance = instance;
-    initInfo.PhysicalDevice = DeviceContext::GetPhysical();
-    initInfo.Device = DeviceContext::GetLogical();
-    initInfo.QueueFamily = DeviceContext::GetGraphicsQueue().FamilyIndex;
-    initInfo.Queue = DeviceContext::GetGraphicsQueue().Handle;
-    initInfo.DescriptorPoolSize = IMGUI_IMPL_VULKAN_MINIMUM_IMAGE_SAMPLER_POOL_SIZE;
-    initInfo.MinImageCount = swapchainImageCount;
-    initInfo.ImageCount = swapchainImageCount;
-    initInfo.CheckVkResultFn = CheckVkResult;
-    initInfo.UseDynamicRendering = true;
-    std::array<vk::Format, 1> formats = { vk::Format::eR8G8B8A8Unorm };
-    initInfo.PipelineRenderingCreateInfo = vk::PipelineRenderingCreateInfoKHR(0, formats);
-
-    bool imguiResult = ImGui_ImplVulkan_Init(&initInfo);
-    if (imguiResult == false)
-        throw error("Failed to initialize ImGui");
 }
 
 void UserInterface::OnUpdate(float timeStep)
@@ -219,13 +251,16 @@ void SceneListContent::Render()
 {
     for (auto &group : SceneManager::GetSceneGroupNames())
     {
-        if (ImGui::TreeNode(group.c_str()))
+        ImGui::Dummy({ 10.0f, 0.0f });
+        ImGui::SameLine();
+        if (ImGui::CollapsingHeader(group.c_str()))
         {
             const auto sceneNames = SceneManager::GetSceneNames(group);
             if (!sceneNames.empty())
             {
                 for (auto &scene : sceneNames)
                 {
+                    ApplyLeftMargin();
                     ApplyLeftMargin();
                     if (ImGui::Selectable(scene.c_str()))
                         SceneManager::SetActiveScene(group, scene);
@@ -237,7 +272,7 @@ void SceneListContent::Render()
                         ? "You can install more scenes via CMake - Check README for more info"
                         : "There are no scenes in this group"
                 );
-            ImGui::TreePop();
+            ImGui::Dummy({ 0.0f, 5.0f });
         }
     }
 }
@@ -418,28 +453,30 @@ void ImportSceneContent::Render()
     int deleteIndex = -1;
     AlignItemRight(size.x, size.x - 20, 10);
     ImGui::PushStyleColor(ImGuiCol_FrameBg, ImGui::GetStyle().Colors[ImGuiCol_WindowBg]);
-    ImGui::BeginListBox("##Components", ImVec2(size.x - 20, 300));
-    for (int i = 0; i < m_ComponentPaths.size(); i++)
+    if (ImGui::BeginListBox("##Components", ImVec2(size.x - 20, 300)))
     {
-        ImGui::PushID(i);
-        ImGui::Dummy({ 0, 2 });
-        ApplyLeftMargin();
-        if (RenderPathText(m_ComponentPaths[i], size.x - 10))
-            deleteIndex = i;
-        ImGui::PopID();
-    }
+        for (int i = 0; i < m_ComponentPaths.size(); i++)
+        {
+            ImGui::PushID(i);
+            ImGui::Dummy({ 0, 2 });
+            ApplyLeftMargin();
+            if (RenderPathText(m_ComponentPaths[i], size.x - 10))
+                deleteIndex = i;
+            ImGui::PopID();
+        }
 
-    if (deleteIndex != -1)
-        m_ComponentPaths.erase(m_ComponentPaths.begin() + deleteIndex);
+        if (deleteIndex != -1)
+            m_ComponentPaths.erase(m_ComponentPaths.begin() + deleteIndex);
 
-    ImGui::Dummy({ 0, 10 });
-    CenterItemHorizontally(size.x, buttonSize.x, -10.0f);
-    if (ImGui::Button("Add Component", buttonSize))
-    {
-        auto result = OpenFileDialog(true);
-        m_ComponentPaths.insert(m_ComponentPaths.begin(), result.begin(), result.end());
+        ImGui::Dummy({ 0, 10 });
+        CenterItemHorizontally(size.x, buttonSize.x, -10.0f);
+        if (ImGui::Button("Add Component", buttonSize))
+        {
+            auto result = OpenFileDialog(true);
+            m_ComponentPaths.insert(m_ComponentPaths.begin(), result.begin(), result.end());
+        }
+        ImGui::EndListBox();
     }
-    ImGui::EndListBox();
     ImGui::PopStyleColor();
 
     ImGui::Dummy({ 0, 5 });
@@ -448,6 +485,7 @@ void ImportSceneContent::Render()
     AlignItemBottom(size.y, buttonSize.y, margin);
     if (ImGui::Button("Cancel", buttonSize))
         s_ShowingImportScene = false;
+    ImGui::SameLine();
     AlignItemRight(size.x, buttonSize.x, margin);
     AlignItemBottom(size.y, buttonSize.y, margin);
     if (ImGui::Button("Import", buttonSize))
@@ -520,11 +558,10 @@ private:
 void OfflineRenderContent::Render()
 {
     ImVec2 size = ImGui::GetWindowSize();
-    ImVec2 buttonSize(100, 20);
+    ImVec2 buttonSize(100, 25);
 
-    ImGui::Dummy({ 0, 5 });
     ImGui::Separator();
-    ImGui::Dummy({ 10, 0 });
+    ImGui::Dummy({ 15, 0 });
     ImGui::SameLine();
 
     if (!Renderer::CanRenderVideo())
@@ -542,7 +579,7 @@ void OfflineRenderContent::Render()
     }
 
     ImGui::SameLine();
-    ImGui::Dummy({ 2, 0 });
+    ImGui::Dummy({ 5, 0 });
     ImGui::SameLine();
     ImGui::Text("Format");
     ImGui::SameLine();
@@ -568,18 +605,22 @@ void OfflineRenderContent::Render()
         ImGui::EndCombo();
     }
     ImGui::SameLine();
-    ImGui::Dummy({ 2, 0 });
+    ImGui::Dummy({ 5, 0 });
     ImGui::SameLine();
     if (RenderPathButton())
         SaveFileDialog();
     ImGui::Separator();
     ImGui::Dummy({ 0, 10 });
 
-    ImGui::Dummy({ 40, 0 });
+    ImGui::Dummy({ 20, 0 });
     ImGui::SameLine();
-    if (ImGui::BeginTable("Settings", 2, ImGuiTableFlags_None, { 400.0f, 0.0f }))
+    ImGui::SeparatorText("Output Settings");
+
+    ImGui::Dummy({ 45, 0 });
+    ImGui::SameLine();
+    if (ImGui::BeginTable("Output Settings", 2, ImGuiTableFlags_None, { 400.0f, 0.0f }))
     {
-        ImGui::TableSetupColumn(nullptr, ImGuiTableColumnFlags_WidthFixed);
+        ImGui::TableSetupColumn(nullptr, ImGuiTableColumnFlags_WidthFixed, 130);
         ImGui::TableSetupColumn(nullptr, ImGuiTableColumnFlags_WidthStretch);
 
         ImGui::TableNextRow();
@@ -633,6 +674,21 @@ void OfflineRenderContent::Render()
             ImGui::InputInt("##FrameCount", &m_FrameCount, 0);
         }
 
+        ImGui::EndTable();
+    }
+    
+    ImGui::Dummy({ 0, 10 });
+    ImGui::Dummy({ 20, 0 });
+    ImGui::SameLine();
+    ImGui::SeparatorText("Render Settings");
+
+    ImGui::Dummy({ 45, 0 });
+    ImGui::SameLine();
+    if (ImGui::BeginTable("Render Settings", 2, ImGuiTableFlags_None, { 400.0f, 0.0f }))
+    {
+        ImGui::TableSetupColumn(nullptr, ImGuiTableColumnFlags_WidthFixed, 130);
+        ImGui::TableSetupColumn(nullptr, ImGuiTableColumnFlags_WidthStretch);
+
         ImGui::TableNextRow();
         ImGui::TableNextColumn();
         ImGui::Text("Max Bounce Count");
@@ -640,14 +696,23 @@ void OfflineRenderContent::Render()
         ImGui::SetNextItemWidth(-1);
         ImGui::SliderInt("##MaxBounceCount", &m_MaxBounceCount, 1, 64);
 
-        ImGui::TableNextRow();
-        ImGui::TableNextColumn();
-        ImGui::Text("Depth of field simulation");
-        ImGui::TableNextColumn();
-        ImGui::Checkbox("##DepthOfField", &m_DepthOfField);
+        ImGui::EndTable();
+    }
 
-        if (!m_DepthOfField)
-            ImGui::BeginDisabled();
+    ImGui::Dummy({ 0, 5 });
+    ImGui::Dummy({ 30, 0 });
+    ImGui::SameLine();
+    ImGui::Checkbox("##Depth of field", &m_DepthOfField);
+    ImGui::SameLine();
+    ImGui::SeparatorText("Depth of field");
+    if (!m_DepthOfField)
+        ImGui::BeginDisabled();
+    ImGui::Dummy({ 45, 0 });
+    ImGui::SameLine();
+    if (ImGui::BeginTable("Depth of field", 2, ImGuiTableFlags_None, { 400.0f, 0.0f }))
+    {
+        ImGui::TableSetupColumn(nullptr, ImGuiTableColumnFlags_WidthFixed, 130);
+        ImGui::TableSetupColumn(nullptr, ImGuiTableColumnFlags_WidthStretch);
 
         ImGui::TableNextRow();
         ImGui::TableNextColumn();
@@ -665,8 +730,19 @@ void OfflineRenderContent::Render()
             "##FocalDistance", &m_FocalDistance, 1.0f, 100.0f, "%.2f", ImGuiSliderFlags_Logarithmic
         );
 
-        if (!m_DepthOfField)
-            ImGui::EndDisabled();
+        ImGui::EndTable();
+    }
+
+    if (!m_DepthOfField)
+        ImGui::EndDisabled();
+
+    ImGui::Dummy({ 0, 5 });
+    ImGui::Dummy({ 45, 0 });
+    ImGui::SameLine();
+    if (ImGui::BeginTable("Exposure", 2, ImGuiTableFlags_None, { 400.0f, 0.0f }))
+    {
+        ImGui::TableSetupColumn(nullptr, ImGuiTableColumnFlags_WidthFixed, 130);
+        ImGui::TableSetupColumn(nullptr, ImGuiTableColumnFlags_WidthStretch);
 
         ImGui::TableNextRow();
         ImGui::TableNextColumn();
@@ -675,14 +751,22 @@ void OfflineRenderContent::Render()
         ImGui::SetNextItemWidth(-1);
         ImGui::SliderFloat("##Exposure", &m_Exposure, -10.0f, 10.0f, "%.2f");
 
-        ImGui::TableNextRow();
-        ImGui::TableNextColumn();
-        ImGui::Text("Bloom");
-        ImGui::TableNextColumn();
-        ImGui::Checkbox("##Bloom", &m_Bloom);
+        ImGui::EndTable();
+    }
 
-        if (!m_Bloom)
-            ImGui::BeginDisabled();
+    ImGui::Dummy({ 30, 0 });
+    ImGui::SameLine();
+    ImGui::Checkbox("##Bloom", &m_Bloom);
+    ImGui::SameLine();
+    ImGui::SeparatorText("Bloom");
+    if (!m_Bloom)
+        ImGui::BeginDisabled();
+    ImGui::Dummy({ 45, 0 });
+    ImGui::SameLine();
+    if (ImGui::BeginTable("Bloom", 2, ImGuiTableFlags_None, { 400.0f, 0.0f }))
+    {
+        ImGui::TableSetupColumn(nullptr, ImGuiTableColumnFlags_WidthFixed, 130);
+        ImGui::TableSetupColumn(nullptr, ImGuiTableColumnFlags_WidthStretch);
 
         ImGui::TableNextRow();
         ImGui::TableNextColumn();
@@ -698,11 +782,11 @@ void OfflineRenderContent::Render()
         ImGui::SetNextItemWidth(-1);
         ImGui::SliderFloat("##BloomIntensity", &m_BloomIntensity, 0.0f, 1.0f, "%.2f");
 
-        if (!m_Bloom)
-            ImGui::EndDisabled();
-
         ImGui::EndTable();
     }
+
+    if (!m_Bloom)
+        ImGui::EndDisabled();
 
     ImGui::Dummy({ 0, 5 });
     const float margin = 20;
@@ -710,6 +794,7 @@ void OfflineRenderContent::Render()
     AlignItemBottom(size.y, buttonSize.y, margin);
     if (ImGui::Button("Cancel", buttonSize))
         s_ShowingOfflineRender = false;
+    ImGui::SameLine();
     AlignItemRight(size.x, buttonSize.x, margin);
     AlignItemBottom(size.y, buttonSize.y, margin);
 
@@ -885,63 +970,121 @@ void SettingsContent::Render()
         ImGui::BeginDisabled();
 
     ImGui::Dummy({ 0, 5 });
-    if (ImGui::TreeNodeEx("Path-tracing", ImGuiTreeNodeFlags_DefaultOpen))
+
+    ImGui::Dummy({ 5, 0 });
+    ImGui::SameLine();
+    ImGui::SeparatorText("Path-tracing");
+    ImGui::Dummy({ 25, 0 });
+    ImGui::SameLine();
+    if (ImGui::BeginTable("Path-tracing", 2, ImGuiTableFlags_None , { 480.0f, 0.0f }))
     {
-        ImGui::Text("Bounces: ");
-        ImGui::SameLine();
+        ImGui::TableSetupColumn(nullptr, ImGuiTableColumnFlags_WidthFixed, 110);
+        ImGui::TableSetupColumn(nullptr, ImGuiTableColumnFlags_WidthStretch);
+
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("Bounces");
+        ImGui::TableNextColumn();
         pathTracingSettingsChanged |= ImGui::SliderInt("##Bounces", &m_BounceCount, 1, 16, "%d");
+        ImGui::EndTable();
+    }
 
-        pathTracingSettingsChanged |= ImGui::Checkbox("Depth of field simulation", &m_DepthOfField);
+    ImGui::Dummy({ 0, 5 });
+    ImGui::Dummy({ 25, 0 });
+    ImGui::SameLine();
+    pathTracingSettingsChanged |= ImGui::Checkbox("##Depth of field", &m_DepthOfField);
+    ImGui::SameLine();
+    ImGui::SeparatorText("Depth of field");
+    ImGui::SameLine();
+    ImGui::Dummy({ 30, 0 });
+    if (!m_DepthOfField)
+        ImGui::BeginDisabled();
+    ImGui::Dummy({ 25, 0 });
+    ImGui::SameLine();
+    if (ImGui::BeginTable("Depth of field", 2, ImGuiTableFlags_None, { 480.0f, 0.0f }))
+    {
+        ImGui::TableSetupColumn(nullptr, ImGuiTableColumnFlags_WidthFixed, 110);
+        ImGui::TableSetupColumn(nullptr, ImGuiTableColumnFlags_WidthStretch);
 
-        if (!m_DepthOfField)
-            ImGui::BeginDisabled();
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("Lens Radius");
+        ImGui::TableNextColumn();
+        pathTracingSettingsChanged |= ImGui::SliderFloat(
+            "##LensRadius", &m_LensRadius, 0.01f, 1.0f, "%.3f", ImGuiSliderFlags_Logarithmic
+        );
 
-        ImGui::Text("Lens Radius: ");
-        ImGui::SameLine();
-        pathTracingSettingsChanged |=
-            ImGui::SliderFloat("##LensRadius", &m_LensRadius, 0.01f, 1.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
-
-        ImGui::Text("Focal Distance: ");
-        ImGui::SameLine();
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("Focal Distance");
+        ImGui::TableNextColumn();
         pathTracingSettingsChanged |= ImGui::SliderFloat(
             "##FocalDistance", &m_FocalDistance, 1.0f, 100.0f, "%.2f", ImGuiSliderFlags_Logarithmic
         );
 
-        if (!m_DepthOfField)
-            ImGui::EndDisabled();
-
-        ImGui::TreePop();
+        ImGui::EndTable();
     }
+    if (!m_DepthOfField)
+        ImGui::EndDisabled();
+
     if (s_DebuggingEnabled)
         ImGui::EndDisabled();
 
-    ImGui::Dummy({ 0, 5 });
-    if (ImGui::TreeNodeEx("Post-processing", ImGuiTreeNodeFlags_DefaultOpen))
+    ImGui::Dummy({ 0, 10 });
+    ImGui::Dummy({ 5, 0 });
+    ImGui::SameLine();
+    ImGui::SeparatorText("Post-processing");
+    ImGui::Dummy({ 25, 0 });
+    ImGui::SameLine();
+    if (ImGui::BeginTable("Post-processing", 2, ImGuiTableFlags_None, { 480.0f, 0.0f }))
     {
-        ImGui::Text("Exposure:");
-        ImGui::SameLine();
+        ImGui::TableSetupColumn(nullptr, ImGuiTableColumnFlags_WidthFixed, 110);
+        ImGui::TableSetupColumn(nullptr, ImGuiTableColumnFlags_WidthStretch);
+
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+
+        ImGui::Text("Exposure");
+        ImGui::TableNextColumn();
         postProcessSettingsChanged |= ImGui::SliderFloat("##Exposure", &m_Exposure, -10.0f, 10.0f, "%.2f");
 
-        postProcessSettingsChanged |= ImGui::Checkbox("Bloom", &m_Bloom);
+        ImGui::EndTable();
+    }
 
-        if (!m_Bloom)
-            ImGui::BeginDisabled();
+    ImGui::Dummy({ 0, 5 });
+    ImGui::Dummy({ 25, 0 });
+    ImGui::SameLine();
+    postProcessSettingsChanged |= ImGui::Checkbox("##Bloom", &m_Bloom);
+    ImGui::SameLine();
+    ImGui::SeparatorText("Bloom");
+    if (!m_Bloom)
+        ImGui::BeginDisabled();
+    ImGui::Dummy({ 25, 0 });
+    ImGui::SameLine();
+    if (ImGui::BeginTable("Bloom", 2, ImGuiTableFlags_None, { 480.0f, 0.0f }))
+    {
+        ImGui::TableSetupColumn(nullptr, ImGuiTableColumnFlags_WidthFixed, 110);
+        ImGui::TableSetupColumn(nullptr, ImGuiTableColumnFlags_WidthStretch);
 
-        ImGui::Text("Bloom Threshold:");
-        ImGui::SameLine();
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("Bloom Threshold");
+        ImGui::TableNextColumn();
         postProcessSettingsChanged |=
             ImGui::SliderFloat("##BloomThreshold", &m_BloomThreshold, 1.0f, 5.0f, "%.2f");
 
-        ImGui::Text("Bloom Intensity:");
-        ImGui::SameLine();
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("Bloom Intensity");
+        ImGui::TableNextColumn();
         postProcessSettingsChanged |=
             ImGui::SliderFloat("##BloomIntensity", &m_BloomIntensity, 0.0f, 1.0f, "%.2f");
 
-        if (!m_Bloom)
-            ImGui::EndDisabled();
-
-        ImGui::TreePop();
+        ImGui::EndTable();
     }
+
+    if (!m_Bloom)
+        ImGui::EndDisabled();
 
     if (pathTracingSettingsChanged)
         Renderer::SetSettings(Renderer::PathTracingSettings(
@@ -973,26 +1116,26 @@ void SettingsTab::RenderContent()
     ImGui::Dummy({ 5.0f, 0.0f });
     ImGui::SameLine();
 
-    if (ImGui::TreeNodeEx("Cameras", ImGuiTreeNodeFlags_DefaultOpen))
+    if (ImGui::CollapsingHeader("Cameras", ImGuiTreeNodeFlags_DefaultOpen))
     {
         m_CameraList.SetLeftMargin(10.0f);
         m_CameraList.Render();
-        ImGui::TreePop();
     }
 
     ImGui::Dummy({ 0.0f, 5.0f });
     ImGui::Dummy({ 5.0f, 0.0f });
     ImGui::SameLine();
 
-    if (ImGui::TreeNodeEx("Rendering", ImGuiTreeNodeFlags_DefaultOpen))
+    if (ImGui::CollapsingHeader("Rendering", ImGuiTreeNodeFlags_DefaultOpen))
     {
         m_Settings.SetLeftMargin(10.0f);
         m_Settings.Render();
-        ImGui::TreePop();
     }
 
     ImVec2 size = ImGui::GetWindowSize();
     ImVec2 buttonSize(100, 25);
+
+    ImGui::Dummy({ 0, 10 });
 
     AlignItemLeft(15);
     AlignItemBottom(size.y, buttonSize.y, 15);
@@ -1002,6 +1145,7 @@ void SettingsTab::RenderContent()
         if (ImGui::Button("Cancel Render", buttonSize))
             Renderer::CancelRendering();
         ImGui::BeginDisabled();
+        ImGui::SameLine();
     }
 
     AlignItemRight(size.x, buttonSize.x, 15);
@@ -1114,9 +1258,54 @@ private:
 void DisplayTab::RenderContent()
 {
     ImGui::Dummy({ 0.0f, 10.0f });
-    m_PresentModeOptions.Render();
-    ImGui::Dummy({ 0.0f, 5.0f });
-    m_WindowModeOptions.Render();
+
+    ImGui::Dummy({ 10.0f, 0.0f });
+    ImGui::SameLine();
+    if (ImGui::BeginTable("Display", 2, ImGuiTableFlags_None, { 490.0f, 0.0f }))
+    {
+        ImGui::TableSetupColumn(nullptr, ImGuiTableColumnFlags_WidthFixed);
+        ImGui::TableSetupColumn(nullptr, ImGuiTableColumnFlags_WidthStretch);
+
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("Present Modes");
+        ImGui::TableNextColumn();
+        ImGui::Dummy({ 5.0f, 0.0f });
+        ImGui::SameLine();
+        m_PresentModeOptions.Render();
+
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("Window Modes");
+        ImGui::TableNextColumn();
+        ImGui::Dummy({ 5.0f, 0.0f });
+        ImGui::SameLine();
+        m_WindowModeOptions.Render();
+
+        if (!s_IsHdrSupported)
+        {
+            ImGui::BeginDisabled();
+            s_AllowHdr = false;
+        }
+
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("HDR");
+        ImGui::TableNextColumn();
+        ImGui::Dummy({ 5.0f, 0.0f });
+        ImGui::SameLine();
+        ImGui::Checkbox("##HDR", &s_AllowHdr);
+
+        if (!s_IsHdrSupported)
+        {
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                ImGui::SetTooltip("HDR is not supported");
+            ImGui::EndDisabled();
+        }
+
+        ImGui::EndTable();
+    }
+
     if (m_Mode != WindowMode::Windowed)
     {
         ImGui::Dummy({ 0.0f, 5.0f });
@@ -1131,142 +1320,28 @@ void DisplayTab::RenderContent()
         Window::SetMode(m_Mode);
         m_Resolution = Window::GetSize();
     }
+}
 
-    if (!s_IsHdrSupported)
+void StatisticsTabFunc()
+{
+    if (ImGui::BeginTabItem("Statistics"))
     {
-        ImGui::BeginDisabled();
-        s_AllowHdr = false;
-    }
-    ImGui::Dummy({ 0.0f, 5.0f });
-    ImGui::Dummy({ 5.0f, 0.0f });
-    ImGui::SameLine();
-    ImGui::Checkbox("HDR", &s_AllowHdr);
-    if (!s_IsHdrSupported)
-    {
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-            ImGui::SetTooltip("HDR is not supported");
-        ImGui::EndDisabled();
+        for (const auto &[key, value] : Stats::GetStats())
+            ImGui::Text("%s", value.c_str());
+
+        ImGui::EndTabItem();
     }
 }
 
-class DebugTab : public Tab
+void AboutTabFunc()
 {
-public:
-    DebugTab()
-        : Tab("Debug"), m_HitGroupOptions(g_HitGroupFlags, s_HitGroupFlags),
-          m_RaygenOptions(g_RaygenFlags, s_RaygenFlags), m_RenderOptions(g_RenderModes, s_RenderMode),
-          m_Flags("Render Flags", { m_HitGroupOptions, m_RaygenOptions }, 10.0f, 5.0f),
-          m_Modes("Render Modes", { m_RenderOptions }, 10.0f, 5.0f)
+    if (ImGui::BeginTabItem("About"))
     {
+        ImGui::Text("Path-Tracing");
+        ImGui::Text("Piotr Przybysz, Michal Popkowicz, 2026");
+
+        ImGui::EndTabItem();
     }
-    ~DebugTab() override = default;
-
-protected:
-    void RenderContent() override;
-
-private:
-    static constexpr std::array<CheckboxOption<Shaders::SpecializationConstant>, 2> g_RaygenFlags = { {
-        { Shaders::RaygenFlagsForceOpaque, "Force Opaque" },
-        { Shaders::RaygenFlagsCullBackFaces, "Cull Back Faces" },
-    } };
-
-    static constexpr std::array<CheckboxOption<Shaders::SpecializationConstant>, 6> g_HitGroupFlags = { {
-        { Shaders::HitGroupFlagsDisableColorTexture, "Disable Color Texture" },
-        { Shaders::HitGroupFlagsDisableNormalTexture, "Disable Normal Texture" },
-        { Shaders::HitGroupFlagsDisableRoughnessTexture, "Disable Roughness Texture" },
-        { Shaders::HitGroupFlagsDisableMetallicTexture, "Disable Metallic Texture" },
-        { Shaders::HitGroupFlagsDisableMipMaps, "Disable Mip Maps" },
-        { Shaders::HitGroupFlagsDisableShadows, "Disable Shadows" },
-    } };
-
-    static constexpr std::array<RadioOption<Shaders::SpecializationConstant>, 8> g_RenderModes = { {
-        { Shaders::RenderModeColor, "Color" },
-        { Shaders::RenderModeWorldPosition, "World Position" },
-        { Shaders::RenderModeNormal, "Normal" },
-        { Shaders::RenderModeTextureCoords, "Texture Coords" },
-        { Shaders::RenderModeMips, "Mips" },
-        { Shaders::RenderModeGeometry, "Geometry" },
-        { Shaders::RenderModePrimitive, "Primitive" },
-        { Shaders::RenderModeInstance, "Instance" },
-    } };
-
-    CheckboxOptions<Shaders::SpecializationConstant> m_HitGroupOptions;
-    CheckboxOptions<Shaders::SpecializationConstant> m_RaygenOptions;
-    RadioOptions<Shaders::SpecializationConstant> m_RenderOptions;
-
-    Widget<CheckboxOptions<Shaders::SpecializationConstant>, 2> m_Flags;
-    Widget<RadioOptions<Shaders::SpecializationConstant>, 1> m_Modes;
-
-    bool m_DebuggingEnabled = false;
-};
-
-void DebugTab::RenderContent()
-{
-    ImGui::Dummy({ 0.0f, 5.0f });
-    ImGui::Dummy({ 5.0f, 0.0f });
-    ImGui::SameLine();
-
-    bool hasChanged = ImGui::Checkbox("Enable debugging", &m_DebuggingEnabled);
-
-    if (!m_DebuggingEnabled)
-        ImGui::BeginDisabled();
-
-    m_Flags.Render();
-    ImGui::Dummy({ 0.0f, 5.0f });
-    m_Modes.Render();
-
-    if (!m_DebuggingEnabled)
-        ImGui::EndDisabled();
-
-    hasChanged |= std::ranges::any_of(m_Flags.GetContents(), [](const auto &option) { return option.HasChanged(); });
-    hasChanged |= std::ranges::any_of(m_Modes.GetContents(), [](const auto &option) { return option.HasChanged(); });
-
-    if (hasChanged)
-    {
-        if (m_DebuggingEnabled)
-            Renderer::SetDebugRaytracingPipeline(
-                DebugRaytracingPipelineConfig { s_RenderMode, s_RaygenFlags, 0, s_HitGroupFlags }
-            );
-        else
-            Renderer::SetPathTracingPipeline({});
-        s_DebuggingEnabled = m_DebuggingEnabled;
-    }
-}
-
-class StatisticsTab : public Tab
-{
-public:
-    StatisticsTab() : Tab("Statistics")
-    {
-    }
-    ~StatisticsTab() override = default;
-
-protected:
-    void RenderContent() override;
-};
-
-void StatisticsTab::RenderContent()
-{
-    for (const auto &[key, value] : Stats::GetStats())
-        ImGui::Text("%s", value.c_str());
-}
-
-class AboutTab : public Tab
-{
-public:
-    AboutTab() : Tab("About")
-    {
-    }
-    ~AboutTab() override = default;
-
-protected:
-    void RenderContent() override;
-};
-
-void AboutTab::RenderContent()
-{
-    ImGui::Text("Path-Tracing");
-    ImGui::Text("Piotr Przybysz, Michal Popkowicz, 2026");
 }
 
 struct UIComponents
@@ -1274,25 +1349,142 @@ struct UIComponents
     SettingsTab Settings;
     SceneTab Scene;
     DisplayTab Display;
-    DebugTab Debug;
-    StatisticsTab Statistics;
-    AboutTab About;
 
     FixedWindow<BackgroundTaskListContent, 1> BackgroundTasksWindow = FixedWindow(
         ImVec2(300, 150), "Background tasks",
-        Widget<BackgroundTaskListContent, 1>("Background Tasks", { BackgroundTaskListContent() }, 5.0f, 0.0f)
+        Widget<BackgroundTaskListContent, 1>("Background Tasks", { BackgroundTaskListContent() }, 3.0f, 0.0f),
+        true
     );
 
     FixedWindow<ImportSceneContent, 1> ImportSceneWindow = FixedWindow(
         ImVec2(500, 500), "Import Scene",
-        Widget<ImportSceneContent, 1>("Import Scene", { ImportSceneContent() }, 5.0f, 0.0f)
+        Widget<ImportSceneContent, 1>("", { ImportSceneContent() }, 0.0f, 0.0f)
     );
 
     FixedWindow<OfflineRenderContent, 1> OfflineRenderWindow = FixedWindow(
-        ImVec2(500, 500), "Offline Render",
-        Widget<OfflineRenderContent, 1>("Offline Rendering Settings", { OfflineRenderContent() }, 5.0f, 0.0f)
+        ImVec2(500, 590), "Offline Render Settings",
+        Widget<OfflineRenderContent, 1>("", { OfflineRenderContent() }, 0.0f, 0.0f)
     );
 };
+
+void LeftPadding()
+{
+    ImGui::Dummy({ 5.0f, 0.0f });
+    ImGui::SameLine();
+}
+
+bool Flags(
+    Shaders::SpecializationConstant &ret, std::span<const char *> names,
+    std::span<Shaders::SpecializationConstant> values
+)
+{
+    bool hasChanged = false;
+    for (int i = 0; i < names.size(); i++)
+    {
+        ImGui::PushID(i);
+        LeftPadding();
+        bool isEnabled = values[i] & ret;
+        if (ImGui::Checkbox(names[i], &isEnabled))
+        {
+            ret ^= values[i];
+            hasChanged = true;
+        }
+        ImGui::PopID();
+    }
+
+    return hasChanged;
+}
+
+bool Modes(
+    Shaders::SpecializationConstant &ret, std::span<const char *> names, const char *&current,
+    std::span<Shaders::SpecializationConstant> values
+)
+{
+    bool hasChanged = false;
+    for (int i = 0; i < names.size(); i++)
+    {
+        ImGui::PushID(i);
+        LeftPadding();
+        if (ImGui::RadioButton(names[i], current == names[i]))
+        {
+            current = names[i];
+            s_RenderMode = values[i];
+            hasChanged = true;
+        }
+        ImGui::PopID();
+    }
+
+    return hasChanged;
+}
+
+void DebugTabFunc()
+{
+    static std::array<const char *, 8> modes = { "Color", "World Position", "Normal",    "Texture Coords",
+                                                 "Mips",  "Geometry",       "Primitive", "Instance" };
+    static std::array<Shaders::SpecializationConstant, 8> modeValues = {
+        Shaders::RenderModeColor,         Shaders::RenderModeWorldPosition, Shaders::RenderModeNormal,
+        Shaders::RenderModeTextureCoords, Shaders::RenderModeMips,          Shaders::RenderModeGeometry,
+        Shaders::RenderModePrimitive,     Shaders::RenderModeInstance,
+    };
+    static std::array<const char *, 2> raygenFlags = { "Force Opaque", "Cull Back Faces" };
+    static std::array<Shaders::SpecializationConstant, 2> raygenFlagValues = {
+        Shaders::RaygenFlagsForceOpaque, Shaders::RaygenFlagsCullBackFaces
+    };
+    static std::array<const char *, 6> hitFlags = {
+        "Disable Color Texture",    "Disable Normal Texture", "Disable Roughness Texture",
+        "Disable Metallic Texture", "Disable Mip Maps",       "Disable Shadows",
+    };
+    static std::array<Shaders::SpecializationConstant, 6> hitFlagValues = {
+        Shaders::HitGroupFlagsDisableColorTexture,     Shaders::HitGroupFlagsDisableNormalTexture,
+        Shaders::HitGroupFlagsDisableRoughnessTexture, Shaders::HitGroupFlagsDisableMetallicTexture,
+        Shaders::HitGroupFlagsDisableMipMaps,          Shaders::HitGroupFlagsDisableShadows,
+    };
+
+
+    static bool debuggingEnabled = false;
+    static const char *currentMode = modes[0];
+
+    if (ImGui::BeginTabItem("Debug"))
+    {
+        if (Application::IsRendering())
+            ImGui::BeginDisabled();
+
+        ImGui::Dummy({ 0.0f, 5.0f });
+        LeftPadding();
+        bool hasChanged = ImGui::Checkbox("Enable debugging", &debuggingEnabled);
+
+        if (!debuggingEnabled)
+            ImGui::BeginDisabled();
+
+        ImGui::Dummy({ 0.0f, 5.0f });
+        ImGui::Text("%s", "Render Flags");
+        hasChanged |= Flags(s_HitGroupFlags, hitFlags, hitFlagValues);
+        hasChanged |= Flags(s_RaygenFlags, raygenFlags, raygenFlagValues);
+
+        ImGui::Dummy({ 0.0f, 5.0f });
+        ImGui::Text("%s", "Render Modes");
+        hasChanged |= Modes(s_RenderMode, modes, currentMode, modeValues);
+
+        if (!debuggingEnabled)
+            ImGui::EndDisabled();
+
+        if (hasChanged)
+        {
+            if (debuggingEnabled)
+                Renderer::SetDebugRaytracingPipeline(
+                    DebugRaytracingPipelineConfig { s_RenderMode, s_RaygenFlags, 0, s_HitGroupFlags }
+                );
+            else
+                Renderer::SetPathTracingPipeline({});
+            s_DebuggingEnabled = debuggingEnabled;
+        }
+
+        if (Application::IsRendering())
+            ImGui::EndDisabled();
+
+        ImGui::EndTabItem();
+    }
+}
 
 void UserInterface::DefineUI()
 {
@@ -1305,7 +1497,7 @@ void UserInterface::DefineUI()
     ImGui::SetNextWindowPos(ImVec2(15, 15), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(400, 600), ImGuiCond_FirstUseEver);
 
-    ImGui::Begin("Options");
+    ImGui::Begin("Options", nullptr, ImGuiWindowFlags_NoResize);
 
     s_IsFocused |= ImGui::IsWindowFocused();
 
@@ -1314,10 +1506,9 @@ void UserInterface::DefineUI()
         s_Components->Settings.Render(Application::IsRendering());
         s_Components->Scene.Render(Application::IsRendering());
         s_Components->Display.Render();
-        s_Components->Debug.Render(Application::IsRendering());
-        s_Components->Statistics.Render();
-        s_Components->About.Render();
-
+        DebugTabFunc();
+        StatisticsTabFunc();
+        AboutTabFunc();
         ImGui::EndTabBar();
     }
 
