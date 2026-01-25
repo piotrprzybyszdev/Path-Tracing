@@ -31,6 +31,7 @@ void main()
     float x = srcTexelSize.x;
     float y = srcTexelSize.y;
 
+    // https://learnopengl.com/Guest-Articles/2022/Phys.-Based-Bloom
     vec3 a = texture(u_BloomSampler[nonuniformEXT(srcLevel)], uv + vec2(-x,  y)).rgb;
     vec3 b = texture(u_BloomSampler[nonuniformEXT(srcLevel)], uv + vec2( 0,  y)).rgb;
     vec3 c = texture(u_BloomSampler[nonuniformEXT(srcLevel)], uv + vec2( x,  y)).rgb;

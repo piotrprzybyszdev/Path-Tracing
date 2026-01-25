@@ -129,6 +129,7 @@ Vertex getInterpolatedVertex(VertexBuffer vertices, IndexBuffer indices, uint in
     );
 }
 
+// https://www.researchgate.net/publication/353357919_The_Reference_Path_Tracer, 14.3.4
 uint jenkinsHash(uint x)
 {
     x += x << 10;
@@ -163,6 +164,7 @@ float rand(inout uint rngState)
     return uintToFloat(xorshift(rngState));
 }
 
+// https://pbr-book.org/4ed/Sampling_Algorithms/Sampling_Multidimensional_Functions
 vec2 sampleUniformDiskConcentric(vec2 u)
 {
     vec2 offset = 2.0f * u - 1.0f;

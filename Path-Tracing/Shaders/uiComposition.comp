@@ -11,6 +11,7 @@ layout(binding = 1, set = 0, rgba16f) uniform image2D u_ScreenImage;
 
 layout (local_size_x = PostProcessShaderGroupSizeX, local_size_y = PostProcessShaderGroupSizeY, local_size_z = 1) in;
 
+// https://panoskarabelas.com/blog/posts/hdr_in_under_10_minutes/
 vec3 linear_to_hdr10(vec3 color, float white_point)
 {
     const mat3 from709to2020 =
@@ -35,6 +36,7 @@ vec3 linear_to_hdr10(vec3 color, float white_point)
     return color;
 }
 
+// https://panoskarabelas.com/blog/posts/hdr_in_under_10_minutes/
 vec3 srgb_to_linear(vec3 color)
 {
     float gamma = 2.4f;

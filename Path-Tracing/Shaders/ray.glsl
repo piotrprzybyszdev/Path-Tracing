@@ -12,6 +12,7 @@ struct Ray
     float tmax;
 };
 
+// https://www.pbr-book.org/4ed/Cameras_and_Film/Projective_Camera_Models#TheThinLensModelandDepthofField
 Ray constructPrimaryRay(uvec2 pixel, uvec2 resolution, Camera camera, vec2 u, vec2 u2, float lensRadius, float focalDistance, out Ray rx, out Ray ry)
 {
     const vec2 pixelCenter = pixel + u;
@@ -88,6 +89,7 @@ Ray constructPrimaryRay(uvec2 pixel, uvec2 resolution, Camera camera, out Ray rx
     return constructPrimaryRay(pixel, resolution, camera, vec2(0.5f), rx, ry);
 }
 
+// https://doi.org/10.1007/978-1-4842-4427-2_6
 vec3 offsetRayOriginSelfIntersection(vec3 origin, vec3 normal)
 {
     ivec3 of_i = ivec3(int_scale * normal);
@@ -103,6 +105,7 @@ vec3 offsetRayOriginSelfIntersection(vec3 origin, vec3 normal)
     );
 }
 
+// https://doi.org/10.1007/978-1-4842-7185-8_4
 vec3 offsetRayOriginShadowTerminator(Vertex vertex, Vertex v0, Vertex v1, Vertex v2, vec3 barycentricCoords, bool isRefracted)
 {   
     vec3 tmpu = vertex.Position - v0.Position;

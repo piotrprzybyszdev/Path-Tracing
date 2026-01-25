@@ -26,6 +26,7 @@ void main()
     if (isinf(color.r) || isinf(color.g) || isinf(color.b))
         color = vec3(0.0f, 5000.0f, 0.0f);
 
+    // https://github.com/Unity-Technologies/PostProcessing/blob/v2/PostProcessing/Shaders/Colors.hlsl
     float knee = 0.5f;
     float threshold = mainUniform.BloomThreshold;
     float br = max(color.r, max(color.g, color.b));

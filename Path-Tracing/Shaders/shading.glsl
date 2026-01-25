@@ -52,6 +52,7 @@ float SchlickFresnel(float VdotH)
     return pow(clamp(1.0 - VdotH, 0.0, 1.0), 5);
 }
 
+// https://jcgt.org/published/0007/04/01/paper.pdf
 vec3 EvaluateReflection(vec3 V, vec3 L, vec3 F, float alpha, out float pdf)
 {
     if (L.z < 0.00001f)
@@ -62,22 +63,23 @@ vec3 EvaluateReflection(vec3 V, vec3 L, vec3 F, float alpha, out float pdf)
 
     const vec3 H = normalize(V + L);
 
-    const float LdotH = dot(L, H);
     const float VdotH = dot(V, H);
 
     const float D = GGXDistribution(H, alpha);
+    const float Gv = GGXSmith(V, alpha);
+    const float Gl = GGXSmith(L, alpha);
+    const float G = Gv * Gl;
 
-    const float GV = GGXSmith(V, alpha);
-    const float GL = GGXSmith(L, alpha);
-    const float G = GV * GL;
+    const float Dv = (Gv * max(VdotH, 0.0f) * D) / V.z;
 
-    pdf = (GV * max(VdotH, 0.0f) * D / V.z) / (4.0f * VdotH);
-    return G * D * F / (4.0f * V.z);
+    pdf = Dv / (4.0f * VdotH);
+    return (D * G * F) / (4.0f * V.z);
 }
 
+// https://www.cs.cornell.edu/~srm/publications/EGSR07-btdf.pdf
 vec3 EvaluateRefraction(vec3 V, vec3 L, vec3 F, float alpha, float eta, out float pdf)
 {
-    if (L.z >= 1e-5)
+    if (L.z > -0.00001f)
     {
         pdf = 0.0f;
         return vec3(0.0f);
@@ -92,26 +94,26 @@ vec3 EvaluateRefraction(vec3 V, vec3 L, vec3 F, float alpha, float eta, out floa
     const float LdotH = dot(L, H);
 
     const float D = GGXDistribution(H, alpha);
-    const float GV = GGXSmith(V, alpha);
-    const float GL = GGXSmith(L, alpha);
-    const float G = GV * GL;
+    const float Gv = GGXSmith(V, alpha);
+    const float Gl = GGXSmith(L, alpha);
+    const float G = Gv * Gl;
+
+    const float Dv = (Gv * abs(VdotH) * D) / V.z;
 
     const float denominator = LdotH + eta * VdotH;
-    const float denominator2 = denominator * denominator;
-    const float eta2 = eta * eta;
+    const float jacobian = (pow(eta, 2) * abs(LdotH)) / pow(denominator, 2);
 
-    const float jacobian = (eta2 * abs(LdotH)) / denominator2;
-
-    pdf = (GV * abs(VdotH) * D / V.z) * jacobian;
-    return (F * D * G * eta2 / denominator2) * (abs(VdotH) * abs(LdotH) / (abs(V.z)));
+    pdf = Dv * jacobian;
+    return (abs(VdotH) / abs(V.z)) * (D * G * F) * jacobian;
 }
 
+// https://jcgt.org/published/0007/04/01/paper.pdf
 vec3 SampleGGX(vec2 u, vec3 V, float alpha)
 {
     vec3 Vh = normalize(vec3(alpha * V.x, alpha * V.y, abs(V.z)));
 
     const float lensq = Vh.x * Vh.x + Vh.y * Vh.y;
-    const vec3 T1 = lensq > 0 ? vec3(-Vh.y, Vh.x, 0) * (1.0f / sqrt(lensq)) : vec3(1, 0, 0);
+    const vec3 T1 = lensq > 0 ? vec3(-Vh.y, Vh.x, 0) * inversesqrt(lensq) : vec3(1, 0, 0);
     const vec3 T2 = cross(Vh, T1);
 
     const float r = sqrt(u.x);

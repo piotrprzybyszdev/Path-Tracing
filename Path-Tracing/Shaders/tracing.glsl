@@ -1,3 +1,4 @@
+// https://www.pbr-book.org/4ed/Shapes/Triangle_Meshes#RayndashTriangleIntersection
 void computeDpnDuv(Vertex v0, Vertex v1, Vertex v2, Vertex vertex, out vec3 dpdu, out vec3 dpdv, out vec3 dndu, out vec3 dndv)
 {
     vec3 e1 = v1.Position - v0.Position;
@@ -26,6 +27,7 @@ void computeDpnDuv(Vertex v0, Vertex v1, Vertex v2, Vertex vertex, out vec3 dpdu
     }
 }
 
+// https://www.pbr-book.org/4ed/Textures_and_Materials/Texture_Sampling_and_Antialiasing#FindingtheTextureSamplingRate
 void computeDpDxy(vec3 p, vec3 origin, vec3 direction, vec3 rxOrigin, vec3 rxDirection, vec3 ryOrigin, vec3 ryDirection, vec3 n, out vec3 dpdx, out vec3 dpdy)
 {
     float d = -dot(n, p);
@@ -38,6 +40,7 @@ void computeDpDxy(vec3 p, vec3 origin, vec3 direction, vec3 rxOrigin, vec3 rxDir
     dpdy = py - p;
 }
 
+// https://www.pbr-book.org/4ed/Utilities/Mathematical_Infrastructure#DifferenceOfProducts
 float differenceOfProducts(float a, float b, float c, float d)
 {
     float cd = c * d;
@@ -46,6 +49,7 @@ float differenceOfProducts(float a, float b, float c, float d)
     return differenceOfProducts + error;
 }
 
+// https://www.pbr-book.org/4ed/Textures_and_Materials/Texture_Sampling_and_Antialiasing#FindingtheTextureSamplingRate
 vec4 computeDerivatives(vec3 dpdx, vec3 dpdy, vec3 dpdu, vec3 dpdv)
 {
     float ata00 = dot(dpdu, dpdu);
@@ -73,6 +77,7 @@ vec4 computeDerivatives(vec3 dpdx, vec3 dpdy, vec3 dpdu, vec3 dpdv)
     return vec4(dudx, dvdx, dudy, dvdy);
 }
 
+// https://www.pbr-book.org/4ed/Textures_and_Materials/Texture_Sampling_and_Antialiasing#RayDifferentialsforSpecularReflectionandTransmission
 void computeReflectedDifferentialRays(vec4 derivatives, vec3 n, vec3 p, vec3 viewDir, vec3 reflectedDir, vec3 dndu, vec3 dndv, inout vec3 rxOrigin, inout vec3 rxDirection, inout vec3 ryOrigin, inout vec3 ryDirection)
 {
     float dudx = derivatives.x;
@@ -102,6 +107,7 @@ void computeReflectedDifferentialRays(vec4 derivatives, vec3 n, vec3 p, vec3 vie
     ryDirection = normalize(reflectedDir - dwody + 2 * (dot(viewDir, n) * dndy + dwoDotn_dy * n));
 }
 
+// https://www.pbr-book.org/4ed/Textures_and_Materials/Texture_Sampling_and_Antialiasing#RayDifferentialsforSpecularReflectionandTransmission
 void computeRefractedDifferentialRays(vec4 derivatives, vec3 n, vec3 p, vec3 viewDir, vec3 refractedDir, vec3 dndu, vec3 dndv, float eta, inout vec3 rxOrigin, inout vec3 rxDirection, inout vec3 ryOrigin, inout vec3 ryDirection)
 {
     float dudx = derivatives.x;
@@ -141,6 +147,7 @@ void computeRefractedDifferentialRays(vec4 derivatives, vec3 n, vec3 p, vec3 vie
     ryDirection = normalize(refractedDir - eta * dwody + vec3(mu * dndy + dmudy * n));
 }
 
+// https://registry.khronos.org/OpenGL/specs/gl/glspec46.core.pdf, Chapter 8.14
 float computeLod(vec4 derivatives)
 {
     float dudx = derivatives.x;

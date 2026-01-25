@@ -29,7 +29,7 @@ void main()
     
     vec2 uv = (vec2(dstCoords) + 0.5f) / vec2(dstSize);
 
-    // 13-tap Downsample (Jimenez) using hardware bilinear filtering.
+    // https://learnopengl.com/Guest-Articles/2022/Phys.-Based-Bloom
     vec3 a = texture(u_BloomSampler[nonuniformEXT(srcLevel)], uv + vec2(-2.0 * srcTexelSize.x,  2.0 * srcTexelSize.y)).rgb;
     vec3 b = texture(u_BloomSampler[nonuniformEXT(srcLevel)], uv + vec2( 0.0 * srcTexelSize.x,  2.0 * srcTexelSize.y)).rgb;
     vec3 c = texture(u_BloomSampler[nonuniformEXT(srcLevel)], uv + vec2( 2.0 * srcTexelSize.x,  2.0 * srcTexelSize.y)).rgb;
