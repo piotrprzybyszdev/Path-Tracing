@@ -45,6 +45,17 @@ private:
     bool m_ForceFullTextureSize = false;
 };
 
+struct SceneDescription
+{
+    std::vector<std::filesystem::path> ComponentPaths;
+    std::optional<std::filesystem::path> SkyboxPath;
+    TextureMapping Mapping;
+    bool HasDxNormalTextures = false;
+    bool ForceFullTextureSize = false;
+
+    [[nodiscard]] std::unique_ptr<CombinedSceneLoader> ToLoader() const;
+};
+
 using SceneGroup = std::map<std::string, std::unique_ptr<SceneLoader>>;
 
 class SceneManager

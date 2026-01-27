@@ -345,8 +345,7 @@ public:
     void Render() override;
 
 private:
-    std::vector<std::filesystem::path> m_ComponentPaths;
-    std::optional<std::filesystem::path> m_SkyboxPath;
+    SceneDescription m_SceneDescription;
 
 private:
     bool RenderPathText(const std::filesystem::path &path, float width);
@@ -415,8 +414,143 @@ std::vector<std::filesystem::path> ImportSceneContent::OpenFileDialog(bool multi
     return {};
 }
 
+static const char *ToString(TextureType type)
+{
+    static const char *emissiveString = "Emissive";
+    static const char *colorString = "Color";
+    static const char *normalString = "Normal";
+    static const char *roughnessString = "Roughness";
+    static const char *metallicString = "Metallic";
+    static const char *specularString = "Specular";
+    static const char *glossinessString = "Glossiness";
+    static const char *shininessString = "Shininess";
+
+    switch (type)
+    {
+    case TextureType::Emisive:
+        return emissiveString;
+    case TextureType::Color:
+        return colorString;
+    case TextureType::Normal:
+        return normalString;
+    case TextureType::Roughness:
+        return roughnessString;
+    case TextureType::Metallic:
+        return metallicString;
+    case TextureType::Specular:
+        return specularString;
+    case TextureType::Glossiness:
+        return glossinessString;
+    case TextureType::Shininess:
+        return shininessString;
+    default:
+        throw error("Unsupported texture type");
+    }
+}
+
+static std::array<TextureType, 8> s_AllTextures = { TextureType::Emisive,    TextureType::Color,
+                                                    TextureType::Normal,     TextureType::Roughness,
+                                                    TextureType::Metallic,   TextureType::Specular,
+                                                    TextureType::Glossiness, TextureType::Shininess };
+
+static std::span<TextureType, 4> GetTextures(MaterialType type)
+{
+    static std::array<TextureType, 4> metallicRoughnessTextures = { TextureType::Color, TextureType::Normal,
+                                                                    TextureType::Roughness,
+                                                                    TextureType::Metallic };
+    static std::array<TextureType, 4> specularGlossinessTextures = { TextureType::Color, TextureType::Normal,
+                                                                     TextureType::Specular,
+                                                                     TextureType::Glossiness };
+    static std::array<TextureType, 4> phongTextures = { TextureType::Color, TextureType::Normal,
+                                                        TextureType::Specular, TextureType::Shininess };
+
+    switch (type)
+    {
+    case MaterialType::MetallicRoughness:
+        return metallicRoughnessTextures;
+    case MaterialType::SpecularGlossiness:
+        return specularGlossinessTextures;
+    case MaterialType::Phong:
+        return phongTextures;
+    default:
+        throw error("Unsupported material type");
+    }
+}
+
+TextureType &getMappedMR(MetallicRoughnessTextureMapping &mapping, TextureType type)
+{
+    switch (type)
+    {
+    case TextureType::Color:
+        return mapping.ColorTexture;
+    case TextureType::Normal:
+        return mapping.NormalTexture;
+    case TextureType::Roughness:
+        return mapping.RoughnessTexture;
+    case TextureType::Metallic:
+        return mapping.MetallicTexture;
+    default:
+        throw error("Unsupported texture type");
+    }
+};
+
+TextureType &getMappedSG(SpecularGlossinessTextureMapping &mapping, TextureType type)
+{
+    switch (type)
+    {
+    case TextureType::Color:
+        return mapping.ColorTexture;
+    case TextureType::Normal:
+        return mapping.NormalTexture;
+    case TextureType::Specular:
+        return mapping.SpecularTexture;
+    case TextureType::Glossiness:
+        return mapping.GlossinessTexture;
+    default:
+        throw error("Unsupported texture type");
+    }
+};
+
+TextureType &getMappedP(PhongTextureMapping &mapping, TextureType type)
+{
+    switch (type)
+    {
+    case TextureType::Color:
+        return mapping.ColorTexture;
+    case TextureType::Normal:
+        return mapping.NormalTexture;
+    case TextureType::Specular:
+        return mapping.SpecularTexture;
+    case TextureType::Shininess:
+        return mapping.ShininessTexture;
+    default:
+        throw error("Unsupported texture type");
+    }
+};
+
+const char *ToString(MaterialType type)
+{
+    static const char *metallicRoughnessString = "Metallic/Roughness";
+    static const char *specularGlossinessString = "SpecularGlossiness";
+    static const char *phongString = "Phong";
+
+    switch (type)
+    {
+    case MaterialType::MetallicRoughness:
+        return metallicRoughnessString;
+    case MaterialType::SpecularGlossiness:
+        return specularGlossinessString;
+    case MaterialType::Phong:
+        return phongString;
+    default:
+        throw error("Unsupported material type");
+    }
+}
+
 void ImportSceneContent::Render()
 {
+    static bool showAdvanced = false;
+
     ImVec2 size = ImGui::GetWindowSize();
     ImVec2 buttonSize(100, 20);
 
@@ -425,11 +559,11 @@ void ImportSceneContent::Render()
     ImGui::Text("Skybox");
     ImGui::Dummy({ 0, 3 });
 
-    if (m_SkyboxPath.has_value())
+    if (m_SceneDescription.SkyboxPath.has_value())
     {
         ApplyLeftMargin();
-        if (RenderPathText(m_SkyboxPath.value(), size.x))
-            m_SkyboxPath.reset();
+        if (RenderPathText(m_SceneDescription.SkyboxPath.value(), size.x))
+            m_SceneDescription.SkyboxPath.reset();
     }
     else
     {
@@ -440,7 +574,7 @@ void ImportSceneContent::Render()
             if (!result.empty())
             {
                 assert(result.size() == 1); 
-                m_SkyboxPath = result.front();
+                m_SceneDescription.SkyboxPath = result.front();
             }
         }
     }
@@ -452,32 +586,133 @@ void ImportSceneContent::Render()
 
     int deleteIndex = -1;
     AlignItemRight(size.x, size.x - 20, 10);
-    ImGui::PushStyleColor(ImGuiCol_FrameBg, ImGui::GetStyle().Colors[ImGuiCol_WindowBg]);
+    // ImGui::PushStyleColor(ImGuiCol_FrameBg, ImGui::GetStyle().Colors[ImGuiCol_WindowBg]);
     if (ImGui::BeginListBox("##Components", ImVec2(size.x - 20, 300)))
     {
-        for (int i = 0; i < m_ComponentPaths.size(); i++)
+        for (int i = 0; i < m_SceneDescription.ComponentPaths.size(); i++)
         {
             ImGui::PushID(i);
             ImGui::Dummy({ 0, 2 });
             ApplyLeftMargin();
-            if (RenderPathText(m_ComponentPaths[i], size.x - 10))
+            if (RenderPathText(m_SceneDescription.ComponentPaths[i], size.x - 10))
                 deleteIndex = i;
             ImGui::PopID();
         }
 
         if (deleteIndex != -1)
-            m_ComponentPaths.erase(m_ComponentPaths.begin() + deleteIndex);
+            m_SceneDescription.ComponentPaths.erase(m_SceneDescription.ComponentPaths.begin() + deleteIndex);
 
         ImGui::Dummy({ 0, 10 });
         CenterItemHorizontally(size.x, buttonSize.x, -10.0f);
         if (ImGui::Button("Add Component", buttonSize))
         {
             auto result = OpenFileDialog(true);
-            m_ComponentPaths.insert(m_ComponentPaths.begin(), result.begin(), result.end());
+            m_SceneDescription.ComponentPaths.insert(
+                m_SceneDescription.ComponentPaths.begin(), result.begin(), result.end()
+            );
         }
         ImGui::EndListBox();
     }
-    ImGui::PopStyleColor();
+    // ImGui::PopStyleColor();
+
+    auto textureTypeCombo = [](TextureType left, TextureType &current) {
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("%s", ToString(left));
+        ImGui::TableNextColumn();
+        ImGui::SetNextItemWidth(-1);
+        if (ImGui::BeginCombo("##textype", ToString(current)))
+        {
+            for (int i = 0; i < s_AllTextures.size(); i++)
+            {
+                ImGui::PushID(i);
+                if (ImGui::Selectable(
+                        ToString(s_AllTextures[i]), ToString(current) == ToString(s_AllTextures[i])
+                    ))
+                    current = s_AllTextures[i];
+                ImGui::PopID();
+            }
+            ImGui::EndCombo();
+        }
+    };
+
+    static MetallicRoughnessTextureMapping mrMapping = {
+        .ColorTexture = TextureType::Color,
+        .NormalTexture = TextureType::Normal,
+        .RoughnessTexture = TextureType::Roughness,
+        .MetallicTexture = TextureType::Metallic,
+    };
+
+    static SpecularGlossinessTextureMapping sgMapping = {
+        .ColorTexture = TextureType::Color,
+        .NormalTexture = TextureType::Normal,
+        .SpecularTexture = TextureType::Specular,
+        .GlossinessTexture = TextureType::Glossiness,
+    };
+
+    static PhongTextureMapping pMapping = {
+        .ColorTexture = TextureType::Color,
+        .NormalTexture = TextureType::Normal,
+        .SpecularTexture = TextureType::Specular,
+        .ShininessTexture = TextureType::Shininess,
+    };
+
+    static MaterialType currentMaterial = MaterialType::MetallicRoughness;
+
+    static std::array<MaterialType, 3> materials = { MaterialType::MetallicRoughness,
+                                                     MaterialType::SpecularGlossiness, MaterialType::Phong };
+    ImGui::Separator();
+    if (showAdvanced)
+    {
+        ImGui::Dummy({ 0, 5 });
+        CenterItemHorizontally(ImGui::GetWindowWidth(), 300);
+        ImGui::SetNextItemWidth(300);
+        if (ImGui::BeginCombo("##mapping", ToString(currentMaterial)))
+        {
+            for (auto material : materials)
+                if (ImGui::Selectable(ToString(material), material == currentMaterial))
+                    currentMaterial = material;
+            ImGui::EndCombo();
+        }
+        
+        CenterItemHorizontally(ImGui::GetWindowWidth(), 300);
+        if (ImGui::BeginTable("mapping", 2, ImGuiTableFlags_None, ImVec2(300, 0)))
+        {
+            if (currentMaterial == MaterialType::MetallicRoughness)
+            {
+                auto textures = GetTextures(MaterialType::MetallicRoughness);
+                for (int i = 0; i < textures.size(); i++)
+                {
+                    ImGui::PushID(i);
+                    textureTypeCombo(textures[i], getMappedMR(mrMapping, textures[i]));
+                    ImGui::PopID();
+                }
+                ImGui::EndTable();
+            }
+            else if (currentMaterial == MaterialType::SpecularGlossiness)
+            {
+                auto textures = GetTextures(MaterialType::SpecularGlossiness);
+                for (int i = 0; i < textures.size(); i++)
+                {
+                    ImGui::PushID(i);
+                    textureTypeCombo(textures[i], getMappedSG(sgMapping, textures[i]));
+                    ImGui::PopID();
+                }
+                ImGui::EndTable();
+            }
+            else
+            {
+                auto textures = GetTextures(MaterialType::Phong);
+                for (int i = 0; i < textures.size(); i++)
+                {
+                    ImGui::PushID(i);
+                    textureTypeCombo(textures[i], getMappedP(pMapping, textures[i]));
+                    ImGui::PopID();
+                }
+                ImGui::EndTable();
+            }
+        }
+    }
 
     ImGui::Dummy({ 0, 5 });
     const float margin = 20;
@@ -486,17 +721,32 @@ void ImportSceneContent::Render()
     if (ImGui::Button("Cancel", buttonSize))
         s_ShowingImportScene = false;
     ImGui::SameLine();
+    CenterItemHorizontally(ImGui::GetWindowWidth(), buttonSize.x);
+    if (ImGui::Button(showAdvanced ? "Hide Advanced" : "Show Advanced", buttonSize))
+        showAdvanced = !showAdvanced;
+    ImGui::SameLine();
     AlignItemRight(size.x, buttonSize.x, margin);
     AlignItemBottom(size.y, buttonSize.y, margin);
     if (ImGui::Button("Import", buttonSize))
     {
-        if (!m_ComponentPaths.empty())
+        if (!m_SceneDescription.ComponentPaths.empty())
         {
-            auto loader = std::make_unique<CombinedSceneLoader>();
-            loader->AddComponents(m_ComponentPaths);
-            if (m_SkyboxPath.has_value())
-                loader->AddSkybox2D(m_SkyboxPath.value());
+            switch (currentMaterial)
+            {
+            case MaterialType::MetallicRoughness:
+                m_SceneDescription.Mapping = mrMapping;
+                break;
+            case MaterialType::SpecularGlossiness:
+                m_SceneDescription.Mapping = sgMapping;
+                break;
+            case MaterialType::Phong:
+                m_SceneDescription.Mapping = pMapping;
+                break;
+            }
+            if (!showAdvanced)
+                m_SceneDescription.Mapping = std::monostate {};
 
+            auto loader = m_SceneDescription.ToLoader();
             SceneManager::SetActiveScene(std::move(loader), "User Scene");
         }
         s_ShowingImportScene = false;

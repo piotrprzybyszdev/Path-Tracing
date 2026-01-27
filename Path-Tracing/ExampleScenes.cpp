@@ -68,47 +68,6 @@ static void AddKhronosScenes(std::map<std::string, SceneGroup> &scenes)
     }
 }
 
-struct SceneDescription
-{
-    std::vector<std::filesystem::path> ComponentPaths;
-    std::optional<std::filesystem::path> SkyboxPath;
-    TextureMapping Mapping;
-    bool HasDxNormalTextures = false;
-    bool ForceFullTextureSize = false;
-
-    [[nodiscard]] std::unique_ptr<CombinedSceneLoader> ToLoader() const;
-};
-
-std::unique_ptr<CombinedSceneLoader> SceneDescription::ToLoader() const
-{
-    auto loader = std::make_unique<CombinedSceneLoader>();
-    loader->AddTextureMapping(Mapping);
-
-    for (const auto &path : ComponentPaths)
-    {
-        if (std::filesystem::exists(path))
-            loader->AddComponent(path);
-        else
-            logger::warn("Scene component not found: {}", path.string());
-    }
-
-    if (SkyboxPath.has_value())
-    {
-        if (std::filesystem::exists(SkyboxPath.value()))
-            loader->AddSkybox2D(SkyboxPath.value());
-        else
-            logger::warn("Skybox file not found: {}", SkyboxPath.value().string());
-    }
-
-    if (HasDxNormalTextures)
-        loader->SetDxNormalTextures();
-
-    if (ForceFullTextureSize)
-        loader->ForceFullTextureSize();
-
-    return loader;
-}
-
 static void AddSceneByDescription(
     SceneGroup &sceneGroup, const std::string &name, SceneDescription &&description
 )
