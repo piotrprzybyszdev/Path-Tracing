@@ -1704,13 +1704,10 @@ void DebugTabFunc()
     static std::array<Shaders::SpecializationConstant, 2> raygenFlagValues = {
         Shaders::RaygenFlagsForceOpaque, Shaders::RaygenFlagsCullBackFaces
     };
-    static std::array<const char *, 6> hitFlags = {
-        "Disable Color Texture",    "Disable Normal Texture", "Disable Roughness Texture",
-        "Disable Metallic Texture", "Disable Mip Maps",       "Disable Shadows",
-    };
-    static std::array<Shaders::SpecializationConstant, 6> hitFlagValues = {
+    static std::array<const char *, 4> hitFlags = { "Disable Color Texture", "Disable Normal Texture",
+                                                    "Disable Mip Maps", "Disable Shadows" };
+    static std::array<Shaders::SpecializationConstant, 4> hitFlagValues = {
         Shaders::HitGroupFlagsDisableColorTexture,     Shaders::HitGroupFlagsDisableNormalTexture,
-        Shaders::HitGroupFlagsDisableRoughnessTexture, Shaders::HitGroupFlagsDisableMetallicTexture,
         Shaders::HitGroupFlagsDisableMipMaps,          Shaders::HitGroupFlagsDisableShadows,
     };
 

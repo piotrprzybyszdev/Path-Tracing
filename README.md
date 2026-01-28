@@ -63,7 +63,7 @@ The default configuration is `Release`.
 | MAX_TEXTURE_LOADER_THREADS             | ❌        | ❌           | 2     | 2       |
 | MAX_BUFFERS_PER_LOADER_THREAD          | ❌        | ❌           | 1     | 1       |
 | MAX_SHADER_COMPILATION_THREADS         | ❌        | ❌           | 2     | 2       |
-| MAX_SHADER_COMPILATION_BATCH_SIZE      | 16        | 16            | 8     | 8       |
+| MAX_SHADER_COMPILATION_BATCH_SIZE      | 8         | 8             | 4     | 4       |
 | MAX_SAMPELS_PER_FRAME                  | ❌        | 1            | 1     | 1       |
 
 Other configuration options:
