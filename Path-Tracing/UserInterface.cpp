@@ -554,10 +554,10 @@ void ImportSceneContent::Render()
     ImVec2 size = ImGui::GetWindowSize();
     ImVec2 buttonSize(100, 20);
 
-    ImGui::Dummy({ 0, 5 });
+    ImGui::Dummy({ 0, 3 });
     ApplyLeftMargin();
     ImGui::Text("Skybox");
-    ImGui::Dummy({ 0, 3 });
+    ImGui::Dummy({ 0, 2 });
 
     if (m_SceneDescription.SkyboxPath.has_value())
     {
@@ -586,8 +586,7 @@ void ImportSceneContent::Render()
 
     int deleteIndex = -1;
     AlignItemRight(size.x, size.x - 20, 10);
-    // ImGui::PushStyleColor(ImGuiCol_FrameBg, ImGui::GetStyle().Colors[ImGuiCol_WindowBg]);
-    if (ImGui::BeginListBox("##Components", ImVec2(size.x - 20, 300)))
+    if (ImGui::BeginListBox("##Components", ImVec2(size.x - 20, 250)))
     {
         for (int i = 0; i < m_SceneDescription.ComponentPaths.size(); i++)
         {
@@ -613,7 +612,6 @@ void ImportSceneContent::Render()
         }
         ImGui::EndListBox();
     }
-    // ImGui::PopStyleColor();
 
     auto textureTypeCombo = [](TextureType left, TextureType &current) {
         ImGui::TableNextRow();
@@ -665,6 +663,22 @@ void ImportSceneContent::Render()
     if (showAdvanced)
     {
         ImGui::Dummy({ 0, 5 });
+        
+        ImGui::Dummy({ 50, 0 });
+        ImGui::SameLine();
+        ImGui::Checkbox("DX Normal Textures", &m_SceneDescription.HasDxNormalTextures);
+        ImGui::SetItemTooltip("By default the normal textures are considered to be in the GL convention");
+        ImGui::SameLine();
+        ImGui::Dummy({ 3, 0 });
+        ImGui::SameLine();
+        ImGui::Checkbox("Force Full Texture Size", &m_SceneDescription.ForceFullTextureSize);
+        ImGui::SetItemTooltip(
+            "By default the application will limit the texture size,\n"
+            "so that they fit into the texture budget set by the compilation macros,\n"
+            "on some scenes the approximation might limit the texture size more than necessary"
+        );
+
+        ImGui::Dummy({ 0, 3 });
         CenterItemHorizontally(ImGui::GetWindowWidth(), 300);
         ImGui::SetNextItemWidth(300);
         if (ImGui::BeginCombo("##mapping", ToString(currentMaterial)))
@@ -674,6 +688,10 @@ void ImportSceneContent::Render()
                     currentMaterial = material;
             ImGui::EndCombo();
         }
+        ImGui::SetItemTooltip(
+            "By default the application will try to infer the material format,\n"
+            "you can force a given format and specify how textures should be mapped"
+        );
         
         CenterItemHorizontally(ImGui::GetWindowWidth(), 300);
         if (ImGui::BeginTable("mapping", 2, ImGuiTableFlags_None, ImVec2(300, 0)))
@@ -1589,6 +1607,12 @@ void AboutTabFunc()
     {
         ImGui::Text("Path-Tracing");
         ImGui::Text("Piotr Przybysz, Michal Popkowicz, 2026");
+
+        ImGui::Dummy({ 0, 20 });
+        ImGui::Text("Keybindings");
+        ImGui::Text("[Space] - Open/Close User Interface");
+        ImGui::Text("  [H]   - Hot Reload Shaders");
+        ImGui::Text("  [P]   - Pause/Unpause Animations");
 
         ImGui::EndTabItem();
     }
