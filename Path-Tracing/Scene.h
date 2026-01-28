@@ -350,8 +350,8 @@ private:
 
 private:
     static inline const Shaders::DirectionalLight g_DefaultLight = {
-        .Color = glm::vec3(1.0f),
-        .Direction = glm::vec3(0.0f, -1.0f, 0.0f),
+        .Color = glm::vec3(10.0f),
+        .Direction = glm::vec3(-0.4f, -1.0f, -0.2f),
     };
 
 private:

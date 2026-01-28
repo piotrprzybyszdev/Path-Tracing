@@ -171,6 +171,26 @@ static void AddHighQualityScenes(std::map<std::string, SceneGroup> &scenes)
         .ForceFullTextureSize = true,
     };
 
+    SceneDescription nvidiaEmeraldSquareDayDescription = {
+        .ComponentPaths = {
+            base / "NVIDIAEmeraldSquare" / "EmeraldSquare_v4_1" / "EmeraldSquare_Day.fbx",
+        },
+        .SkyboxPath = base / "NVIDIAEmeraldSquare" / "EmeraldSquare_v4_1" / "symmetrical_garden_4k.hdr",
+        .Mapping = NVIDIAOrcaTextureMapping,
+        .HasDxNormalTextures = true,
+        .ForceFullTextureSize = true,
+    };
+
+    SceneDescription nvidiaEmeraldSquareNightDescription = {
+        .ComponentPaths = {
+            base / "NVIDIAEmeraldSquare" / "EmeraldSquare_v4_1" / "EmeraldSquare_Dusk.fbx",
+        },
+        .SkyboxPath = base / "NVIDIAEmeraldSquare" / "EmeraldSquare_v4_1" / "night_sky.hdr",
+        .Mapping = NVIDIAOrcaTextureMapping,
+        .HasDxNormalTextures = true,
+        .ForceFullTextureSize = true,
+    };
+
     AddSceneByDescription(group, "Intel Sponza", std::move(intelSponzaDescription));
     AddSceneByDescription(group, "UE4 Sun Temple", std::move(ue4SunTempleDescription));
     AddSceneByDescription(group, "Amazon Bistro Exterior", std::move(amazonBistroDescription));
@@ -178,6 +198,8 @@ static void AddHighQualityScenes(std::map<std::string, SceneGroup> &scenes)
     AddSceneByDescription(group, "Amazon Bistro Interior Wine", std::move(amazonBistroInteriorWineDescription));
     AddSceneByDescription(group, "Beeple Zero Day Mesure One", std::move(beepleZeroDayMeasureOneDescription));
     AddSceneByDescription(group, "Beeple Zero Day Mesure Seven", std::move(beepleZeroDayMeasureSevenDescription));
+    AddSceneByDescription(group, "NVIDIA Emerald Square Day", std::move(nvidiaEmeraldSquareDayDescription));
+    AddSceneByDescription(group, "NVIDIA Emerald Square Night", std::move(nvidiaEmeraldSquareNightDescription));
 }
 
 static void AddTestScenes(std::map<std::string, SceneGroup> &scenes)
@@ -482,6 +504,11 @@ void CreateDefaultScene(SceneBuilder &sceneBuilder)
         glm::transpose(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.099f, 0.0f)));
     const uint32_t lightNode = sceneBuilder.AddSceneNode({ boxNode, lightTransform, glm::mat4(1.0f) });
     sceneBuilder.AddModelInstance(light, lightNode);
+
+    sceneBuilder.SetDirectionalLight(
+        Shaders::DirectionalLight { .Color = glm::vec3(0.0f), .Direction = glm::vec3(0.0f, -1.0f, 0.0f) },
+        rootNode
+    );
 }
 
 void CreateMetallicRoughnessCubesScene(SceneBuilder &sceneBuilder)

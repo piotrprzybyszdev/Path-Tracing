@@ -68,14 +68,12 @@ MaterialSample sampleMaterial(MetallicRoughnessMaterial material, vec2 texCoords
 
     uint colorIdx = sampleValue(flags, HitGroupFlagsDisableColorTexture, material.ColorIdx, DefaultColorTextureIndex);
     uint normalIdx = sampleValue(flags, HitGroupFlagsDisableNormalTexture, material.NormalIdx, DefaultNormalTextureIndex);
-    uint roughnessIdx = sampleValue(flags, HitGroupFlagsDisableRoughnessTexture, material.RoughnessIdx, DefaultRoughnessTextureIndex);
-    uint metallicIdx = sampleValue(flags, HitGroupFlagsDisableMetallicTexture, material.MetallicIdx, DefaultMetallicTextureIndex);
 
     ret.EmissiveColor = (textureGrad(textures[material.EmissiveIdx], texCoords, dpdx, dpdy).rgb + material.EmissiveColor) * material.EmissiveIntensity;
     ret.Color = textureGrad(textures[colorIdx], texCoords, dpdx, dpdy).rgb * material.Color.rgb;
     ret.Normal = ReconstructNormalFromXY(textureGrad(textures[normalIdx], texCoords, dpdx, dpdy).rgb);
-    ret.Roughness = textureGrad(textures[roughnessIdx], texCoords, dpdx, dpdy).g * material.Roughness;
-    ret.Metalness = textureGrad(textures[metallicIdx], texCoords, dpdx, dpdy).b * material.Metalness;
+    ret.Roughness = textureGrad(textures[material.RoughnessIdx], texCoords, dpdx, dpdy).g * material.Roughness;
+    ret.Metalness = textureGrad(textures[material.MetallicIdx], texCoords, dpdx, dpdy).b * material.Metalness;
     ret.Transmission = material.Transmission;
     ret.AttenuationColor = material.AttenuationColor;
     ret.AttenuationDistance = material.AttenuationDistance;

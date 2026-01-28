@@ -81,7 +81,8 @@ void StagingBuffer::UploadToImage(
         while (uploaded < content.Size)
         {
             const vk::DeviceSize leftToUpload = content.Size - uploaded;
-            const vk::DeviceSize toUpload = std::min(leftToUpload, m_Buffer.GetSize());
+            const vk::DeviceSize maxToUpload = std::min(leftToUpload, m_Buffer.GetSize());
+            const vk::DeviceSize toUpload = (maxToUpload / rowSize) * rowSize;
 
             assert(toUpload % rowSize == 0);
             const uint32_t rowsToUpload = toUpload / rowSize;

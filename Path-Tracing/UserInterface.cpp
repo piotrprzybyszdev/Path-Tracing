@@ -674,8 +674,8 @@ void ImportSceneContent::Render()
         ImGui::Checkbox("Force Full Texture Size", &m_SceneDescription.ForceFullTextureSize);
         ImGui::SetItemTooltip(
             "By default the application will limit the texture size,\n"
-            "so that they fit into the texture budget set by the compilation macros,\n"
-            "on some scenes the approximation might limit the texture size more than necessary"
+            "so that they fit into the texture budget set by the compilation macros.\n"
+            "On some scenes the approximation might limit the texture size more than necessary"
         );
 
         ImGui::Dummy({ 0, 3 });
@@ -1610,7 +1610,7 @@ void AboutTabFunc()
 
         ImGui::Dummy({ 0, 20 });
         ImGui::Text("Keybindings");
-        ImGui::Text("[Space] - Open/Close User Interface");
+        ImGui::Text("[Space] - Show/Hide User Interface");
         ImGui::Text("  [H]   - Hot Reload Shaders");
         ImGui::Text("  [P]   - Pause/Unpause Animations");
 
@@ -1704,13 +1704,10 @@ void DebugTabFunc()
     static std::array<Shaders::SpecializationConstant, 2> raygenFlagValues = {
         Shaders::RaygenFlagsForceOpaque, Shaders::RaygenFlagsCullBackFaces
     };
-    static std::array<const char *, 6> hitFlags = {
-        "Disable Color Texture",    "Disable Normal Texture", "Disable Roughness Texture",
-        "Disable Metallic Texture", "Disable Mip Maps",       "Disable Shadows",
-    };
-    static std::array<Shaders::SpecializationConstant, 6> hitFlagValues = {
+    static std::array<const char *, 4> hitFlags = { "Disable Color Texture", "Disable Normal Texture",
+                                                    "Disable Mip Maps", "Disable Shadows" };
+    static std::array<Shaders::SpecializationConstant, 4> hitFlagValues = {
         Shaders::HitGroupFlagsDisableColorTexture,     Shaders::HitGroupFlagsDisableNormalTexture,
-        Shaders::HitGroupFlagsDisableRoughnessTexture, Shaders::HitGroupFlagsDisableMetallicTexture,
         Shaders::HitGroupFlagsDisableMipMaps,          Shaders::HitGroupFlagsDisableShadows,
     };
 
@@ -1769,7 +1766,7 @@ void UserInterface::DefineUI()
     );
 
     ImGui::SetNextWindowPos(ImVec2(15, 15), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(400, 600), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(430, 600), ImGuiCond_FirstUseEver);
 
     ImGui::Begin("Options", nullptr, ImGuiWindowFlags_NoResize);
 
@@ -1788,7 +1785,7 @@ void UserInterface::DefineUI()
 
     ImGui::End();
 
-    s_Components->BackgroundTasksWindow.RenderBottomRight(s_Io->DisplaySize, ImVec2(20, 20));
+    s_Components->BackgroundTasksWindow.RenderBottomRight(s_Io->DisplaySize, ImVec2(20, 20), true);
 
     if (s_ShowingImportScene)
         s_Components->ImportSceneWindow.RenderCenter(s_Io->DisplaySize);

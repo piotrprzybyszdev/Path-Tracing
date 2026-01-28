@@ -268,9 +268,9 @@ template<typename T, size_t N> class FixedWindow
 public:
     FixedWindow(ImVec2 size, std::string &&name, Widget<T, N> &&widget, bool absolute = false);
 
-    void Render(ImVec2 pos);
-    void RenderBottomRight(ImVec2 size, ImVec2 margin);
-    void RenderCenter(ImVec2 size);
+    void Render(ImVec2 pos, bool always = false);
+    void RenderBottomRight(ImVec2 size, ImVec2 margin, bool always = false);
+    void RenderCenter(ImVec2 size, bool always = false);
 
 private:
     bool m_Absolute = false;
@@ -285,9 +285,9 @@ FixedWindow<T, N>::FixedWindow(ImVec2 size, std::string &&name, Widget<T, N> &&w
 {
 }
 
-template<typename T, size_t N> void FixedWindow<T, N>::Render(ImVec2 pos)
+template<typename T, size_t N> void FixedWindow<T, N>::Render(ImVec2 pos, bool always)
 {
-    ImGui::SetNextWindowPos(pos, ImGuiCond_Appearing);
+    ImGui::SetNextWindowPos(pos, always ? ImGuiCond_Always : ImGuiCond_Appearing);
     ImGui::SetNextWindowSize(m_Size);
 
     ImGui::Begin(
@@ -301,14 +301,14 @@ template<typename T, size_t N> void FixedWindow<T, N>::Render(ImVec2 pos)
     ImGui::End();
 }
 
-template<typename T, size_t N> void FixedWindow<T, N>::RenderBottomRight(ImVec2 size, ImVec2 margin)
+template<typename T, size_t N> void FixedWindow<T, N>::RenderBottomRight(ImVec2 size, ImVec2 margin, bool always)
 {
-    Render(ImVec2(size.x - m_Size.x - margin.x, size.y - m_Size.y - margin.y));
+    Render(ImVec2(size.x - m_Size.x - margin.x, size.y - m_Size.y - margin.y), always);
 }
 
-template<typename T, size_t N> void FixedWindow<T, N>::RenderCenter(ImVec2 size)
+template<typename T, size_t N> void FixedWindow<T, N>::RenderCenter(ImVec2 size, bool always)
 {
-    Render(ImVec2((size.x - m_Size.x) / 2, (size.y - m_Size.y) / 2));
+    Render(ImVec2((size.x - m_Size.x) / 2, (size.y - m_Size.y) / 2), always);
 }
 
 inline void AlignItemLeft(float margin)

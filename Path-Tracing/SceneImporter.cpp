@@ -853,6 +853,9 @@ void LoadAnimations(
         {
             const aiNodeAnim *animNode = animation->mChannels[j];
             const aiNode *node = scene->mRootNode->FindNode(animNode->mNodeName);
+            if (node == nullptr)
+                continue;
+
             const uint32_t nodeIndex = sceneNodeIndices.at(node);
 
             AnimationNode outAnimNode(nodeIndex);
@@ -941,11 +944,14 @@ void LoadLights(
 
         switch (light->mType)
         {
+        case aiLightSourceType::aiLightSource_SPOT:
+            logger::warn("Treating spot light {} as a point light", light->mName.C_Str());  // TODO: Add spot lights
+            [[fallthrough]];
         case aiLightSourceType::aiLightSource_POINT:
             sceneBuilder.AddLight(
                 {
                     .Color = light->mColorDiffuse.IsBlack()
-                                 ? glm::vec3(1.0f)
+                                 ? glm::vec3(10.0f)
                                  : TrivialCopyUnsafe<aiColor3D, glm::vec3>(light->mColorDiffuse),
                     .Position = TrivialCopy<aiVector3D, glm::vec3>(light->mPosition),
                     .AttenuationConstant = light->mAttenuationConstant,
@@ -967,7 +973,7 @@ void LoadLights(
 
             sceneBuilder.SetDirectionalLight(
                 { .Color = light->mColorDiffuse.IsBlack()
-                               ? glm::vec3(1.0f)
+                               ? glm::vec3(10.0f)
                                : TrivialCopyUnsafe<aiColor3D, glm::vec3>(light->mColorDiffuse),
                   .Direction = TrivialCopy<aiVector3D, glm::vec3>(light->mDirection) },
                 nodeIndex
@@ -975,7 +981,8 @@ void LoadLights(
             hasDirectionalLight = true;
             break;
         default:
-            throw error(std::format("Unuspported light type: {}", static_cast<uint32_t>(light->mType)));
+            logger::warn(std::format("Unuspported light type: {}", static_cast<uint32_t>(light->mType)));
+            break;
         }
     }
 }

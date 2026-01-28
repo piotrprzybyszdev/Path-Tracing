@@ -52,7 +52,7 @@ hitAttributeEXT vec3 attribs;
 #include "tracing.glsl"
 #include "material.glsl"
 
-const float ambient = 0.05f;
+const float ambient = 0.1f;
 
 bool checkOccluded(vec3 lightDir, vec3 position, float dist)
 {  

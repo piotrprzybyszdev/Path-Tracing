@@ -44,6 +44,10 @@ Some scenes are composed of separate components. In that case, you can also inst
 * **BEEPLE_ZERO_DAY** (*0.6 GB zip*)
 ![alt text](gallery/beeple.png)
 
+### [NVIDIA Emerald Square](https://developer.nvidia.com/orca/nvidia-emerald-square)
+* **NVIDIA_EMERALD_SQUARE** (*0.6 GB zip*)
+![alt text](gallery/square.png)
+
 ## Configuration
 The project can be compiled in 4 different configurations, each of which enables different suboptions. Each suboption can also be enabled individually.
 
@@ -63,7 +67,7 @@ The default configuration is `Release`.
 | MAX_TEXTURE_LOADER_THREADS             | ❌        | ❌           | 2     | 2       |
 | MAX_BUFFERS_PER_LOADER_THREAD          | ❌        | ❌           | 1     | 1       |
 | MAX_SHADER_COMPILATION_THREADS         | ❌        | ❌           | 2     | 2       |
-| MAX_SHADER_COMPILATION_BATCH_SIZE      | 16        | 16            | 8     | 8       |
+| MAX_SHADER_COMPILATION_BATCH_SIZE      | 8         | 8             | 4     | 4       |
 | MAX_SAMPELS_PER_FRAME                  | ❌        | 1            | 1     | 1       |
 
 Other configuration options:

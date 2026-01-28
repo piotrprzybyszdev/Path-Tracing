@@ -33,12 +33,10 @@ const uint RaygenFlagsAll                           = 0x3u;
 const uint HitGroupFlagsNone                        = 0x00u;
 const uint HitGroupFlagsDisableColorTexture         = 0x01u;
 const uint HitGroupFlagsDisableNormalTexture        = 0x02u;
-const uint HitGroupFlagsDisableRoughnessTexture     = 0x04u;
-const uint HitGroupFlagsDisableMetallicTexture       = 0x08u;
-const uint HitGroupFlagsDisableMipMaps              = 0x10u;
-const uint HitGroupFlagsDisableShadows              = 0x20u;
-const uint HitGroupFlagsDxNormalTextures			= 0x40u;
-const uint HitGroupFlagsAll                         = 0x7fu;
+const uint HitGroupFlagsDisableMipMaps              = 0x04u;
+const uint HitGroupFlagsDisableShadows              = 0x08u;
+const uint HitGroupFlagsDxNormalTextures            = 0x10u;
+const uint HitGroupFlagsAll                         = 0x1fu;
 
 const uint MaxDebugRecursionDepth					= 2u;
 const uint MaxDebugPayloadSize						= 48u;

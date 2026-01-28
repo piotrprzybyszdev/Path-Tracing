@@ -11,6 +11,7 @@ set(INTEL_SPONZA_IVY_ASSET "INTEL_SPONZA_IVY;scenes/IntelSponzaIvy;https://cdrdv
 set(UE4_SUN_TEMPLE_ASSET "UE4_SUN_TEMPLE;scenes/UE4SunTemple;https://developer.nvidia.com/sun-temple")
 set(AMAZON_BISTRO_ASSET "AMAZON_BISTRO;scenes/AmazonBistro;https://developer.nvidia.com/bistro")
 set(BEEPLE_ZERO_DAY_ASSET "BEEPLE_ZERO_DAY;scenes/BeepleZeroDay;https://developer.nvidia.com/beeple")
+set(NVIDIA_EMERALD_SQUARE_ASSET "NVIDIA_EMERALD_SQUARE;scenes/NVIDIAEmeraldSquare;https://developer.nvidia.com/emerald-square")
 
 get_cmake_property(ALL_CMAKE_VARIABLES VARIABLES)
 foreach (CMAKE_VARIABLE IN LISTS ALL_CMAKE_VARIABLES)

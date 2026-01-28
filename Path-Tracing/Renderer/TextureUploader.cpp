@@ -204,7 +204,6 @@ Image TextureUploader::UploadSkyboxBlocking(const Skybox2D &skybox)
 {
     vk::Extent2D extent(skybox.Content.Width, skybox.Content.Height);
 
-    assert(std::has_single_bit(extent.width) && std::has_single_bit(extent.height));
     assert(skybox.Content.Type == TextureType::Skybox);
 
     vk::Format format = GetImageFormat(skybox.Content.Type, skybox.Content.Format);
@@ -240,7 +239,6 @@ Image TextureUploader::UploadSkyboxBlocking(const SkyboxCube &skybox)
     vk::Format format = GetImageFormat(textureInfos[0]->Type, textureInfos[0]->Format);
 
     vk::Extent2D extent(textureInfos[0]->Width, textureInfos[0]->Height);
-    assert(std::has_single_bit(extent.width) && std::has_single_bit(extent.height));
 
     auto image = ImageBuilder()
                      .SetFormat(format)
