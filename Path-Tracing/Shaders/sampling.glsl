@@ -22,16 +22,18 @@ struct LightSample
     float Attenuation;
 };
 
-LightSample sampleLight(float u, vec3 position, out float pdf)
+LightSample sampleLight(vec3 u, vec3 position, out float pdf)
 {
-    uint lightIndex = uint(u * (u_LightCount + 1));
+    uint lightIndex = uint(u.x * (u_LightCount + 1));
     pdf = 1.0f / (u_LightCount + 1);
     LightSample ret;
 
     if (lightIndex >= u_LightCount)
     {
-        ret.Direction = normalize(u_DirectionalLight.Direction);
-        // TODO: Proper sampling
+        vec3 diskPoint = vec3(sampleUniformDiskConcentric(u.yz), 0.0f) * 0.001f;
+        vec3 direction = normalize(u_DirectionalLight.Direction);
+        ret.Direction = normalize(direction + computeTangentSpace(direction) * diskPoint);
+
         ret.Color = u_DirectionalLight.Color;
         ret.Distance = DirectionalLightDistance;
         ret.Attenuation = 1.0f;
@@ -40,8 +42,12 @@ LightSample sampleLight(float u, vec3 position, out float pdf)
 
     const PointLight light = u_Lights[lightIndex];
 
-    ret.Distance = distance(position, light.Position);
-    ret.Direction = normalize(position - light.Position);
+    vec3 diskPoint = vec3(sampleUniformDiskConcentric(u.yz), 0.0f) * 0.1f;
+    vec3 direction = normalize(position - light.Position);
+    vec3 newPosition = light.Position + computeTangentSpace(direction) * diskPoint;
+
+    ret.Distance = distance(position, newPosition);
+    ret.Direction = normalize(position - newPosition);
     ret.Color = light.Color;
     const float attenuation = 1.0f / (light.AttenuationConstant + ret.Distance * light.AttenuationLinear + ret.Distance * ret.Distance * light.AttenuationQuadratic);
     ret.Attenuation = clamp(attenuation, 0.0f, 1.0f);

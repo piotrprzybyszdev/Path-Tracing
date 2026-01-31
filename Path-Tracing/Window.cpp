@@ -114,6 +114,11 @@ void Window::SetMode(WindowMode mode)
     s_Mode = mode;
 }
 
+WindowMode Window::GetMode()
+{
+    return s_Mode;
+}
+
 void Window::SetResolution(vk::Extent2D extent)
 {
     glfwSetWindowSize(s_Handle, extent.width, extent.height);

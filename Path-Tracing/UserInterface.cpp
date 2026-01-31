@@ -1526,6 +1526,7 @@ private:
 void DisplayTab::RenderContent()
 {
     ImGui::Dummy({ 0.0f, 10.0f });
+    m_Mode = Window::GetMode();
 
     ImGui::Dummy({ 10.0f, 0.0f });
     ImGui::SameLine();
@@ -1550,6 +1551,20 @@ void DisplayTab::RenderContent()
         ImGui::SameLine();
         m_WindowModeOptions.Render();
 
+        if (m_Mode != WindowMode::Windowed)
+        {
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::Text("Window Modes");
+            ImGui::TableNextColumn();
+            ImGui::Dummy({ 5.0f, 0.0f });
+            ImGui::SameLine();
+            m_ResolutionOptions.Render();
+
+            if (m_ResolutionOptions.HasChanged())
+                Window::SetResolution(m_Resolution);
+        }
+
         if (!s_IsHdrSupported)
         {
             ImGui::BeginDisabled();
@@ -1572,15 +1587,6 @@ void DisplayTab::RenderContent()
         }
 
         ImGui::EndTable();
-    }
-
-    if (m_Mode != WindowMode::Windowed)
-    {
-        ImGui::Dummy({ 0.0f, 5.0f });
-        m_ResolutionOptions.Render();
-
-        if (m_ResolutionOptions.HasChanged())
-            Window::SetResolution(m_Resolution);
     }
 
     if (m_WindowModeOptions.HasChanged())

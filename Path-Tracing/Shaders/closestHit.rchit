@@ -132,7 +132,7 @@ void main()
     const vec3 rayOrigin = offsetRayOriginShadowTerminator(vertex, v0, v1, v2, barycentricCoords, isRefracted);
 
     float lightPdf, lightSmplPdf;  // unused
-    LightSample light = sampleLight(rand(rngState), rayOrigin, lightPdf);
+    LightSample light = sampleLight(vec3(rand(rngState), rand(rngState), rand(rngState)), rayOrigin, lightPdf);
     const vec3 L = normalize(inverse(TBN) * -light.Direction);
     const vec3 lightBsdf = evaluateBSDF(material, V, L, lightSmplPdf);
 

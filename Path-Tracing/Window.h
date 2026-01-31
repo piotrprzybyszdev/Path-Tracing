@@ -35,6 +35,7 @@ public:
     static bool ShouldClose();
 
     static void SetMode(WindowMode mode);
+    [[nodiscard]] static WindowMode GetMode();
 
     static void SetResolution(vk::Extent2D extent);
 
