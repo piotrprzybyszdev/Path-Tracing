@@ -191,6 +191,34 @@ static void AddHighQualityScenes(std::map<std::string, SceneGroup> &scenes)
         .ForceFullTextureSize = true,
     };
 
+    SceneDescription emirageBarcelonaPavilionDay = {
+        .ComponentPaths = { base / "EMirageBarcelonaPavilion" / "barcelona_pavilion_day.gltf", },
+        .SkyboxPath = base / "EMirageBarcelonaPavilion" / "day.gltf",
+        .ForceFullTextureSize = true,
+    };
+
+    SceneDescription emirageBarcelonaPavilionSunset = {
+        .ComponentPaths = { base / "EMirageBarcelonaPavilion" / "barcelona_pavilion_sunset.gltf", },
+        .SkyboxPath = base / "EMirageBarcelonaPavilion" / "sunset.gltf",
+        .ForceFullTextureSize = true,
+    };
+
+    SceneDescription emirageBarcelonaPavilionNight = {
+        .ComponentPaths = { base / "EMirageBarcelonaPavilion" / "barcelona_pavilion_night.gltf", },
+        .SkyboxPath = base / "EMirageBarcelonaPavilion" / "night.gltf",
+        .ForceFullTextureSize = true,
+    };
+
+    SceneDescription beepleTransparentMachines = {
+        .ComponentPaths = { base / "BeepleTransparentMachines" / "no_anim.gltf", },
+        .ForceFullTextureSize = true,
+    };
+
+    SceneDescription beepleTransparentMachinesAnimated = {
+        .ComponentPaths = { base / "BeepleTransparentMachines" / "anim.gltf", },
+        .ForceFullTextureSize = true,
+    };
+
     AddSceneByDescription(group, "Intel Sponza", std::move(intelSponzaDescription));
     AddSceneByDescription(group, "UE4 Sun Temple", std::move(ue4SunTempleDescription));
     AddSceneByDescription(group, "Amazon Bistro Exterior", std::move(amazonBistroDescription));
@@ -200,6 +228,11 @@ static void AddHighQualityScenes(std::map<std::string, SceneGroup> &scenes)
     AddSceneByDescription(group, "Beeple Zero Day Mesure Seven", std::move(beepleZeroDayMeasureSevenDescription));
     AddSceneByDescription(group, "NVIDIA Emerald Square Day", std::move(nvidiaEmeraldSquareDayDescription));
     AddSceneByDescription(group, "NVIDIA Emerald Square Night", std::move(nvidiaEmeraldSquareNightDescription));
+    AddSceneByDescription(group, "eMirage Barcelona Pavilion Day", std::move(emirageBarcelonaPavilionDay));
+    AddSceneByDescription(group, "eMirage Barcelona Pavilion Sunset", std::move(emirageBarcelonaPavilionSunset));
+    AddSceneByDescription(group, "eMirage Barcelona Pavilion Night", std::move(emirageBarcelonaPavilionNight));
+    AddSceneByDescription(group, "Beeple Transparent Machines", std::move(beepleTransparentMachines));
+    AddSceneByDescription(group, "Beeple Transparent Machines Animated", std::move(beepleTransparentMachinesAnimated));
 }
 
 static void AddTestScenes(std::map<std::string, SceneGroup> &scenes)

@@ -1,5 +1,6 @@
 # Path Tracing
-Path Tracer written in Vulkan for an engineering thesis.
+### Path Tracer written in Vulkan for an engineering thesis.
+![](gallery/pavilion/sunset.png)
 
 ## Requirements
 * [Vulkan SDK 1.3 or higher](https://vulkan.lunarg.com/)
@@ -30,23 +31,38 @@ Some scenes are composed of separate components. In that case, you can also inst
 * Intel Sponza Main Component - **INTEL_SPONZA_MAIN** (*3.9 GB zip*)
 * Intel Sponza Curtains Component - **INTEL_SPONZA_CURTAINS** (*0.8 GB zip*)
 * Intel Sponza Ivy Component - **INTEL_SPONZA_IVY** (*1.3 GB zip*)
-![alt text](gallery/sponza.png)
+![](gallery/sponza/cam1.png)
 
 ### [UE4 Sun Temple](https://developer.nvidia.com/ue4-sun-temple)
 * **UE4_SUN_TEMPLE** (*0.3 GB zip*)
-![alt text](gallery/temple.png)
+![](gallery/temple/room2.png)
 
 ### [Amazon Bistro](https://developer.nvidia.com/orca/amazon-lumberyard-bistro)
 * **AMAZON_BISTRO** (*0.9 GB zip*)
-![alt text](gallery/bistro.png)
+![](gallery/bistro/night.png)
 
 ### [Beeple Zero Day](https://developer.nvidia.com/orca/beeple-zero-day)
 * **BEEPLE_ZERO_DAY** (*0.6 GB zip*)
-![alt text](gallery/beeple.png)
+![](gallery/zeroday/measureone.png)
 
 ### [NVIDIA Emerald Square](https://developer.nvidia.com/orca/nvidia-emerald-square)
 * **NVIDIA_EMERALD_SQUARE** (*0.6 GB zip*)
-![alt text](gallery/square.png)
+![](gallery/square/square.png)
+
+### [Beeple Transparent Machines](https://www.beeple-crap.com/resources) [(modified)](https://spages.mini.pw.edu.pl/~przybyszp/scenes/)
+* **BEEPLE_TRANSPARENT_MACHINES** (*140 MB zip*)
+![](gallery/machines/noanim.png)
+
+### [eMirage Barcelona Pavilion](https://www.emirage.org/2013/04/24/free-download-archviz-project-pabellon-barcelona-3d-scene-v1-2-updated/) [(modified)](https://spages.mini.pw.edu.pl/~przybyszp/scenes/)
+* **EMIRAGE_BARCELONA_PAVILION** (*80 MB zip*)
+![](gallery/pavilion/night.png)
+
+### [Khronos Scenes](https://github.com/KhronosGroup/glTF-Sample-Assets) (installed by default)
+#### Dragon Attenuation
+![](gallery/khronos/DragonAttenuation.png)
+
+#### A Beautiful Game
+![](gallery/khronos/ABeautifulGame.png)
 
 ## Configuration
 The project can be compiled in 4 different configurations, each of which enables different suboptions. Each suboption can also be enabled individually.
